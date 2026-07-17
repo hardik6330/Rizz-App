@@ -1,0 +1,26 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.profilecapture'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.profilecapture"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // ScreenClassifier is pure logic and its vetoes are a privacy guarantee, so it
+  // gets a runnable check: ./gradlew :profile-capture:testDebugUnitTest
+  // JUnit only because there is no node equivalent for JVM code — the rest of the
+  // repo self-checks with framework-free *.selfcheck.ts scripts.
+  testImplementation 'junit:junit:4.13.2'
+}

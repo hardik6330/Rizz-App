@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  canTakeScreenshot lets the service call takeScreenshot() directly (API 30+),
+  which avoids MediaProjection entirely — no per-session consent dialog, no
+  persistent capture notification, no foreground service. It is also the flag
+  Play review scrutinises hardest; see docs/profile-analyzer-blueprint.md §6.
+
+  packageNames is the allowlist: the framework only delivers events for these
+  apps, so the process stays cold everywhere else. Keep it minimal — every entry
+  is surface area to justify at review.
+
+  flagReportViewIds is required for getViewIdResourceName(), which ScreenClassifier
+  scores on. Without it every view id reads null and detection silently degrades
+  to text-only signals.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+  android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+  android:accessibilityFeedbackType="feedbackGeneric"
+  android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+  android:canRetrieveWindowContent="true"
+  android:canTakeScreenshot="true"
+  android:notificationTimeout="300"
+  android:packageNames="com.instagram.android,com.tinder,com.bumble.app,co.hinge.app,com.facebook.katana"
+  android:description="@string/rizz_accessibility_description"
+  android:summary="@string/rizz_accessibility_summary" />

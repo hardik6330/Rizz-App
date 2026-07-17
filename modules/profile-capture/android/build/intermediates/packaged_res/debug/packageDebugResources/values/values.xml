@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="rizz_accessibility_description">Lets RizzCoach recognise when you are looking at a profile in Instagram, Tinder, Bumble, Hinge or Facebook, so it can offer an Analyze button.\n\nRizzCoach only reads the screen of those apps, and only captures it when you tap Analyze. Nothing is read or sent in the background, and screenshots are never saved to your device.</string>
+    <string name="rizz_accessibility_label">RizzCoach Profile Analyzer</string>
+    <string name="rizz_accessibility_summary">Shows an Analyze button when you open a dating profile.</string>
+    <string name="rizz_bubble_label">Analyze this profile with RizzCoach</string>
+</resources>

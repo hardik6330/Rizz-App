@@ -175,3 +175,28 @@ export interface ProfileScanInput {
   /** Defaults to 'self' so existing callers keep their behaviour. */
   mode?: ScanMode;
 }
+
+/** Apps the accessibility capture recognises. */
+export type SupportedApp = 'instagram' | 'tinder' | 'bumble' | 'hinge' | 'facebook-dating';
+
+/**
+ * One captured profile, however it was acquired — picked from the gallery, shared
+ * in, or grabbed by the accessibility bubble. Everything past `images` is optional
+ * so every source produces the same shape and `analyzeProfile` never has to care
+ * which one it came from.
+ *
+ * This is the seam that keeps v2 (chat analysis) cheap: a new capture kind reuses
+ * it rather than forcing a refactor.
+ */
+export interface ProfileCapture extends ProfileScanInput {
+  /** Known for accessibility captures, absent for gallery picks. */
+  app?: SupportedApp;
+  /**
+   * Text scraped from the accessibility tree. A HINT to disambiguate the image —
+   * never the primary input. The tree gives nothing about photos, which is where
+   * most of the report's value lives, so the image stays authoritative.
+   */
+  uiText?: string;
+  /** 0–1 screen-detection confidence. */
+  confidence?: number;
+}

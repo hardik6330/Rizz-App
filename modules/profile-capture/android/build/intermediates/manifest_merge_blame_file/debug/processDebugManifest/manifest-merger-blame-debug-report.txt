@@ -1,0 +1,47 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="expo.modules.profilecapture" >
+4
+5    <uses-sdk android:minSdkVersion="24" />
+6
+7    <!-- The floating "Analyze profile" bubble drawn over the supported apps. -->
+8    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+8-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:4:3-76
+8-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:4:20-73
+9
+10    <application>
+10-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:6:3-25:17
+11
+12        <!--
+13      Screen reader for the supported apps. Declares BIND_ACCESSIBILITY_SERVICE so
+14      only the system can bind it. `packageNames` in the config restricts events to
+15      those apps, so the service stays cold everywhere else — that is both the
+16      battery story and the compliance story.
+17        -->
+18        <service
+18-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:13:5-24:15
+19            android:name="expo.modules.profilecapture.RizzAccessibilityService"
+19-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:14:7-74
+20            android:exported="false"
+20-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:15:7-31
+21            android:label="@string/rizz_accessibility_label"
+21-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:16:7-55
+22            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" >
+22-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:17:7-73
+23            <intent-filter>
+23-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:18:7-20:23
+24                <action android:name="android.accessibilityservice.AccessibilityService" />
+24-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:19:9-84
+24-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:19:17-81
+25            </intent-filter>
+26
+27            <meta-data
+27-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:21:7-23:61
+28                android:name="android.accessibilityservice"
+28-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:22:9-52
+29                android:resource="@xml/rizz_accessibility_config" />
+29-->/home/nexcess/Documents/palak-test/dating-app/modules/profile-capture/android/src/main/AndroidManifest.xml:23:9-58
+30        </service>
+31    </application>
+32
+33</manifest>

@@ -1,0 +1,99 @@
+import { NativeModule, requireOptionalNativeModule } from 'expo';
+import { Platform } from 'react-native';
+
+import type { ProfileCapture, SupportedApp } from '@/types';
+
+/**
+ * Accessibility capture — detects profile screens in the supported apps, shows a
+ * floating "✨ Analyze" bubble, and captures the screen when the user taps it.
+ *
+ * Android only, and optional: the module is absent on iOS, on web, and in Expo Go.
+ * Every export degrades to a safe no-op there so screens can call these without
+ * platform branches. `isSupported` is the one thing UI should gate on.
+ *
+ * The native side owns detection and capture ONLY. It never decides whether the
+ * user has credits — that stays in `useOutOfCredits`. See
+ * docs/profile-analyzer-blueprint.md §4.7.
+ */
+
+interface NativeCapture {
+  base64: string;
+  app: string;
+  uiText: string;
+  confidence: number;
+}
+
+declare class ProfileCaptureNativeModule extends NativeModule {
+  isAccessibilityEnabled(): boolean;
+  canDrawOverlays(): boolean;
+  isWatching(): boolean;
+  isEnabled(): boolean;
+  setEnabled(enabled: boolean): boolean;
+  openAccessibilitySettings(): void;
+  openOverlaySettings(): void;
+  consumePendingCapture(): NativeCapture | null;
+  clearPendingCapture(): void;
+}
+
+// Optional: absent on iOS/web/Expo Go, where every call below no-ops.
+const native = requireOptionalNativeModule<ProfileCaptureNativeModule>('ProfileCapture');
+
+/** Android build with the native module present. Gate all UI on this. */
+export const isSupported = Platform.OS === 'android' && native != null;
+
+/** Package name → the app label we show and send to the model. */
+const APP_NAMES: Record<string, SupportedApp> = {
+  'com.instagram.android': 'instagram',
+  'com.tinder': 'tinder',
+  'com.bumble.app': 'bumble',
+  'co.hinge.app': 'hinge',
+  'com.facebook.katana': 'facebook-dating',
+};
+
+export const permissions = {
+  /** Service enabled in Settings → Accessibility. */
+  accessibility: (): boolean => native?.isAccessibilityEnabled() ?? false,
+  /** Allowed to draw the bubble over other apps. */
+  overlay: (): boolean => native?.canDrawOverlays() ?? false,
+  openAccessibilitySettings: (): void => native?.openAccessibilitySettings(),
+  openOverlaySettings: (): void => native?.openOverlaySettings(),
+};
+
+/**
+ * Both permissions granted AND the in-app switch on. Granting accessibility in
+ * Settings must never by itself mean "watching my screen".
+ */
+export function isWatching(): boolean {
+  return native?.isWatching() ?? false;
+}
+
+export function isEnabled(): boolean {
+  return native?.isEnabled() ?? false;
+}
+
+/** The in-app kill switch. Returns the resulting state. */
+export function setEnabled(enabled: boolean): boolean {
+  return native?.setEnabled(enabled) ?? false;
+}
+
+/**
+ * Take the capture the bubble produced, clearing it. Call on app resume.
+ *
+ * Pull rather than push: the service runs when the React context may not exist,
+ * so there is often nothing to push an event to.
+ */
+export function consumePendingCapture(): ProfileCapture | null {
+  const capture = native?.consumePendingCapture();
+  if (!capture) return null;
+  return {
+    images: [{ base64: capture.base64, mimeType: 'image/jpeg' }],
+    app: APP_NAMES[capture.app],
+    uiText: capture.uiText || undefined,
+    confidence: capture.confidence,
+    mode: 'them',
+  };
+}
+
+export function clearPendingCapture(): void {
+  native?.clearPendingCapture();
+}

@@ -42,6 +42,7 @@ export default function RootLayout() {
         >
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="vault" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="analyzer" options={{ presentation: 'modal' }} />
           <Stack.Screen
             name="paywall"
             options={{ presentation: 'modal', gestureEnabled: false }}

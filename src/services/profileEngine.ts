@@ -1,4 +1,4 @@
-import type { ProfileScanInput, ProfileScanResult, ScanMode } from '@/types';
+import type { ProfileCapture, ProfileScanInput, ProfileScanResult, ScanMode } from '@/types';
 import { uid, wait } from '@/utils/misc';
 import { callGemini, imagePart, isLiveKey } from './gemini';
 
@@ -196,9 +196,11 @@ const RESULT_SCHEMA = {
 } as const;
 
 async function analyzeWithGemini(
-  { images }: ProfileScanInput,
+  input: ProfileScanInput,
   mode: ScanMode,
 ): Promise<ProfileScanResult> {
+  const { images } = input;
+  const { uiText } = input as ProfileCapture;
   const shots = images.length > 1 ? `these ${images.length} screenshots` : 'this screenshot';
   const parsed = await callGemini<Omit<ProfileScanResult, 'id' | 'createdAt'>>({
     system: SYSTEM_PROMPTS[mode],
@@ -210,6 +212,15 @@ async function analyzeWithGemini(
             ? `Audit ${shots} of my profile and return the full glow-up report.`
             : `Read ${shots} of a profile I'm thinking about messaging, and return the full report.`,
       },
+      // Accessibility captures carry the on-screen text. It's a hint only: the tree
+      // says nothing about photos, which is where most of the report's value is.
+      ...(uiText
+        ? [
+            {
+              text: `Text extracted from the screen. Use it only to disambiguate what you can already see — the image is authoritative, and anything here that the image contradicts is wrong:\n${uiText}`,
+            },
+          ]
+        : []),
     ],
     schema: RESULT_SCHEMA,
     temperature: 0.85,

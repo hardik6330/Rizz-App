@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="expo.modules.profilecapture.ScreenClassifierTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-07-17T06:38:37.049Z" hostname="nexcess-HP-EliteDesk-800-G4-SFF" time="0.031">
+  <properties/>
+  <testcase name="ordinary facebook is out of scope - only dating is supported" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.026"/>
+  <testcase name="instagram DMs never trigger" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="a tinder profile card is detected" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="unsupported apps are never profiles" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="weak evidence stays below the threshold" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="confidence never exceeds one" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="instagram stories never trigger" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="a full instagram profile is detected" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="instagram reels never trigger, even with profile chrome present" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="tinder chat never triggers" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.001"/>
+  <testcase name="an empty screen is not a profile" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

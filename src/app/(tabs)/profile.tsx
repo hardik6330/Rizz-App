@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { AppState, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,11 +15,12 @@ import { ProUpsellCard } from '@/components/ProUpsellCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { StagedLoader } from '@/components/StagedLoader';
 import { useToast } from '@/components/Toast';
+import { consumePendingCapture, isSupported } from '@/../modules/profile-capture';
 import { BG } from '@/data/assets';
 import { PROFILE_LABELS, PROFILE_STAGES, analyzeProfile } from '@/services/profileEngine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { palette, radii, spacing } from '@/theme/tokens';
-import type { ProfileScanResult, ProfileScore, ScanMode } from '@/types';
+import type { ProfileCapture, ProfileScanResult, ProfileScore, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
 
 type Phase = 'idle' | 'working' | 'done';
@@ -92,8 +93,17 @@ export default function ProfileScreen() {
     setImages((prev) => prev.filter((img) => img.uri !== uri));
   };
 
-  const scan = useCallback(async () => {
-    if (images.length === 0) return;
+  /**
+   * Runs the scan. `capture` overrides the picked images — the accessibility
+   * bubble passes one through so its `uiText` hint reaches the engine.
+   */
+  const scan = useCallback(async (capture?: ProfileCapture) => {
+    const input: ProfileCapture = capture ?? {
+      images: images.map(({ base64, mimeType }) => ({ base64, mimeType })),
+      mode,
+    };
+    if (input.images.length === 0) return;
+    const activeMode = input.mode ?? mode;
 
     haptic.medium();
     setResult(null);
@@ -102,14 +112,11 @@ export default function ProfileScreen() {
 
     if (stageTimer.current) clearInterval(stageTimer.current);
     stageTimer.current = setInterval(() => {
-      setStage((current) => Math.min(current + 1, PROFILE_STAGES[mode].length - 1));
+      setStage((current) => Math.min(current + 1, PROFILE_STAGES[activeMode].length - 1));
     }, 850);
 
     try {
-      const scanResult = await analyzeProfile({
-        images: images.map(({ base64, mimeType }) => ({ base64, mimeType })),
-        mode,
-      });
+      const scanResult = await analyzeProfile(input);
       if (!scanResult.isProfile) {
         // Not a profile — don't show results or burn a free scan.
         haptic.warning();
@@ -129,6 +136,41 @@ export default function ProfileScreen() {
       if (stageTimer.current) clearInterval(stageTimer.current);
     }
   }, [images, incrementAnalysis, mode, toast]);
+
+  /**
+   * Pick up a capture from the accessibility bubble.
+   *
+   * The native service stashes it and launches us; we pull on mount and on
+   * resume. Pull rather than push because the service runs when this JS context
+   * may not exist — there is often nothing to push an event to.
+   *
+   * This is also where the freemium gate is applied: the service deliberately
+   * knows nothing about credits, so the rule stays in ONE place (`useOutOfCredits`)
+   * instead of being reimplemented in Kotlin.
+   */
+  const takePendingCapture = useCallback(() => {
+    if (!isSupported) return;
+    const capture = consumePendingCapture();
+    if (!capture) return;
+
+    if (outOfCredits) {
+      haptic.warning();
+      router.push('/paywall');
+      return;
+    }
+    const shot = capture.images[0];
+    setMode('them');
+    setImages([
+      { uri: `data:${shot.mimeType};base64,${shot.base64}`, base64: shot.base64, mimeType: shot.mimeType },
+    ]);
+    void scan(capture);
+  }, [outOfCredits, scan]);
+
+  useEffect(() => {
+    takePendingCapture();
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && takePendingCapture());
+    return () => sub.remove();
+  }, [takePendingCapture]);
 
   const reset = () => {
     haptic.light();
@@ -286,6 +328,27 @@ export default function ProfileScreen() {
                   </Text>
                 </HapticPressable>
               </>
+            )}
+
+            {/* One-tap analyzer — Android only, hidden where the module is absent. */}
+            {isSupported && mode === 'them' && (
+              <HapticPressable
+                onPress={() => {
+                  haptic.light();
+                  router.push('/analyzer');
+                }}
+                accessibilityLabel="Set up the one-tap analyzer"
+                style={styles.analyzerRow}
+              >
+                <Ionicons name="sparkles" size={16} color={palette.violet} />
+                <View style={styles.analyzerText}>
+                  <Text style={styles.analyzerTitle}>Skip the screenshot</Text>
+                  <Text style={styles.analyzerSub}>
+                    Get an ✨ Analyze button right inside Instagram, Tinder, Bumble & Hinge.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={15} color={palette.textTertiary} />
+              </HapticPressable>
             )}
 
             <View style={styles.privacyRow}>
@@ -641,6 +704,30 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.2,
     color: palette.ink,
+  },
+  analyzerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.lg,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: `${palette.violet}44`,
+  },
+  analyzerText: {
+    flex: 1,
+    gap: 2,
+  },
+  analyzerTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: palette.textPrimary,
+  },
+  analyzerSub: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: palette.textTertiary,
   },
   privacyRow: {
     flexDirection: 'row',
