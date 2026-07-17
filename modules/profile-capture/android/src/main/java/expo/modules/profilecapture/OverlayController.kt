@@ -1,5 +1,8 @@
 package expo.modules.profilecapture
 
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
@@ -10,6 +13,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.LinearInterpolator
 import android.widget.TextView
 import kotlin.math.abs
 
@@ -35,6 +39,7 @@ class OverlayController(private val context: Context) {
 
   private var bubble: View? = null
   private var params: WindowManager.LayoutParams? = null
+  private var scanAnim: ObjectAnimator? = null
 
   val isShowing: Boolean get() = bubble != null
 
@@ -46,25 +51,28 @@ class OverlayController(private val context: Context) {
   fun show(onTap: () -> Unit) {
     if (bubble != null) return
 
+    // Icon only. The label is carried by contentDescription rather than visible
+    // text: this sits on top of someone else's app, so it should read as a control,
+    // not a banner. 56dp keeps it a comfortable target with no text to size around.
     val label = TextView(context).apply {
-      text = "✨ Analyze"
+      text = "✨"
       setTextColor(Color.WHITE)
-      textSize = 14f
-      typeface = android.graphics.Typeface.DEFAULT_BOLD
+      textSize = 22f
       gravity = Gravity.CENTER
-      // 48dp minimum touch target — TalkBack and Material both require it.
-      minHeight = dp(48f)
-      setPadding(dp(16f), dp(12f), dp(16f), dp(12f))
+      width = dp(56f)
+      height = dp(56f)
+      // TalkBack still announces the full action even though nothing is drawn.
       contentDescription = context.getString(R.string.rizz_bubble_label)
       background = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = dp(24f).toFloat()
+        shape = GradientDrawable.OVAL
         // palette.violet, opaque so it stays legible on a white host app.
         setColor(Color.parseColor("#8B5CF6"))
         setStroke(dp(1f), Color.parseColor("#33FFFFFF"))
       }
       elevation = dp(6f).toFloat()
       alpha = 0f
+      scaleX = 0.8f
+      scaleY = 0.8f
     }
 
     val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -93,7 +101,7 @@ class OverlayController(private val context: Context) {
 
     try {
       windowManager.addView(label, lp)
-      label.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200).start()
+      label.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start()
       bubble = label
       params = lp
     } catch (e: Exception) {
@@ -103,10 +111,52 @@ class OverlayController(private val context: Context) {
     }
   }
 
+  /**
+   * Play a short "scanning" beat, then remove the bubble and run [onDone].
+   *
+   * The bubble MUST be gone before the screenshot fires, or we capture our own
+   * button sitting on top of the profile and hand it to the model. So the feedback
+   * happens first and capture waits for it — the animation is not decoration, it is
+   * the window in which we get off the screen.
+   *
+   * Kept short (~420ms): long enough to read as "it's working", short enough that
+   * the app opening still feels like a response to the tap.
+   */
+  fun playScanThen(onDone: () -> Unit) {
+    val view = bubble ?: run { onDone(); return }
+
+    // Pulse + spin reads as "working" without needing a custom view or a spinner.
+    val pulse = ObjectAnimator.ofPropertyValuesHolder(
+      view,
+      PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.18f, 0.92f),
+      PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.18f, 0.92f),
+    ).apply {
+      duration = 420
+      interpolator = LinearInterpolator()
+      repeatCount = 0
+    }
+    scanAnim = pulse
+    view.animate().rotationBy(180f).setDuration(420).setInterpolator(LinearInterpolator()).start()
+    pulse.start()
+
+    // Fade out over the tail of the pulse so the bubble is off-screen before capture.
+    view.animate()
+      .alpha(0f)
+      .setStartDelay(260)
+      .setDuration(160)
+      .withEndAction {
+        hide()
+        onDone()
+      }
+      .start()
+  }
+
   fun hide() {
     val view = bubble ?: return
     bubble = null
     params = null
+    scanAnim?.cancel()
+    scanAnim = null
     try {
       windowManager.removeView(view)
     } catch (e: Exception) {

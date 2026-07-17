@@ -145,16 +145,27 @@ class RizzAccessibilityService : AccessibilityService() {
   private fun onAnalyzeTapped(pkg: String, signals: ScreenSignals, confidence: Double) {
     if (capturing) return
     capturing = true
-    hideBubble() // keep the bubble out of its own screenshot
 
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
       // takeScreenshot() is API 30+. Below that the only route is MediaProjection,
       // which we deliberately do not ship — see the blueprint §4.5.
       Log.w(TAG, "takeScreenshot unavailable below API 30")
+      main.post { overlay?.hide() }
       capturing = false
       return
     }
-    capture(pkg, signals, confidence)
+
+    // Play the scan beat FIRST, then capture. playScanThen removes the bubble
+    // before running us back — the screenshot must not contain our own button.
+    lastSignature = null
+    main.post {
+      val o = overlay
+      if (o == null || !o.isShowing) {
+        capture(pkg, signals, confidence)
+      } else {
+        o.playScanThen { capture(pkg, signals, confidence) }
+      }
+    }
   }
 
   @RequiresApi(Build.VERSION_CODES.R)
