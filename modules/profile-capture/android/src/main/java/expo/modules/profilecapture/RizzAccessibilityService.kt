@@ -145,6 +145,7 @@ class RizzAccessibilityService : AccessibilityService() {
   private fun onAnalyzeTapped(pkg: String, signals: ScreenSignals, confidence: Double) {
     if (capturing) return
     capturing = true
+    Log.i(TAG, "analyze tapped ($pkg, confidence=$confidence)")
 
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
       // takeScreenshot() is API 30+. Below that the only route is MediaProjection,
@@ -155,17 +156,31 @@ class RizzAccessibilityService : AccessibilityService() {
       return
     }
 
-    // Play the scan beat FIRST, then capture. playScanThen removes the bubble
-    // before running us back — the screenshot must not contain our own button.
     lastSignature = null
-    main.post {
-      val o = overlay
-      if (o == null || !o.isShowing) {
-        capture(pkg, signals, confidence)
-      } else {
-        o.playScanThen { capture(pkg, signals, confidence) }
+    main.post { overlay?.playScan() }
+
+    /*
+     * Capture on a plain Handler timeline, NOT from the animation's end-callback.
+     * The callback is not guaranteed: an incoming event can hide the bubble
+     * mid-animation, the view detaches, the callback is dropped, capture never
+     * runs — and `capturing` stays true, so every later tap is ignored too. The
+     * animation is feedback; it must never be load-bearing.
+     *
+     * The bubble must still be gone before the shot or it lands in the screenshot,
+     * hence hide() first and a frame's grace before capturing.
+     */
+    main.postDelayed({
+      overlay?.hide()
+      main.postDelayed({ capture(pkg, signals, confidence) }, 60)
+    }, OverlayController.SCAN_MS)
+
+    // Watchdog: whatever goes wrong downstream, never leave the button wedged.
+    main.postDelayed({
+      if (capturing) {
+        Log.w(TAG, "capture watchdog fired — resetting")
+        capturing = false
       }
-    }
+    }, 6000)
   }
 
   @RequiresApi(Build.VERSION_CODES.R)
@@ -195,6 +210,7 @@ class RizzAccessibilityService : AccessibilityService() {
                 confidence = confidence,
               )
             )
+            Log.i(TAG, "captured ${base64.length} b64 chars — launching app")
             launchApp()
           } catch (e: Exception) {
             Log.w(TAG, "capture failed", e)

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="expo.modules.profilecapture.ScreenClassifierTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-07-17T10:09:01.130Z" hostname="nexcess-HP-EliteDesk-800-G4-SFF" time="0.028">
+<testsuite name="expo.modules.profilecapture.ScreenClassifierTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-07-17T10:54:26.169Z" hostname="nexcess-HP-EliteDesk-800-G4-SFF" time="0.029">
   <properties/>
-  <testcase name="ordinary facebook is out of scope - only dating is supported" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.023"/>
-  <testcase name="instagram DMs never trigger" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.001"/>
+  <testcase name="ordinary facebook is out of scope - only dating is supported" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.024"/>
+  <testcase name="instagram DMs never trigger" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="a tinder profile card is detected" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="unsupported apps are never profiles" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="weak evidence stays below the threshold" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
-  <testcase name="confidence never exceeds one" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="confidence never exceeds one" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.001"/>
   <testcase name="instagram stories never trigger" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="a full instagram profile is detected" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="instagram reels never trigger, even with profile chrome present" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>

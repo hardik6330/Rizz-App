@@ -122,33 +122,24 @@ class OverlayController(private val context: Context) {
    * Kept short (~420ms): long enough to read as "it's working", short enough that
    * the app opening still feels like a response to the tap.
    */
-  fun playScanThen(onDone: () -> Unit) {
-    val view = bubble ?: run { onDone(); return }
+  fun playScan() {
+    val view = bubble ?: return
+    scanAnim?.cancel()
 
-    // Pulse + spin reads as "working" without needing a custom view or a spinner.
-    val pulse = ObjectAnimator.ofPropertyValuesHolder(
+    // ONE animator driving every property. Two `view.animate()` calls would share a
+    // single ViewPropertyAnimator, so the second silently reconfigures the first.
+    val anim = ObjectAnimator.ofPropertyValuesHolder(
       view,
-      PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.18f, 0.92f),
-      PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.18f, 0.92f),
+      PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.18f, 0.9f),
+      PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.18f, 0.9f),
+      PropertyValuesHolder.ofFloat(View.ROTATION, 0f, 90f, 180f),
+      PropertyValuesHolder.ofFloat(View.ALPHA, 1f, 1f, 0f),
     ).apply {
-      duration = 420
+      duration = SCAN_MS
       interpolator = LinearInterpolator()
-      repeatCount = 0
     }
-    scanAnim = pulse
-    view.animate().rotationBy(180f).setDuration(420).setInterpolator(LinearInterpolator()).start()
-    pulse.start()
-
-    // Fade out over the tail of the pulse so the bubble is off-screen before capture.
-    view.animate()
-      .alpha(0f)
-      .setStartDelay(260)
-      .setDuration(160)
-      .withEndAction {
-        hide()
-        onDone()
-      }
-      .start()
+    scanAnim = anim
+    anim.start()
   }
 
   fun hide() {
@@ -217,5 +208,12 @@ class OverlayController(private val context: Context) {
 
   companion object {
     private const val TAG = "RizzOverlay"
+
+    /**
+     * Length of the scan beat. The service schedules capture off this on a plain
+     * Handler rather than an animation callback: a callback can be lost if the view
+     * is detached mid-animation, and losing it means the tap silently does nothing.
+     */
+    const val SCAN_MS = 400L
   }
 }
