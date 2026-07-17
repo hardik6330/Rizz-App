@@ -114,17 +114,25 @@ module without bumping `version` crashes every old build.
 
 **A fingerprint mismatch FAILS the build** in `CONFIGURE_EXPO_UPDATES` ("Runtime version
 calculated on local machine … does not match EAS"). It means your `node_modules` differs from
-EAS's clean install. Android Studio is the usual culprit: Gradle's Buildship plugin writes
-`.classpath` / `.project` / `.settings/` into node_modules, which aren't in the npm tarballs.
-`.fingerprintignore` covers those (`build/`, `.gradle/`, `.cxx/` are ignored by default
-already). If it happens anyway, `npm ci` restores a clean tree — verify with:
+EAS's clean install.
+
+**Any local Android build (`expo run:android`, `./gradlew`, opening the project in Android
+Studio) mutates `node_modules` and breaks the fingerprint.** Gradle and its Buildship plugin
+write `build/`, `.gradle/`, `.classpath`, `.project` and `.settings/` into autolinked packages
+— none of which are in the npm tarballs. Some of it the default ignores catch; some of it they
+do not, and deleting the artifacts by hand does NOT reliably restore the hash.
+
+**`npm ci` is the fix. Run it before `eas build` whenever you have built locally.**
 
 ```bash
+npm ci
 npx expo-updates fingerprint:generate --platform android   # .hash must equal EAS's
 ```
 
-The build log's fingerprint diff names the exact packages; `npm pack <pkg>@<ver>` and diff the
-file lists against `node_modules/<pkg>` to see what is polluting it.
+The build log prints both hashes and a per-package diff naming the culprit. `npm pack
+<pkg>@<ver>` and diff its file list against `node_modules/<pkg>` if you need to see what
+changed — but check for MISSING files as well as extra ones, and note the hash can differ even
+when the file lists match.
 
 **Native is CNG.** `/android` and `/ios` are ignored by git AND EAS and regenerated from
 `app.json` each build. Editing `android/` locally does nothing — use `app.json` or a plugin.
