@@ -21,6 +21,7 @@ interface NativeCapture {
   app: string;
   uiText: string;
   confidence: number;
+  isOwnProfile: boolean;
 }
 
 declare class ProfileCaptureNativeModule extends NativeModule {
@@ -95,7 +96,10 @@ function readNative(): ProfileCapture | null {
     app: APP_NAMES[capture.app],
     uiText: capture.uiText || undefined,
     confidence: capture.confidence,
-    mode: 'them',
+    // The bubble shows on ANY profile, including your own — and the two want
+    // opposite reports. Analyzing your own profile in 'them' mode makes the model
+    // (correctly) refuse to write openers about you, which reads as a broken app.
+    mode: capture.isOwnProfile ? 'self' : 'them',
   };
 }
 

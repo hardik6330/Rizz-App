@@ -28,6 +28,8 @@ object CaptureStore {
     /** Text scraped from the tree; a HINT for the model, never the primary input. */
     val uiText: String,
     val confidence: Double,
+    /** Their profile → openers ('them'); your own → glow-up coaching ('self'). */
+    val isOwnProfile: Boolean = false,
   )
 
   @Volatile

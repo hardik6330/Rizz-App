@@ -117,6 +117,37 @@ class ScreenClassifierTest {
     assertTrue(r.isProfile)
   }
 
+  // --- Own profile vs someone else's ---------------------------------------
+  // The bubble shows on ANY profile. Getting this wrong means the app asks Gemini
+  // to write pickup lines about the user themselves, and it (correctly) refuses —
+  // which reads to the user as "the button is broken".
+
+  @Test
+  fun `your own instagram profile is flagged as your own`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("row_profile_header_container", "profile_header_username"),
+        texts = listOf("8", "453", "603", "posts", "followers", "following", "edit profile", "share profile"),
+      )
+    )
+    assertTrue("still a profile", r.isProfile)
+    assertTrue("Edit profile means it is the user's own", r.isOwnProfile)
+  }
+
+  @Test
+  fun `someone else's instagram profile is not flagged as your own`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("row_profile_header_container", "profile_header_username"),
+        texts = listOf("142", "1.2k", "384", "posts", "followers", "following", "follow", "message"),
+      )
+    )
+    assertTrue(r.isProfile)
+    assertFalse("Follow/Message means it is someone else's", r.isOwnProfile)
+  }
+
   // --- Threshold ------------------------------------------------------------
 
   @Test

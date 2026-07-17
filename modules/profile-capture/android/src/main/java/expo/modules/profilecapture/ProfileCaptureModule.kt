@@ -28,6 +28,7 @@ class ProfileCaptureModule : Module() {
     @Field var app: String = ""
     @Field var uiText: String = ""
     @Field var confidence: Double = 0.0
+    @Field var isOwnProfile: Boolean = false
   }
 
   override fun definition() = ModuleDefinition {
@@ -82,6 +83,7 @@ class ProfileCaptureModule : Module() {
           app = it.app
           uiText = it.uiText
           confidence = it.confidence
+          isOwnProfile = it.isOwnProfile
         }
       }
     }

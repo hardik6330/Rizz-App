@@ -30,7 +30,19 @@ data class ScreenSignals(
   val texts: List<String> = emptyList(),
 )
 
-data class Classification(val isProfile: Boolean, val confidence: Double) {
+data class Classification(
+  val isProfile: Boolean,
+  val confidence: Double,
+  /**
+   * The user is looking at their OWN profile, not someone else's.
+   *
+   * The bubble appears on any profile, including the user's own, and the two cases
+   * want opposite reports: coach my profile ('self') vs write me openers ('them').
+   * Without this the app would reject the user's own profile as "not someone you
+   * can message", which is technically correct and useless.
+   */
+  val isOwnProfile: Boolean = false,
+) {
   companion object {
     val NOT_PROFILE = Classification(false, 0.0)
   }
@@ -55,6 +67,13 @@ object ScreenClassifier {
   /** Tinder/Bumble/Hinge name line, e.g. "Maya, 26". */
   private val NAME_AGE = Regex("^\\S.*,\\s*\\d{2}$")
 
+  /**
+   * Controls only present on your OWN profile. "Edit profile" is the reliable one
+   * across Instagram and Facebook; a dating app never shows another user's profile
+   * with an edit control either.
+   */
+  private val OWN_PROFILE_MARKERS = listOf("edit profile", "share profile", "edit_profile")
+
   fun classify(s: ScreenSignals): Classification {
     if (s.packageName !in SUPPORTED) return Classification.NOT_PROFILE
     val score = when (s.packageName) {
@@ -65,7 +84,11 @@ object ScreenClassifier {
       FACEBOOK -> facebookDating(s)
       else -> 0.0
     }.coerceIn(0.0, 1.0)
-    return Classification(score >= THRESHOLD, score)
+
+    val own = s.texts.any { t -> OWN_PROFILE_MARKERS.any { t == it } } ||
+      s.viewIds.any { id -> OWN_PROFILE_MARKERS.any { id.contains(it) } }
+
+    return Classification(score >= THRESHOLD, score, isOwnProfile = own)
   }
 
   private fun List<String>.hasId(vararg fragments: String) =

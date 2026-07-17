@@ -123,6 +123,12 @@ export default function ProfileScreen() {
         haptic.warning();
         toast.show(scanResult.rejectionReason ?? "That doesn't look like a profile — try again", 5000);
         setPhase('idle');
+        // A rejected capture leaves nothing worth keeping: stranding its screenshot
+        // in the picker invites the user to re-scan the exact thing just refused.
+        if (capture) {
+          setImages([]);
+          setMode('self');
+        }
         return;
       }
       setResult(scanResult);
@@ -160,7 +166,9 @@ export default function ProfileScreen() {
       return;
     }
     const shot = capture.images[0];
-    setMode('them');
+    // Mode comes from the capture: your own profile gets coached, someone else's
+    // gets openers. Never assume 'them' — the bubble shows on both.
+    setMode(capture.mode ?? 'them');
     setImages([
       { uri: `data:${shot.mimeType};base64,${shot.base64}`, base64: shot.base64, mimeType: shot.mimeType },
     ]);

@@ -83,7 +83,7 @@ class RizzAccessibilityService : AccessibilityService() {
     }
 
     val result = ScreenClassifier.classify(signals)
-    if (result.isProfile) showBubble(pkg, signals, result.confidence) else hideBubble()
+    if (result.isProfile) showBubble(pkg, signals, result) else hideBubble()
   }
 
   // -------------------------------------------------------------------------
@@ -121,14 +121,14 @@ class RizzAccessibilityService : AccessibilityService() {
   // Bubble
   // -------------------------------------------------------------------------
 
-  private fun showBubble(pkg: String, signals: ScreenSignals, confidence: Double) {
+  private fun showBubble(pkg: String, signals: ScreenSignals, result: Classification) {
     // Don't re-add on every content-changed for the same screen — it would restart
     // the entry animation and make the bubble flicker while scrolling a profile.
     val signature = pkg + "|" + signals.viewIds.take(6).joinToString(",")
     if (overlay?.isShowing == true && signature == lastSignature) return
     lastSignature = signature
     main.post {
-      overlay?.show { onAnalyzeTapped(pkg, signals, confidence) }
+      overlay?.show { onAnalyzeTapped(pkg, signals, result) }
     }
   }
 
@@ -142,10 +142,10 @@ class RizzAccessibilityService : AccessibilityService() {
   // Capture — only ever from a tap
   // -------------------------------------------------------------------------
 
-  private fun onAnalyzeTapped(pkg: String, signals: ScreenSignals, confidence: Double) {
+  private fun onAnalyzeTapped(pkg: String, signals: ScreenSignals, result: Classification) {
     if (capturing) return
     capturing = true
-    Log.i(TAG, "analyze tapped ($pkg, confidence=$confidence)")
+    Log.i(TAG, "analyze tapped ($pkg, confidence=${result.confidence}, own=${result.isOwnProfile})")
 
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
       // takeScreenshot() is API 30+. Below that the only route is MediaProjection,
@@ -171,7 +171,7 @@ class RizzAccessibilityService : AccessibilityService() {
      */
     main.postDelayed({
       overlay?.hide()
-      main.postDelayed({ capture(pkg, signals, confidence) }, 60)
+      main.postDelayed({ capture(pkg, signals, result) }, 60)
     }, OverlayController.SCAN_MS)
 
     // Watchdog: whatever goes wrong downstream, never leave the button wedged.
@@ -184,7 +184,7 @@ class RizzAccessibilityService : AccessibilityService() {
   }
 
   @RequiresApi(Build.VERSION_CODES.R)
-  private fun capture(pkg: String, signals: ScreenSignals, confidence: Double) {
+  private fun capture(pkg: String, signals: ScreenSignals, result: Classification) {
     takeScreenshot(
       android.view.Display.DEFAULT_DISPLAY,
       { r -> r.run() },
@@ -207,7 +207,8 @@ class RizzAccessibilityService : AccessibilityService() {
                 base64 = base64,
                 app = pkg,
                 uiText = signals.texts.distinct().take(60).joinToString("\n"),
-                confidence = confidence,
+                confidence = result.confidence,
+                isOwnProfile = result.isOwnProfile,
               )
             )
             Log.i(TAG, "captured ${base64.length} b64 chars — launching app")
