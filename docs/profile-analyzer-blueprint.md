@@ -370,9 +370,16 @@ build — see §5 and `isLiveRevenueCatKey()`.
 **`runtimeVersion` is `fingerprint`, not `appVersion`.** Native modules are on the roadmap
 (share intent, later accessibility). Under `appVersion`, publishing JS that calls a new native
 module without bumping `version` delivers it to builds that lack the module and crashes them.
-Fingerprint hashes the native inputs so incompatible JS is never offered. It honours
-`.easignore`, so the local `android/` prebuild is excluded and local hashes match EAS's — if
-that ever stops being true, updates publish successfully and silently reach nobody.
+Fingerprint hashes the native inputs so incompatible JS is never offered.
+
+The cost is that the local fingerprint must equal EAS's, or the build **fails** in
+`CONFIGURE_EXPO_UPDATES`. The first build here failed exactly that way: Android Studio's Gradle
+Buildship plugin had written Eclipse metadata (`.classpath`, `.project`, `.settings/` — 74
+files) into `node_modules`, which is absent from the npm tarballs and so from EAS's clean
+install. `@expo/fingerprint` ignores `build/`, `.gradle/` and `.cxx/` by default but not that;
+`.fingerprintignore` closes the gap, and `npm ci` restores a clean tree. Verify with
+`npx expo-updates fingerprint:generate --platform android` — the hash must equal EAS's, which
+the failed build's log prints alongside a per-package diff.
 
 Native projects are CNG: `.easignore` and `.gitignore` both exclude `/android` and `/ios`, and
 EAS regenerates them from `app.json` per build. **Editing `android/` locally has no effect on

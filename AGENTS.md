@@ -98,8 +98,21 @@ reaches EAS. A build profile only loads them if it declares `"environment"` — 
 intentionally absent, so preview builds hand out Pro free — set it before production.
 
 **`runtimeVersion` is `fingerprint`.** Under `appVersion`, OTA-ing JS that calls a new native
-module without bumping `version` crashes every old build. Fingerprint honours `.easignore`,
-so local hashes match EAS's — if that breaks, updates publish and reach nobody.
+module without bumping `version` crashes every old build.
+
+**A fingerprint mismatch FAILS the build** in `CONFIGURE_EXPO_UPDATES` ("Runtime version
+calculated on local machine … does not match EAS"). It means your `node_modules` differs from
+EAS's clean install. Android Studio is the usual culprit: Gradle's Buildship plugin writes
+`.classpath` / `.project` / `.settings/` into node_modules, which aren't in the npm tarballs.
+`.fingerprintignore` covers those (`build/`, `.gradle/`, `.cxx/` are ignored by default
+already). If it happens anyway, `npm ci` restores a clean tree — verify with:
+
+```bash
+npx expo-updates fingerprint:generate --platform android   # .hash must equal EAS's
+```
+
+The build log's fingerprint diff names the exact packages; `npm pack <pkg>@<ver>` and diff the
+file lists against `node_modules/<pkg>` to see what is polluting it.
 
 **Native is CNG.** `/android` and `/ios` are ignored by git AND EAS and regenerated from
 `app.json` each build. Editing `android/` locally does nothing — use `app.json` or a plugin.
