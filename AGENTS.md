@@ -88,11 +88,27 @@ the sentinel for the "✨ Fresh today" tag (no fake tester invented).
 - Persisted state must be added to `partialize` in `useRizzStore.ts` or it won't survive
   reload.
 
+## Shipping (EAS)
+
+**Build keys come from the EAS environment, not `.env`.** `.env` is gitignored so it never
+reaches EAS. A build profile only loads them if it declares `"environment"` — `preview` and
+`production` do. Drop that field and the build still succeeds, with no Gemini key baked in:
+`isLiveKey` reads stub and every engine silently serves mock data. `eas env:list
+--environment preview` before blaming the model. `EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY` is
+intentionally absent, so preview builds hand out Pro free — set it before production.
+
+**`runtimeVersion` is `fingerprint`.** Under `appVersion`, OTA-ing JS that calls a new native
+module without bumping `version` crashes every old build. Fingerprint honours `.easignore`,
+so local hashes match EAS's — if that breaks, updates publish and reach nobody.
+
+**Native is CNG.** `/android` and `/ios` are ignored by git AND EAS and regenerated from
+`app.json` each build. Editing `android/` locally does nothing — use `app.json` or a plugin.
+
 ## Checks
 
 ```bash
 npx tsc --noEmit                                        # must pass
-node src/state/limits.selfcheck.ts                      # swipe-allowance rules
+node src/state/limits.selfcheck.ts                      # swipe-allowance + store-key rules
 node --env-file=.env src/services/gemini.selfcheck.ts   # live API (1 tiny call)
 ```
 

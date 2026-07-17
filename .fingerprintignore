@@ -1,0 +1,19 @@
+# Inputs excluded from the expo-updates fingerprint (runtimeVersion policy).
+#
+# Opening/building this project in Android Studio makes Gradle's Buildship plugin
+# write Eclipse IDE metadata INSIDE node_modules — .classpath, .project and
+# .settings/ in autolinked packages (sometimes under android/, sometimes at the
+# package root, e.g. expo-module-gradle-plugin). They are not in the npm tarballs,
+# so EAS's clean install never has them. The local fingerprint then stops matching
+# the one EAS computes, and that FAILS the build outright:
+#   "Runtime version calculated on local machine ... does not match EAS"
+#
+# @expo/fingerprint already ignores build/, .gradle/ and .cxx/ by default — this
+# IDE metadata is the gap. It is never source, so ignoring it cannot mask a real
+# native change.
+#
+# Keep this file tracked: EAS reads it too, and both sides must ignore the same
+# paths or the hashes diverge again.
+**/.classpath
+**/.project
+**/.settings/**/*

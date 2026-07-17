@@ -352,6 +352,34 @@ languages, with no self-check.
 
 ---
 
+## 4b. Shipping — EAS Update & builds
+
+Configured this session. Two rules that are easy to break silently:
+
+**Keys come from the EAS environment, never from `.env`.** `.env` is gitignored, so it is not
+uploaded to EAS. A build profile only loads EAS environment variables if it declares
+`"environment"` — `preview` and `production` now do. Without that field the build succeeds and
+produces an APK with **no Gemini key**, which `isLiveKey` reads as stub and every engine
+silently serves mock data. Symptom: "the AI ignores my screenshot" on a build that compiled
+fine. Check `eas env:list --environment preview` first.
+
+`EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY` is deliberately NOT in the EAS environment yet, so preview
+builds run billing in mock mode and testers get Pro for free. Set it before any production
+build — see §5 and `isLiveRevenueCatKey()`.
+
+**`runtimeVersion` is `fingerprint`, not `appVersion`.** Native modules are on the roadmap
+(share intent, later accessibility). Under `appVersion`, publishing JS that calls a new native
+module without bumping `version` delivers it to builds that lack the module and crashes them.
+Fingerprint hashes the native inputs so incompatible JS is never offered. It honours
+`.easignore`, so the local `android/` prebuild is excluded and local hashes match EAS's — if
+that ever stops being true, updates publish successfully and silently reach nobody.
+
+Native projects are CNG: `.easignore` and `.gitignore` both exclude `/android` and `/ios`, and
+EAS regenerates them from `app.json` per build. **Editing `android/` locally has no effect on
+a build** — native config changes go through `app.json` or a config plugin.
+
+---
+
 ## 5. Backend
 
 You need one regardless of which capture option ships, because the key is in the bundle today.
