@@ -1,0 +1,9 @@
+# EAS regenerates the native projects from app.json (CNG) on every build.
+# Uploading the local prebuild output ships stale native code and a huge archive.
+/android
+/ios
+
+node_modules
+.expo
+dist
+web-build

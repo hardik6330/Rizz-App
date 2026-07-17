@@ -1,0 +1,235 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import React from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { categoryColor, palette, radii, spacing } from '@/theme/tokens';
+import type { FeedItem } from '@/types';
+import { ActionRail } from './ActionRail';
+
+interface FeedCardProps {
+  item: FeedItem;
+  height: number;
+  saved: boolean;
+  onCopy: () => void;
+  onToggleSave: () => void;
+  onShare: () => void;
+}
+
+/** One full-screen Discovery page: cinematic background + the line + rail. */
+export function FeedCard({ item, height, saved, onCopy, onToggleSave, onShare }: FeedCardProps) {
+  const insets = useSafeAreaInsets();
+  const accent = categoryColor(item.category);
+  const longLine = item.text.length > 110;
+
+  const heartScale = useSharedValue(0);
+  const heartOpacity = useSharedValue(0);
+
+  const handleDoubleTap = () => {
+    if (!saved) {
+      onToggleSave();
+    }
+  };
+
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onStart(() => {
+      runOnJS(handleDoubleTap)();
+      
+      heartScale.value = 0;
+      heartOpacity.value = 1;
+      
+      heartScale.value = withSequence(
+        withSpring(1, { damping: 12, stiffness: 200 }),
+        withDelay(300, withSpring(0, { damping: 15, stiffness: 100 }))
+      );
+      
+      heartOpacity.value = withSequence(
+        withTiming(1, { duration: 100 }),
+        withDelay(400, withTiming(0, { duration: 300 }))
+      );
+    });
+
+  const animatedHeartStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: heartScale.value }],
+    opacity: heartOpacity.value,
+  }));
+
+  return (
+    <GestureDetector gesture={doubleTap}>
+      <View style={{ height, width: '100%' }}>
+        {item.background.image != null ? (
+        <Image
+          source={item.background.image}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          transition={250}
+        />
+      ) : (
+        <LinearGradient colors={item.background.colors} style={StyleSheet.absoluteFill} />
+      )}
+      <LinearGradient
+        colors={['rgba(7,7,11,0.5)', 'rgba(7,7,11,0.05)', 'rgba(7,7,11,0.9)']}
+        locations={[0, 0.42, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <View style={[styles.content, { paddingBottom: insets.bottom + 132 }]}>
+        <View style={[styles.categoryChip, { backgroundColor: `${accent}29`, borderColor: `${accent}77` }]}>
+          <Text style={[styles.categoryText, { color: accent }]}>{item.category.toUpperCase()}</Text>
+        </View>
+
+        <Text style={[styles.line, longLine && styles.lineSmall]}>“{item.text}”</Text>
+
+        <View style={styles.contextRow}>
+          <Ionicons name="chatbubble-ellipses-outline" size={13} color={palette.textSecondary} />
+          <Text style={styles.contextText}>{item.context}</Text>
+        </View>
+
+        <View style={styles.metaRow}>
+          <View style={styles.statChip}>
+            <View style={styles.statDot} />
+            <Text style={styles.statText}>{item.successRate}% reply rate</Text>
+          </View>
+          <View style={styles.testerRow}>
+            {item.testedBy.avatar != null && (
+              <Image source={item.testedBy.avatar} style={styles.avatar} contentFit="cover" />
+            )}
+            <Text style={styles.testerText}>
+              {item.testedBy.age === 0
+                ? `✨ Fresh today · ${item.testedBy.name}`
+                : `Field-tested by ${item.testedBy.name}, ${item.testedBy.age}`}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <ActionRail
+        saved={saved}
+        onCopy={onCopy}
+        onToggleSave={onToggleSave}
+        onShare={onShare}
+        style={{ bottom: insets.bottom + 148 }}
+      />
+
+        <Animated.View style={[styles.heartOverlay, animatedHeartStyle]} pointerEvents="none">
+          <Ionicons name="heart" size={140} color={palette.pink} />
+        </Animated.View>
+      </View>
+    </GestureDetector>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingLeft: spacing.xl,
+    paddingRight: 92,
+    gap: spacing.md,
+  },
+  categoryChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radii.full,
+    borderWidth: 1,
+  },
+  categoryText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+  },
+  line: {
+    fontSize: 30,
+    lineHeight: 37,
+    fontWeight: '800',
+    letterSpacing: -0.7,
+    color: palette.textPrimary,
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowRadius: 12,
+    textShadowOffset: { width: 0, height: 2 },
+  },
+  lineSmall: {
+    fontSize: 24,
+    lineHeight: 31,
+  },
+  contextRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  contextText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: palette.textSecondary,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    marginTop: spacing.xs,
+  },
+  statChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+    borderRadius: radii.full,
+    backgroundColor: 'rgba(10,10,18,0.6)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: `${palette.mint}55`,
+  },
+  statDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: palette.mint,
+  },
+  statText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: palette.mint,
+  },
+  testerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  avatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  testerText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: palette.textSecondary,
+  },
+  heartOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 99,
+  },
+});

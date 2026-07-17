@@ -1,0 +1,27 @@
+{
+  "cli": {
+    "version": ">= 19.1.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "preview",
+      "environment": "preview"
+    },
+    "production": {
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "channel": "production",
+      "environment": "production"
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

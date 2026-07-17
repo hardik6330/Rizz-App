@@ -1,0 +1,110 @@
+{
+  "expo": {
+    "name": "RizzCoach",
+    "slug": "rizzcoach",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/generated/icon.png",
+    "scheme": "rizzcoach",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0A0A12",
+    "ios": {
+      "bundleIdentifier": "com.rizzcoach.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSSupportsLiveActivities": false,
+        "NSSupportsLiveActivitiesFrequentUpdates": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.rizzcoach.app.expowidgets"
+        ],
+        "aps-environment": "production"
+      }
+    },
+    "android": {
+      "package": "com.rizzcoach.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A12",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0A0A12",
+          "image": "./assets/generated/icon.png",
+          "imageWidth": 120
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "RizzCoach reads the chat screenshots you pick so it can craft replies. Nothing is uploaded without your say-so."
+        }
+      ],
+      [
+        "@bittingz/expo-widgets",
+        {
+          "ios": {
+            "src": "widgets/ios",
+            "devTeamId": "REPLACE_WITH_APPLE_TEAM_ID",
+            "mode": "production",
+            "moduleDependencies": [],
+            "useLiveActivities": false,
+            "frequentUpdates": false
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "RizzCoachWidgetExtension",
+                  "bundleIdentifier": "com.rizzcoach.app.RizzCoachWidgetExtension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.rizzcoach.app.expowidgets"
+                    ],
+                    "aps-environment": "production"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "c3201809-99fb-4e32-afcf-f9093b8749cb"
+      }
+    },
+    "owner": "hugging001fceeeee",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c3201809-99fb-4e32-afcf-f9093b8749cb"
+    }
+  }
+}
