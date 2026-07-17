@@ -77,12 +77,17 @@ export function setEnabled(enabled: boolean): boolean {
 }
 
 /**
- * Take the capture the bubble produced, clearing it. Call on app resume.
+ * JS-side holder for a capture that has been pulled off the native store but not
+ * yet handed to a screen.
  *
- * Pull rather than push: the service runs when the React context may not exist,
- * so there is often nothing to push an event to.
+ * The native read is destructive (it clears CaptureStore), and the root layout
+ * has to ask "is one waiting?" BEFORE the Profile Scan tab exists — the app lands
+ * on the Lab tab, so without this the root's peek would consume the capture and
+ * the screen that actually renders it would find nothing.
  */
-export function consumePendingCapture(): ProfileCapture | null {
+let cached: ProfileCapture | null = null;
+
+function readNative(): ProfileCapture | null {
   const capture = native?.consumePendingCapture();
   if (!capture) return null;
   return {
@@ -92,6 +97,24 @@ export function consumePendingCapture(): ProfileCapture | null {
     confidence: capture.confidence,
     mode: 'them',
   };
+}
+
+/** Is a capture waiting? Non-destructive — safe to call from the root layout. */
+export function hasPendingCapture(): boolean {
+  if (!cached) cached = readNative();
+  return cached != null;
+}
+
+/**
+ * Take the capture the bubble produced, clearing it. Call on mount and on resume.
+ *
+ * Pull rather than push: the service runs when the React context may not exist,
+ * so there is often nothing to push an event to.
+ */
+export function consumePendingCapture(): ProfileCapture | null {
+  const capture = cached ?? readNative();
+  cached = null;
+  return capture;
 }
 
 export function clearPendingCapture(): void {

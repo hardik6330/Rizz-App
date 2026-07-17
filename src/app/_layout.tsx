@@ -1,8 +1,10 @@
-import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, Stack, ThemeProvider, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { hasPendingCapture, isSupported } from '@/../modules/profile-capture';
 import { initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
 import { palette } from '@/theme/tokens';
@@ -28,6 +30,26 @@ export default function RootLayout() {
     // Fire-and-forget boot work: RevenueCat + push today's opener to the widget.
     void initPurchases();
     syncDailyOpenerToWidget();
+  }, []);
+
+  /**
+   * The analyze bubble launches us with a capture waiting, but the app lands on
+   * the Lab tab — and the capture is consumed by the Profile Scan tab, which is
+   * not mounted. Without this the screenshot is taken, the app opens, and nothing
+   * ever renders it.
+   *
+   * Routing here rather than in the tab: only the root is guaranteed to be mounted
+   * on a cold start. The peek is non-destructive, so Profile Scan still gets the
+   * capture once it mounts.
+   */
+  useEffect(() => {
+    if (!isSupported) return;
+    const route = () => {
+      if (hasPendingCapture()) router.navigate('/profile');
+    };
+    route();
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && route());
+    return () => sub.remove();
   }, []);
 
   return (
