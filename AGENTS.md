@@ -90,6 +90,18 @@ the sentinel for the "✨ Fresh today" tag (no fake tester invented).
 
 ## Shipping (EAS)
 
+```bash
+eas build -p android --profile preview                       # APK; needed before ANY update lands
+eas update --branch preview --environment preview -m "…"     # JS-only OTA
+```
+
+**`--environment` is required on `eas update`** (in `--non-interactive` it errors without it).
+It selects which EAS environment's variables get baked into the bundle — the same `preview`
+environment that holds the Gemini key. Omit it and you are not shipping the key.
+
+**An update only reaches builds whose runtimeVersion matches it.** Publishing succeeds
+regardless — to zero devices if nothing matching is installed. Build first, then update.
+
 **Build keys come from the EAS environment, not `.env`.** `.env` is gitignored so it never
 reaches EAS. A build profile only loads them if it declares `"environment"` — `preview` and
 `production` do. Drop that field and the build still succeeds, with no Gemini key baked in:
