@@ -846,12 +846,18 @@ const styles = StyleSheet.create({
   },
   tabPill: {
     flex: 1,
+    // A flex child's default minWidth lets its content force the pill wider than
+    // its share of the row. 0 lets it actually shrink.
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
     paddingVertical: 10,
+    paddingHorizontal: 6,
     borderRadius: radii.full,
+    // Belt and braces: nothing escapes the pill even if a label is long.
+    overflow: 'hidden',
     backgroundColor: palette.surface,
     borderWidth: 1,
     borderColor: palette.hairline,
@@ -864,6 +870,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   tabLabel: {
+    // React Native defaults flexShrink to 0 (unlike the web), so without this the
+    // label refuses to shrink and spills outside the pill — numberOfLines cannot
+    // ellipsize text that was never given a bounded width.
+    flexShrink: 1,
     fontSize: 11.5,
     fontWeight: '700',
     color: palette.textSecondary,
