@@ -387,7 +387,13 @@ function ScanReport({
 
   const labels = PROFILE_LABELS[mode];
   const tint = mode === 'self' ? palette.cyan : palette.violet;
+  /** Short on the pill, full in the section heading — three long labels truncate. */
   const tabLabels: Record<TabKey, string> = {
+    quick: labels.tabs.quick,
+    photo: labels.tabs.photo,
+    comp: labels.tabs.comp,
+  };
+  const sectionTitles: Record<TabKey, string> = {
     quick: labels.quickWin,
     photo: labels.photo,
     comp: labels.competition,
@@ -507,12 +513,17 @@ function ScanReport({
       </View>
 
       <Animated.View key={tab} entering={FadeInDown.duration(240)} style={styles.section}>
-        <View style={styles.sectionHead}>
-          <Text style={styles.sectionEmoji}>
-            {TAB_KEYS.find((t) => t.key === tab)?.emoji}
-          </Text>
-          <Text style={styles.sectionTitle}>{tabLabels[tab]}</Text>
-        </View>
+        {/* The active pill already names the section; repeating it verbatim below
+            just cost a line of vertical space. Only show the fuller heading when it
+            actually says more than the pill does. */}
+        {sectionTitles[tab] !== tabLabels[tab] && (
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEmoji}>
+              {TAB_KEYS.find((t) => t.key === tab)?.emoji}
+            </Text>
+            <Text style={styles.sectionTitle}>{sectionTitles[tab]}</Text>
+          </View>
+        )}
         {tab === 'quick' ? (
           <Text style={styles.para}>{result.quickWin}</Text>
         ) : (

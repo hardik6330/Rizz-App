@@ -53,6 +53,8 @@ export const PROFILE_LABELS: Record<
     quickWin: string;
     photo: string;
     competition: string;
+    /** Short pill labels. The section titles above are too long for three tabs. */
+    tabs: { quick: string; photo: string; comp: string };
     fallbackName: string;
     disclaimer: string;
   }
@@ -71,6 +73,7 @@ export const PROFILE_LABELS: Record<
     quickWin: 'Quick wins',
     photo: 'Photo tune-up',
     competition: 'Competition',
+    tabs: { quick: 'Quick wins', photo: 'Photos', comp: 'Compete' },
     fallbackName: 'Your profile',
     disclaimer:
       "Remember that this analysis is just an educated guess. Human behavior is complex and unpredictable, and a profile alone can't guarantee someone's true intentions.",
@@ -89,6 +92,7 @@ export const PROFILE_LABELS: Record<
     quickWin: 'Your best opening move',
     photo: 'Photo read',
     competition: 'Things worth asking about',
+    tabs: { quick: 'Best move', photo: 'Photos', comp: 'Ask about' },
     fallbackName: 'Their profile',
     disclaimer:
       "This is an educated guess from a few screenshots, not a read on a real person's character or intentions. Treat it as conversation prep — they're a whole human, not a score.",
