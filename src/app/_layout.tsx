@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { hasPendingCapture, isSupported } from '@/../modules/profile-capture';
 import { initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
+import { useRizzStore } from '@/state/useRizzStore';
 import { palette } from '@/theme/tokens';
 
 export const unstable_settings = {
@@ -51,6 +52,23 @@ export default function RootLayout() {
     const sub = AppState.addEventListener('change', (s) => s === 'active' && route());
     return () => sub.remove();
   }, []);
+
+  /**
+   * First launch: walk the user through enabling the analyzer. The feature is
+   * invisible until accessibility is granted, and accessibility has no permission
+   * prompt — it can only be reached by hand in Settings — so without this the
+   * headline feature is undiscoverable.
+   *
+   * Shown once. `hasOnboarded` is set on dismissal whether or not they granted
+   * anything: nagging every launch is worse than letting them find it in Profile
+   * Scan, which is why the entry point lives there permanently.
+   */
+  const hasOnboarded = useRizzStore((s) => s.hasOnboarded);
+  useEffect(() => {
+    if (!isSupported || hasOnboarded) return;
+    const t = setTimeout(() => router.push('/analyzer'), 400);
+    return () => clearTimeout(t);
+  }, [hasOnboarded]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

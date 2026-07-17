@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -15,7 +15,7 @@ import { ProUpsellCard } from '@/components/ProUpsellCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { StagedLoader } from '@/components/StagedLoader';
 import { useToast } from '@/components/Toast';
-import { consumePendingCapture, isSupported } from '@/../modules/profile-capture';
+import { consumePendingCapture, isSupported, isWatching } from '@/../modules/profile-capture';
 import { BG } from '@/data/assets';
 import { PROFILE_LABELS, PROFILE_STAGES, analyzeProfile } from '@/services/profileEngine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
@@ -28,21 +28,22 @@ type Pick = { uri: string; base64: string; mimeType: string };
 
 const MAX_IMAGES = 3;
 
-/** Mode pills. 'self' stays first so the tab opens on the original behaviour. */
-const SCAN_MODES: { key: ScanMode; label: string; emoji: string; tint: string }[] = [
-  { key: 'self', label: 'My profile', emoji: '✨', tint: palette.cyan },
-  { key: 'them', label: 'Their profile', emoji: '🔍', tint: palette.violet },
-];
-
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
 
+  /**
+   * This tab is for auditing YOUR profile. 'them' is not user-selectable — it is
+   * set only when the analyze bubble hands us a capture, because reading someone
+   * else's profile is the bubble's job now. The engine still has both modes; only
+   * the manual picker is gone.
+   */
   const [mode, setMode] = useState<ScanMode>('self');
   const [phase, setPhase] = useState<Phase>('idle');
   const [images, setImages] = useState<Pick[]>([]);
   const [result, setResult] = useState<ProfileScanResult | null>(null);
   const [stage, setStage] = useState(0);
+  const [watching, setWatching] = useState(false);
   const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const labels = PROFILE_LABELS[mode];
@@ -167,10 +168,22 @@ export default function ProfileScreen() {
   }, [outOfCredits, scan]);
 
   useEffect(() => {
-    takePendingCapture();
-    const sub = AppState.addEventListener('change', (s) => s === 'active' && takePendingCapture());
+    const onActive = () => {
+      takePendingCapture();
+      // Permissions are toggled in Settings, outside our process — re-read on resume.
+      if (isSupported) setWatching(isWatching());
+    };
+    onActive();
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && onActive());
     return () => sub.remove();
   }, [takePendingCapture]);
+
+  // Reflect changes made on the analyzer screen without a full app resume.
+  useFocusEffect(
+    useCallback(() => {
+      if (isSupported) setWatching(isWatching());
+    }, []),
+  );
 
   const reset = () => {
     haptic.light();
@@ -179,15 +192,6 @@ export default function ProfileScreen() {
     setResult(null);
   };
 
-  /** Switching mode drops the picked images — they were framed for the old question. */
-  const changeMode = (next: ScanMode) => {
-    if (next === mode) return;
-    haptic.selection();
-    setMode(next);
-    setPhase('idle');
-    setImages([]);
-    setResult(null);
-  };
 
   const copyLine = async (text: string) => {
     await Clipboard.setStringAsync(text);
@@ -240,34 +244,6 @@ export default function ProfileScreen() {
           />
         ) : (
           <>
-            <View style={styles.modeRow}>
-              {SCAN_MODES.map((item) => {
-                const active = item.key === mode;
-                return (
-                  <HapticPressable
-                    key={item.key}
-                    feedback="none"
-                    accessibilityRole="tab"
-                    accessibilityLabel={`Scan ${item.label}`}
-                    accessibilityState={{ selected: active }}
-                    onPress={() => changeMode(item.key)}
-                    style={[
-                      styles.modePill,
-                      active && {
-                        backgroundColor: `${item.tint}24`,
-                        borderColor: `${item.tint}88`,
-                      },
-                    ]}
-                  >
-                    <Text style={styles.modeEmoji}>{item.emoji}</Text>
-                    <Text style={[styles.modeLabel, active && { color: palette.textPrimary }]}>
-                      {item.label}
-                    </Text>
-                  </HapticPressable>
-                );
-              })}
-            </View>
-
             <View style={styles.hero}>
               <Text style={styles.heroTitle}>{labels.heroTitle}</Text>
               <Text style={styles.heroSub}>{labels.heroSub}</Text>
@@ -331,22 +307,27 @@ export default function ProfileScreen() {
             )}
 
             {/* One-tap analyzer — Android only, hidden where the module is absent. */}
-            {isSupported && mode === 'them' && (
+            {isSupported && (
               <HapticPressable
                 onPress={() => {
                   haptic.light();
                   router.push('/analyzer');
                 }}
-                accessibilityLabel="Set up the one-tap analyzer"
+                accessibilityLabel="Analyzer settings"
                 style={styles.analyzerRow}
               >
-                <Ionicons name="sparkles" size={16} color={palette.violet} />
+                <Ionicons name={watching ? 'sparkles' : 'sparkles-outline'} size={16} color={palette.violet} />
                 <View style={styles.analyzerText}>
-                  <Text style={styles.analyzerTitle}>Skip the screenshot</Text>
+                  <Text style={styles.analyzerTitle}>
+                    {watching ? 'Analyzing their profiles' : 'Read their profiles'}
+                  </Text>
                   <Text style={styles.analyzerSub}>
-                    Get an ✨ Analyze button right inside Instagram, Tinder, Bumble & Hinge.
+                    {watching
+                      ? 'Open a profile in Instagram, Tinder, Bumble or Hinge and tap ✨.'
+                      : 'Turn on to get an ✨ button inside Instagram, Tinder, Bumble & Hinge.'}
                   </Text>
                 </View>
+                {!watching && <View style={styles.analyzerDot} />}
                 <Ionicons name="chevron-forward" size={15} color={palette.textTertiary} />
               </HapticPressable>
             )}
@@ -611,31 +592,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     gap: spacing.lg,
   },
-  modeRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  modePill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 11,
-    borderRadius: radii.full,
-    backgroundColor: palette.surface,
-    borderWidth: 1,
-    borderColor: palette.hairline,
-  },
-  modeEmoji: {
-    fontSize: 13,
-  },
-  modeLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: palette.textSecondary,
-  },
   hero: {
     gap: 6,
     marginTop: spacing.sm,
@@ -714,6 +670,12 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     borderWidth: 1,
     borderColor: `${palette.violet}44`,
+  },
+  analyzerDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: palette.violet,
   },
   analyzerText: {
     flex: 1,

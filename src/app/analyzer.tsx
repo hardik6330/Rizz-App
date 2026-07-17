@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleIconButton } from '@/components/CircleIconButton';
 import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
+import { useRizzStore } from '@/state/useRizzStore';
 import { isSupported, isEnabled, permissions, setEnabled } from '@/../modules/profile-capture';
 import { palette, radii, spacing } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
@@ -30,6 +31,18 @@ export default function AnalyzerScreen() {
   const [a11y, setA11y] = useState(false);
   const [overlay, setOverlay] = useState(false);
   const [on, setOn] = useState(false);
+
+  const hasOnboarded = useRizzStore((s) => s.hasOnboarded);
+  const setOnboarded = useRizzStore((s) => s.setOnboarded);
+  /** Read once on mount: the flag flips while this screen is open, and the copy
+   *  should not change under the user mid-setup. */
+  const [firstRun] = useState(() => !hasOnboarded);
+
+  // Mark on dismissal, not on completion — see the note in _layout.tsx.
+  const close = useCallback(() => {
+    setOnboarded();
+    router.back();
+  }, [setOnboarded]);
 
   const refresh = useCallback(() => {
     if (!isSupported) return;
@@ -67,7 +80,7 @@ export default function AnalyzerScreen() {
           The one-tap analyzer needs Android&apos;s accessibility APIs. On this device, use
           Profile Scan and pick a screenshot instead.
         </Text>
-        <HapticPressable onPress={() => router.back()} style={styles.cta}>
+        <HapticPressable onPress={close} style={styles.cta}>
           <Text style={styles.ctaText}>Back</Text>
         </HapticPressable>
       </View>
@@ -83,16 +96,25 @@ export default function AnalyzerScreen() {
         <View style={styles.header}>
           <View style={styles.wordmark}>
             <Ionicons name="sparkles" size={20} color={palette.violet} />
-            <Text style={styles.wordmarkText}>One-tap analyzer</Text>
+            <Text style={styles.wordmarkText}>
+              {firstRun ? 'Welcome to RizzCoach' : 'One-tap analyzer'}
+            </Text>
           </View>
-          <CircleIconButton icon="close" size={38} onPress={() => router.back()} accessibilityLabel="Close" />
+          <CircleIconButton
+            icon="close"
+            size={38}
+            onPress={close}
+            accessibilityLabel={firstRun ? 'Skip for now' : 'Close'}
+          />
         </View>
 
         <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.hero}>
-          <Text style={styles.title}>Analyze a profile{'\n'}without leaving the app.</Text>
+          <Text style={styles.title}>
+            {firstRun ? 'Two steps and\nyou never screenshot again.' : 'Analyze a profile\nwithout leaving the app.'}
+          </Text>
           <Text style={styles.body}>
-            Open a profile in Instagram, Tinder, Bumble, Hinge or Facebook and RizzCoach offers
-            an ✨ Analyze button. Tap it and you get the full report.
+            Open a profile in Instagram, Tinder, Bumble, Hinge or Facebook and RizzCoach shows an
+            ✨ button. Tap it and the report opens here — no screenshots, no picking files.
           </Text>
         </Animated.View>
 
@@ -146,6 +168,14 @@ export default function AnalyzerScreen() {
         <Text style={styles.footnote}>
           You can turn this off any time here, or remove the permission in Android Settings.
         </Text>
+
+        {firstRun && (
+          <HapticPressable onPress={close} accessibilityLabel="Skip for now" style={styles.skip}>
+            <Text style={styles.skipText}>
+              {ready ? 'Done' : 'Skip for now — set it up later in Profile Scan'}
+            </Text>
+          </HapticPressable>
+        )}
       </ScrollView>
       {toast.element}
     </View>
@@ -269,6 +299,8 @@ const styles = StyleSheet.create({
   switchTitle: { fontSize: 15, fontWeight: '800', color: palette.textPrimary },
   switchSub: { fontSize: 12.5, color: palette.textSecondary },
   footnote: { fontSize: 12, lineHeight: 17, color: palette.textTertiary, textAlign: 'center' },
+  skip: { alignItems: 'center', paddingVertical: spacing.md },
+  skipText: { fontSize: 13, fontWeight: '700', color: palette.textSecondary },
   cta: {
     flexDirection: 'row',
     alignItems: 'center',

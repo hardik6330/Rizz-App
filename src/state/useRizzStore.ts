@@ -20,6 +20,12 @@ interface RizzState {
   dailyFeedDate: string | null;
   /** Thumbs up/down per report or result id. */
   feedback: Record<string, 'up' | 'down'>;
+  /**
+   * Has the user been walked through the analyzer setup? Set once the first-run
+   * screen is dismissed, whether or not they granted anything — nagging on every
+   * launch is worse than letting them find it later in Profile Scan.
+   */
+  hasOnboarded: boolean;
 
   toggleSave: (item: Omit<SavedItem, 'savedAt'>) => void;
   removeSaved: (id: string) => void;
@@ -29,6 +35,7 @@ interface RizzState {
   setPro: (isPro: boolean) => void;
   setDailyFeed: (items: FeedItem[], date: string) => void;
   setFeedback: (id: string, value: 'up' | 'down') => void;
+  setOnboarded: () => void;
 }
 
 export const useRizzStore = create<RizzState>()(
@@ -42,6 +49,7 @@ export const useRizzStore = create<RizzState>()(
       dailyFeed: [],
       dailyFeedDate: null,
       feedback: {},
+      hasOnboarded: false,
 
       toggleSave: (item) =>
         set((state) => {
@@ -70,6 +78,8 @@ export const useRizzStore = create<RizzState>()(
 
       setFeedback: (id, value) =>
         set((state) => ({ feedback: { ...state.feedback, [id]: value } })),
+
+      setOnboarded: () => set({ hasOnboarded: true }),
     }),
     {
       name: 'rizzcoach-store',
@@ -83,6 +93,8 @@ export const useRizzStore = create<RizzState>()(
         dailyFeed: state.dailyFeed,
         dailyFeedDate: state.dailyFeedDate,
         feedback: state.feedback,
+        // Must persist, or the first-run walkthrough reappears on every launch.
+        hasOnboarded: state.hasOnboarded,
       }),
     },
   ),
