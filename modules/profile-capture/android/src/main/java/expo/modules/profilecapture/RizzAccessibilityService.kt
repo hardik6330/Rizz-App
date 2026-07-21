@@ -37,6 +37,16 @@ class RizzAccessibilityService : AccessibilityService() {
   private var overlay: OverlayController? = null
   private var lastSignature: String? = null
   private var lastClassifiedAt = 0L
+
+  /**
+   * Guards against a second tap while a capture is in flight. MUST be @Volatile:
+   * it is set true on the main thread (onAnalyzeTapped) but reset false from the
+   * takeScreenshot callback, which the framework runs on a BINDER thread. Without
+   * the barrier the main thread never sees the reset, so `if (capturing) return`
+   * swallows every tap after the first capture until the watchdog resets it on the
+   * main thread ~6s later — the "the button dies until I wait" bug.
+   */
+  @Volatile
   private var capturing = false
 
   /** One background thread for the inline Gemini call — off the main thread. */
