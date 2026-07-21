@@ -12,6 +12,13 @@ Expo Router app. Screens in `src/app/(tabs)/`, AI in `src/services/`, persisted 
 **All Gemini traffic goes through `services/gemini.ts` (`callGemini`). Never hand-roll a
 fetch.** Model, auth, the thinking fix, error handling and JSON parsing live there once.
 
+**One documented exception:** `modules/profile-capture/.../GeminiChatClient.kt`. The chat
+bubble generates a reply inside the accessibility service, where the RN/JS context may not
+exist, so it re-implements the `callGemini` request shape in Kotlin (**`thinkingBudget: 0`
+included — same load-bearing fix**). If you change the request shape or model in `gemini.ts`,
+change it there too. This is the only place a Gemini fetch lives outside `callGemini`, and it
+exists only because JS cannot run at that moment — do not add a second one.
+
 Four engines sit on top of it: `engine.ts` (chat screenshot), `bioEngine.ts` (bio
 optimizer), `profileEngine.ts` (profile scan), `feedEngine.ts` (daily Discover
 lines). Each contributes only a system prompt, a `responseSchema` and mock seeds.

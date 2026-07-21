@@ -481,10 +481,28 @@ care about shipping.
 The seam is `ProfileCapture` + "native owns detection, JS owns rules".
 
 - **v1 — Profile analysis.** Capture layer produces `ProfileCapture`. `profileEngine` consumes it.
-- **v2 — Chat analysis.** Same capture layer, new `ScreenKind = 'chat'`, `engine.ts` already
-  exists and already reads chat screenshots. New: a `ChatCapture` type and a classifier signal.
-  **No refactor** — the capture layer already returns "which screen", v1 just ignores everything
-  that isn't `profile`.
+- **v2 — Chat analysis.** ✅ BUILT (Android). Same capture layer, new `ScreenKind.CHAT`
+  (`ScreenClassifier`: a chat/conversation view-id **plus** a compose field, so an inbox list
+  never fires). The bubble re-labels to "Suggest a reply". On tap the service reads the visible
+  thread, auto-scrolls up a few times for history, and copies the best reply to the clipboard —
+  the user just pastes and sends.
+
+  **Deliberate deviation from this section's original sketch (round-trip via `engine.ts`):** the
+  chosen product flow never leaves the host app, so JS is not in the loop at tap time. That
+  forces two things the profile path avoided:
+  1. **A native Gemini caller** (`GeminiChatClient.kt`) — a faithful copy of `gemini.ts`'s
+     request shape (**`thinkingBudget: 0` included, non-negotiable**). It reads chat *text*, not
+     a screenshot, so no `takeScreenshot` and no image leaves the device — only the transcript.
+  2. **Credits without JS present.** The freemium rule stays in TS; the service reads a
+     two-scalar snapshot (`isPro`, `freeRemaining`) that JS pushes via `configureChat` on every
+     resume, and JS drains the burned count via `consumeChatUsage` back into `analysisCount`.
+     This is explicitly NOT §4.7 option (a) (parsing Zustand's JSON) — it's a dedicated contract
+     JS overwrites whole, so nothing drifts. Failures never charge a credit.
+
+  The disclosure copy (`analyzer.tsx` + `strings.xml`) was updated first, since it is the
+  compliance surface and the behaviour changed. Everything in §0's verdict still applies — this
+  path leans *harder* on the accessibility API (it now also reads message content), so the Play
+  and ToS exposure is greater, not smaller.
 - **v3 — Live AI / typing.** This one *does* need architecture v1 doesn't have: an IME, or
   `FLAG_INPUT_METHOD_EDITOR` event handling, plus a persistent process and streaming. It is a
   different product with a different Play category. Do not pre-build for it in v1; a

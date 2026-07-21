@@ -34,6 +34,8 @@ declare class ProfileCaptureNativeModule extends NativeModule {
   openOverlaySettings(): void;
   consumePendingCapture(): NativeCapture | null;
   clearPendingCapture(): void;
+  configureChat(apiKey: string, isPro: boolean, freeRemaining: number): void;
+  consumeChatUsage(): number;
 }
 
 // Optional: absent on iOS/web/Expo Go, where every call below no-ops.
@@ -123,4 +125,32 @@ export function consumePendingCapture(): ProfileCapture | null {
 
 export function clearPendingCapture(): void {
   native?.clearPendingCapture();
+}
+
+// ---------------------------------------------------------------------------
+// Inline chat reply — entitlement + usage bridge
+//
+// The chat bubble generates a reply natively and copies it to the clipboard, so
+// unlike the profile flow there is no app launch where JS can apply the freemium
+// rule. Instead JS pushes a credit/key SNAPSHOT down (`configureChat`) and drains
+// the usage the native side accrued (`consumeChatUsage`). The rule itself stays in
+// JS — see `useOutOfCredits` and `state/limits.ts`. Both no-op off Android.
+// ---------------------------------------------------------------------------
+
+/**
+ * Push the current entitlement snapshot + Gemini key to the native service. Call on
+ * launch and every resume so the native cache can never go stale. `freeRemaining`
+ * is the JS-owned free-credit balance (large when Pro).
+ */
+export function configureChat(apiKey: string, isPro: boolean, freeRemaining: number): void {
+  native?.configureChat(apiKey, isPro, freeRemaining);
+}
+
+/**
+ * Free credits the inline chat path has burned since the last call, cleared on read.
+ * Fold the returned count into `analysisCount` so the shared lifetime limit stays
+ * accurate. Returns 0 off Android or when nothing was used.
+ */
+export function consumeChatUsage(): number {
+  return native?.consumeChatUsage() ?? 0;
 }

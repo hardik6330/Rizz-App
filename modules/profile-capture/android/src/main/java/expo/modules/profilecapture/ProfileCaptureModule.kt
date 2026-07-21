@@ -89,6 +89,27 @@ class ProfileCaptureModule : Module() {
     }
 
     Function("clearPendingCapture") { CaptureStore.clear() }
+
+    // --- Chat reply (inline) -------------------------------------------------
+    // The chat bubble generates a reply natively and copies it to the clipboard,
+    // so JS is not in the loop at tap time. These two functions are the whole
+    // contract: JS pushes a credit/key snapshot down, and drains the usage the
+    // native side accrued. The freemium RULE stays in JS — see ChatEntitlement.
+
+    /**
+     * Push the current entitlement snapshot + Gemini key to the service. Call on
+     * launch and on every resume so the native cache never goes stale.
+     */
+    Function("configureChat") { apiKey: String, isPro: Boolean, freeRemaining: Int ->
+      ChatEntitlement.configure(context, apiKey, isPro, freeRemaining)
+    }
+
+    /**
+     * Number of free credits the inline chat path burned since the last call, then
+     * reset. JS folds this into `analysisCount` so the shared lifetime limit stays
+     * correct across all tools.
+     */
+    Function("consumeChatUsage") { ChatEntitlement.consumePending(context) }
   }
 
   private fun isAccessibilityEnabled(ctx: Context): Boolean {

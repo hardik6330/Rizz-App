@@ -20,8 +20,12 @@ import org.junit.Test
  */
 class ScreenClassifierTest {
 
-  private fun signals(pkg: String, ids: List<String> = emptyList(), texts: List<String> = emptyList()) =
-    ScreenSignals(packageName = pkg, viewIds = ids, texts = texts)
+  private fun signals(
+    pkg: String,
+    ids: List<String> = emptyList(),
+    texts: List<String> = emptyList(),
+    hasEditable: Boolean = false,
+  ) = ScreenSignals(packageName = pkg, viewIds = ids, texts = texts, hasEditable = hasEditable)
 
   // --- Scoping --------------------------------------------------------------
 
@@ -146,6 +150,79 @@ class ScreenClassifierTest {
     )
     assertTrue(r.isProfile)
     assertFalse("Follow/Message means it is someone else's", r.isOwnProfile)
+  }
+
+  // --- Chat detection -------------------------------------------------------
+  // A chat must NEVER read as a profile (the veto still holds), and only an OPEN
+  // conversation — a chat surface AND a compose field — offers a reply.
+
+  @Test
+  fun `an open instagram dm with a composer is a chat, never a profile`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("direct_thread_recycler", "message_composer_edit_text"),
+        texts = listOf("message…", "active now"),
+        hasEditable = true,
+      )
+    )
+    assertFalse("a chat is never a profile", r.isProfile)
+    assertEquals(ScreenKind.CHAT, r.kind)
+  }
+
+  @Test
+  fun `an open tinder chat with a composer is a chat`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.TINDER,
+        ids = listOf("chat_message_list", "chat_input"),
+        texts = listOf("type a message"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.CHAT, r.kind)
+    assertFalse(r.isProfile)
+  }
+
+  @Test
+  fun `an inbox list without a composer is not a chat`() {
+    // The matches/inbox screen carries chat ids but no open thread to reply in —
+    // firing here would put the bubble over a list of previews.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("direct_thread_list", "messages_inbox"),
+        texts = listOf("messages"),
+        hasEditable = false,
+      )
+    )
+    assertEquals(ScreenKind.NONE, r.kind)
+  }
+
+  @Test
+  fun `plain facebook messenger is out of scope for chat`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.FACEBOOK,
+        ids = listOf("thread_composer"),
+        texts = listOf("message"),
+        hasEditable = true,
+      )
+    )
+    assertEquals("only Dating is in scope — not plain Messenger", ScreenKind.NONE, r.kind)
+  }
+
+  @Test
+  fun `a profile is never mistaken for a chat`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("row_profile_header_container", "profile_header_username", "highlights_tray"),
+        texts = listOf("142", "1.2k", "384", "posts", "followers", "following", "follow", "message"),
+      )
+    )
+    assertEquals(ScreenKind.PROFILE, r.kind)
+    assertTrue(r.isProfile)
   }
 
   // --- Threshold ------------------------------------------------------------

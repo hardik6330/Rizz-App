@@ -4,7 +4,13 @@ import { useEffect } from 'react';
 import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { hasPendingCapture, isSupported } from '@/../modules/profile-capture';
+import {
+  configureChat,
+  consumeChatUsage,
+  hasPendingCapture,
+  isSupported,
+} from '@/../modules/profile-capture';
+import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
 import { useRizzStore } from '@/state/useRizzStore';
@@ -50,6 +56,32 @@ export default function RootLayout() {
     };
     route();
     const sub = AppState.addEventListener('change', (s) => s === 'active' && route());
+    return () => sub.remove();
+  }, []);
+
+  /**
+   * Keep the native chat bubble's entitlement snapshot in sync with JS.
+   *
+   * The inline chat reply is generated natively and never launches the app, so —
+   * unlike the profile flow — there is no mount where JS can apply the freemium
+   * rule. So we push the rule's INPUTS down (isPro + free credits left + the Gemini
+   * key) on launch and every resume, and drain the credits the native side burned
+   * back into `analysisCount`. Reconcile BEFORE computing the snapshot so the
+   * balance we push already reflects the just-consumed usage. See
+   * modules/profile-capture ChatEntitlement.
+   */
+  useEffect(() => {
+    if (!isSupported) return;
+    const sync = () => {
+      const consumed = consumeChatUsage();
+      const store = useRizzStore.getState();
+      for (let i = 0; i < consumed; i++) store.incrementAnalysis();
+      const { isPro, analysisCount } = useRizzStore.getState();
+      const remaining = isPro ? 9999 : Math.max(0, FREE_ANALYSIS_LIMIT - analysisCount);
+      configureChat(process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? '', isPro, remaining);
+    };
+    sync();
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && sync());
     return () => sub.remove();
   }, []);
 

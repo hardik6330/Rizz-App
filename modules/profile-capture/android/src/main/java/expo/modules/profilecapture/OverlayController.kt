@@ -48,13 +48,15 @@ class OverlayController(private val context: Context) {
   ).toInt()
 
   @SuppressLint("ClickableViewAccessibility")
-  fun show(onTap: () -> Unit) {
+  fun show(label: String, onTap: () -> Unit) {
     if (bubble != null) return
 
     // Icon only. The label is carried by contentDescription rather than visible
     // text: this sits on top of someone else's app, so it should read as a control,
     // not a banner. 56dp keeps it a comfortable target with no text to size around.
-    val label = TextView(context).apply {
+    // The caller passes the label so the same bubble can announce "analyze this
+    // profile" or "suggest a reply" depending on the screen underneath.
+    val bubbleView = TextView(context).apply {
       text = "✨"
       setTextColor(Color.WHITE)
       textSize = 22f
@@ -62,7 +64,7 @@ class OverlayController(private val context: Context) {
       width = dp(56f)
       height = dp(56f)
       // TalkBack still announces the full action even though nothing is drawn.
-      contentDescription = context.getString(R.string.rizz_bubble_label)
+      contentDescription = label
       background = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         // palette.violet, opaque so it stays legible on a white host app.
@@ -97,12 +99,12 @@ class OverlayController(private val context: Context) {
       y = (context.resources.displayMetrics.heightPixels * 0.45).toInt()
     }
 
-    label.setOnTouchListener(DragTapListener(lp, onTap))
+    bubbleView.setOnTouchListener(DragTapListener(lp, onTap))
 
     try {
-      windowManager.addView(label, lp)
-      label.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start()
-      bubble = label
+      windowManager.addView(bubbleView, lp)
+      bubbleView.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start()
+      bubble = bubbleView
       params = lp
     } catch (e: Exception) {
       // Overlay permission revoked mid-session, or an OEM refusing the window.

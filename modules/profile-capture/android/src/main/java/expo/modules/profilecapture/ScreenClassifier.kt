@@ -21,6 +21,19 @@ package expo.modules.profilecapture
  * can be unit-tested without an emulator (see ScreenClassifierTest).
  */
 
+/**
+ * What the user is looking at. The MVP only needs the coarse kind — the bubble's
+ * action, not a taxonomy, hangs off this.
+ *
+ * - PROFILE — a dating/social profile → screenshot → report ('self'/'them').
+ * - CHAT — an open conversation with a compose field → read the thread → suggest a
+ *   reply and copy it to the clipboard. This is the "v2" the CaptureStore seam was
+ *   built for; see docs/profile-analyzer-blueprint.md §8.
+ * - NONE — anything else. Bias hard toward NONE: a bubble over the wrong screen is
+ *   a privacy incident even though nothing is captured without a tap.
+ */
+enum class ScreenKind { NONE, PROFILE, CHAT }
+
 /** Flattened, app-agnostic view of the accessibility tree. */
 data class ScreenSignals(
   val packageName: String,
@@ -28,6 +41,13 @@ data class ScreenSignals(
   val viewIds: List<String> = emptyList(),
   /** Lowercased text + contentDescription values present on screen. */
   val texts: List<String> = emptyList(),
+  /**
+   * An editable field (message composer) is present. The single strongest tell that
+   * a screen is an open chat rather than a profile — a profile never carries one,
+   * and it stands in for "the keyboard is a tap away", which is when a reply is
+   * actually useful.
+   */
+  val hasEditable: Boolean = false,
 )
 
 data class Classification(
@@ -42,16 +62,25 @@ data class Classification(
    * can message", which is technically correct and useless.
    */
   val isOwnProfile: Boolean = false,
+  /** Coarse screen kind that selects the bubble's action. */
+  val kind: ScreenKind = ScreenKind.NONE,
 ) {
   companion object {
-    val NOT_PROFILE = Classification(false, 0.0)
+    val NOT_PROFILE = Classification(false, 0.0, kind = ScreenKind.NONE)
   }
 }
 
 object ScreenClassifier {
 
-  /** Fire the bubble at or above this score. High on purpose. */
+  /** Fire the profile bubble at or above this score. High on purpose. */
   const val THRESHOLD = 0.75
+
+  /**
+   * Fire the chat bubble at or above this score. A chat id alone (0.5) is not
+   * enough — it takes the compose field too, so a matches list or a conversation
+   * preview in an inbox never trips it. Only a screen you can actually reply on.
+   */
+  const val CHAT_THRESHOLD = 0.75
 
   const val INSTAGRAM = "com.instagram.android"
   const val TINDER = "com.tinder"
@@ -74,9 +103,27 @@ object ScreenClassifier {
    */
   private val OWN_PROFILE_MARKERS = listOf("edit profile", "share profile", "edit_profile")
 
+  /**
+   * View-id fragments that name a conversation surface across the supported apps.
+   * These are the same fragments the profile scorers veto on — here they are the
+   * positive signal instead. Unversioned private ids; expect drift, see §4.2.
+   */
+  private val CHAT_ID_MARKERS = arrayOf(
+    "chat", "conversation", "direct_thread", "thread", "message_composer", "messages", "messenger",
+  )
+
+  /** Composer placeholder text, a soft confirm on top of the id + editable field. */
+  private val CHAT_TEXT_HINTS = listOf("message", "type a message", "send a message")
+
   fun classify(s: ScreenSignals): Classification {
     if (s.packageName !in SUPPORTED) return Classification.NOT_PROFILE
-    val score = when (s.packageName) {
+
+    // Chat is checked first and wins ties. The profile scorers already veto on chat
+    // ids (a DM must never read as a profile), so a real chat scores ~0 there anyway
+    // — but resolving to CHAT explicitly is what turns those vetoed screens from
+    // "nothing" into "offer a reply", without ever letting one read as a profile.
+    val chat = chatScore(s).coerceIn(0.0, 1.0)
+    val profile = when (s.packageName) {
       INSTAGRAM -> instagram(s)
       TINDER -> tinder(s)
       BUMBLE -> bumble(s)
@@ -85,10 +132,40 @@ object ScreenClassifier {
       else -> 0.0
     }.coerceIn(0.0, 1.0)
 
+    if (chat >= CHAT_THRESHOLD && chat >= profile) {
+      return Classification(false, chat, kind = ScreenKind.CHAT)
+    }
+
     val own = s.texts.any { t -> OWN_PROFILE_MARKERS.any { t == it } } ||
       s.viewIds.any { id -> OWN_PROFILE_MARKERS.any { id.contains(it) } }
+    val isProfile = profile >= THRESHOLD
+    return Classification(
+      isProfile,
+      profile,
+      isOwnProfile = own,
+      kind = if (isProfile) ScreenKind.PROFILE else ScreenKind.NONE,
+    )
+  }
 
-    return Classification(score >= THRESHOLD, score, isOwnProfile = own)
+  /**
+   * "Is this an open conversation I could reply in?" — app-agnostic on purpose.
+   *
+   * A chat id names the surface; the compose field confirms it is the open thread
+   * and not an inbox list of previews. Both are needed to clear CHAT_THRESHOLD, so
+   * a matches/inbox screen (id present, no composer) stays silent. Facebook is
+   * gated to Dating only, exactly like the profile path — plain Messenger is out
+   * of scope.
+   */
+  private fun chatScore(s: ScreenSignals): Double {
+    if (s.packageName == FACEBOOK && !s.viewIds.hasId("dating") && !s.texts.hasText("dating")) {
+      return 0.0
+    }
+    var score = 0.0
+    if (s.viewIds.hasId(*CHAT_ID_MARKERS)) score += 0.50
+    // Stands in for "the keyboard is right here" — the moment a reply is useful.
+    if (s.hasEditable) score += 0.35
+    if (s.texts.any { t -> CHAT_TEXT_HINTS.any { t.startsWith(it) || t.contains(it) } }) score += 0.15
+    return score
   }
 
   private fun List<String>.hasId(vararg fragments: String) =

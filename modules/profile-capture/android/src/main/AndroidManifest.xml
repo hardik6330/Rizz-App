@@ -1,7 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-  <!-- The floating "Analyze profile" bubble drawn over the supported apps. -->
+  <!-- The floating "Analyze" bubble drawn over the supported apps. -->
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+  <!--
+    The chat bubble calls Gemini directly from the service (the reply is generated
+    natively and copied to the clipboard without leaving the host app), so the
+    service needs network access. The main app already declares INTERNET; this
+    restates it for the module that actually uses it.
+  -->
+  <uses-permission android:name="android.permission.INTERNET" />
 
   <application>
     <!--

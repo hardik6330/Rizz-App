@@ -69,7 +69,7 @@ export default function AnalyzerScreen() {
     }
     haptic.medium();
     setOn(setEnabled(next));
-    toast.show(next ? 'Watching for profiles' : 'Turned off — nothing is read');
+    toast.show(next ? 'Watching for profiles & chats' : 'Turned off — nothing is read');
   };
 
   if (!isSupported) {
@@ -110,20 +110,21 @@ export default function AnalyzerScreen() {
 
         <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.hero}>
           <Text style={styles.title}>
-            {firstRun ? 'Two steps and\nyou never screenshot again.' : 'Analyze a profile\nwithout leaving the app.'}
+            {firstRun ? 'Two steps and\nyou never screenshot again.' : 'Profiles and chats,\nwithout leaving the app.'}
           </Text>
           <Text style={styles.body}>
-            Open a profile in Instagram, Tinder, Bumble, Hinge or Facebook and RizzCoach shows an
-            ✨ button. Tap it and the report opens here — no screenshots, no picking files.
+            Open a profile or a chat in Instagram, Tinder, Bumble, Hinge or Facebook and RizzCoach
+            shows an ✨ button. On a profile, the report opens here. In a chat, it reads the thread,
+            writes your best reply and copies it — just paste and send.
           </Text>
         </Animated.View>
 
         {/* Prominent disclosure — this is the compliance surface. Do not soften. */}
         <View style={styles.disclosure}>
           <Text style={styles.disclosureTitle}>What this reads, and when</Text>
-          <Bullet icon="eye-outline" text="RizzCoach reads the screen of those five apps only, to recognise when you're on a profile. It reads nothing in any other app." />
-          <Bullet icon="hand-left-outline" text="It captures the screen only when you tap ✨ Analyze. Nothing is captured in the background, ever." />
-          <Bullet icon="cloud-upload-outline" text="That one screenshot is sent to Google Gemini to write the report, then discarded. It is never saved to your device and never posted anywhere." />
+          <Bullet icon="eye-outline" text="RizzCoach reads the screen of those five apps only, to recognise when you're on a profile or an open chat. It reads nothing in any other app." />
+          <Bullet icon="hand-left-outline" text="It only acts when you tap ✨ — a screenshot on a profile, or the visible chat text in a conversation. Nothing is read in the background, ever." />
+          <Bullet icon="cloud-upload-outline" text="That screenshot or chat text is sent to Google Gemini to write the report or the reply, then discarded. It is never saved to your device and never posted anywhere." />
           <Bullet icon="power-outline" text="The switch below turns it off instantly. Turning it off stops all screen reading." />
         </View>
 
@@ -150,7 +151,7 @@ export default function AnalyzerScreen() {
 
         <View style={[styles.switchRow, !ready && styles.dim]}>
           <View style={styles.switchText}>
-            <Text style={styles.switchTitle}>Watch for profiles</Text>
+            <Text style={styles.switchTitle}>Watch for profiles & chats</Text>
             <Text style={styles.switchSub}>
               {ready ? (on ? 'On — the ✨ button will appear' : 'Off — nothing is read') : 'Finish both steps above'}
             </Text>
