@@ -52,7 +52,9 @@ class ProfileCaptureModule : Module() {
      * mean "watching my screen" — the user turns the feature on here.
      */
     Function("setEnabled") { enabled: Boolean ->
-      RizzAccessibilityService.ENABLED = enabled
+      // Persisted so the switch survives the app process being killed — the service
+      // restores it in onServiceConnected. See RizzAccessibilityService.
+      RizzAccessibilityService.setEnabledPersisted(context, enabled)
       if (!enabled) CaptureStore.clear()
       enabled
     }

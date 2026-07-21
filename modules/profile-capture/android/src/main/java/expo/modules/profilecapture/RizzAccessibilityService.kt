@@ -55,8 +55,13 @@ class RizzAccessibilityService : AccessibilityService() {
   override fun onServiceConnected() {
     super.onServiceConnected()
     overlay = OverlayController(this)
+    // Restore the kill switch across process death. When the user swipes the app
+    // out of recents, this whole process (and the static ENABLED) dies; the system
+    // rebinds the service in a fresh process with no JS to turn it back on. Without
+    // this the bubble silently never returns until the app is opened again.
+    ENABLED = loadEnabled(this)
     RUNNING = true
-    Log.i(TAG, "service connected")
+    Log.i(TAG, "service connected (enabled=$ENABLED)")
   }
 
   override fun onDestroy() {
@@ -525,8 +530,29 @@ class RizzAccessibilityService : AccessibilityService() {
      * User-facing kill switch, flipped from JS. Enabling the service in Settings is
      * necessary but not sufficient — the user must also turn the feature on in the
      * app, so "enabled in Settings" never silently means "watching my screen".
+     *
+     * In-memory for fast reads on the event path; the durable copy lives in prefs
+     * (see [setEnabledPersisted]) so it survives the process being killed.
      */
     @Volatile
     var ENABLED = false
+      private set
+
+    private const val PREFS = "rizz_analyzer"
+    private const val KEY_ENABLED = "enabled"
+
+    /**
+     * Flip the kill switch AND persist it. Called from JS (`setEnabled`). Persisting
+     * is what lets [onServiceConnected] restore the switch after the app process is
+     * killed and the system rebinds the service with no JS running.
+     */
+    fun setEnabledPersisted(ctx: Context, enabled: Boolean) {
+      ENABLED = enabled
+      ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_ENABLED, enabled).apply()
+    }
+
+    private fun loadEnabled(ctx: Context): Boolean =
+      ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
   }
 }
