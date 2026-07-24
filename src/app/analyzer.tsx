@@ -113,9 +113,10 @@ export default function AnalyzerScreen() {
             {firstRun ? 'Two steps and\nyou never screenshot again.' : 'Profiles and chats,\nwithout leaving the app.'}
           </Text>
           <Text style={styles.body}>
-            Open a profile or a chat in Instagram, Tinder, Bumble, Hinge or Facebook and RizzCoach
-            shows an ✨ button. On a profile, the report opens here. In a chat, it reads the thread,
-            writes your best reply and copies it — just paste and send.
+            Open a profile or a chat in Instagram, Tinder, Bumble, Hinge or Facebook — or any chat
+            in WhatsApp, Snapchat or Telegram — and RizzCoach shows an ✨ button. On a profile, the
+            report opens here. In a chat, it reads the thread, writes your best reply and copies it
+            — just paste and send.
           </Text>
         </Animated.View>
 

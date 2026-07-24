@@ -331,8 +331,8 @@ export default function ProfileScreen() {
                   </Text>
                   <Text style={styles.analyzerSub}>
                     {watching
-                      ? 'Open a profile in Instagram, Tinder, Bumble or Hinge and tap ✨.'
-                      : 'Turn on to get an ✨ button inside Instagram, Tinder, Bumble & Hinge.'}
+                      ? 'Open a profile in Instagram, Tinder, Bumble or Hinge — or any chat in WhatsApp, Snapchat & Telegram — and tap ✨.'
+                      : 'Turn on to get an ✨ button in Instagram, Tinder, Bumble, Hinge, WhatsApp, Snapchat & Telegram.'}
                   </Text>
                 </View>
                 {!watching && <View style={styles.analyzerDot} />}

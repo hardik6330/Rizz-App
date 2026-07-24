@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="rizz_accessibility_label">RizzCoach Analyzer</string>
-  <string name="rizz_accessibility_summary">Shows an ✨ button on dating profiles and chats.</string>
+  <string name="rizz_accessibility_summary">Shows an ✨ button on dating profiles and in chats.</string>
   <!--
     This is what the user reads in Settings before enabling, and what Play review
     reads. Keep it truthful and specific: naming the apps, saying it acts only on an
     explicit tap, and that nothing is read or sent in the background. If the
     behaviour changes, this string changes first.
   -->
-  <string name="rizz_accessibility_description">Lets RizzCoach recognise when you are on a profile or an open chat in Instagram, Tinder, Bumble, Hinge or Facebook, so it can offer an ✨ button.\n\nOn a profile, tapping ✨ captures that one screen for a report. In a chat, tapping ✨ reads the visible conversation so it can suggest a reply and copy it to your clipboard.\n\nRizzCoach only reads the screen of those apps, and only when you tap ✨. Nothing is read or sent in the background, and screenshots are never saved to your device.</string>
+  <string name="rizz_accessibility_description">Lets RizzCoach recognise when you are on a profile or an open chat in Instagram, Tinder, Bumble, Hinge or Facebook, or an open chat in WhatsApp, Snapchat or Telegram, so it can offer an ✨ button.\n\nOn a profile, tapping ✨ captures that one screen for a report. In a chat, tapping ✨ reads the visible conversation so it can suggest a reply and copy it to your clipboard. In WhatsApp, Snapchat and Telegram only the chat reply is offered — no profile is captured there.\n\nRizzCoach only reads the screen of those apps, and only when you tap ✨. Nothing is read or sent in the background, and screenshots are never saved to your device.</string>
   <string name="rizz_bubble_label">Analyze this profile with RizzCoach</string>
   <string name="rizz_bubble_chat_label">Suggest a reply with RizzCoach</string>
 

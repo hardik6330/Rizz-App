@@ -101,7 +101,7 @@
     },
     "owner": "hugging001fceeeee",
     "runtimeVersion": {
-      "policy": "fingerprint"
+      "policy": "appVersion"
     },
     "updates": {
       "url": "https://u.expo.dev/c3201809-99fb-4e32-afcf-f9093b8749cb"

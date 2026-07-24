@@ -31,8 +31,10 @@ class ScreenClassifierTest {
 
   @Test
   fun `unsupported apps are never profiles`() {
-    // WhatsApp, banking apps, anything: we must not classify what we don't support.
-    val r = ScreenClassifier.classify(signals("com.whatsapp", listOf("profile_header")))
+    // A banking app, a browser, anything: we must not classify what we don't
+    // support. (WhatsApp used to be the example here — it is now a supported
+    // messenger, but chat-only; see `a messenger can never produce a profile`.)
+    val r = ScreenClassifier.classify(signals("com.chase.sig.android", listOf("profile_header")))
     assertFalse(r.isProfile)
     assertEquals(0.0, r.confidence, 0.0)
   }
@@ -210,6 +212,122 @@ class ScreenClassifierTest {
       )
     )
     assertEquals("only Dating is in scope — not plain Messenger", ScreenKind.NONE, r.kind)
+  }
+
+  // --- General messengers ---------------------------------------------------
+  // WhatsApp/Snapchat/Telegram have no profile to score, so they can only ever
+  // produce CHAT. Their inbox carries an editable search field, which is exactly
+  // why a composer alone is not enough there.
+
+  @Test
+  fun `an open whatsapp thread offers a reply`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.WHATSAPP,
+        ids = listOf("conversation_layout", "entry"),
+        texts = listOf("message"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.CHAT, r.kind)
+    assertFalse("a messenger has no profile to capture", r.isProfile)
+  }
+
+  @Test
+  fun `a whatsapp thread still offers a reply once the placeholder is gone`() {
+    // The placeholder disappears as soon as the user types; the thread id has to
+    // carry it, or the bubble would vanish mid-compose.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.WHATSAPP,
+        ids = listOf("conversation_contact_name", "entry"),
+        texts = listOf("hey what are you up to"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.CHAT, r.kind)
+  }
+
+  @Test
+  fun `the whatsapp inbox search field is not an open thread`() {
+    // The regression this design exists to prevent: the inbox is editable too.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.WHATSAPP,
+        ids = listOf("search_src_text", "contact_row_container"),
+        texts = listOf("search", "archived"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.NONE, r.kind)
+  }
+
+  @Test
+  fun `an inbox preview that merely starts with message is not a composer`() {
+    // "message" as a placeholder is short; as a row preview it is a sentence. The
+    // length bound is what separates them, since the inbox is editable too.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.WHATSAPP,
+        ids = listOf("search_src_text"),
+        texts = listOf("message me when you get there ok?"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.NONE, r.kind)
+  }
+
+  @Test
+  fun `a telegram thread is recognised by its composer placeholder`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.TELEGRAM,
+        ids = emptyList(), // canvas-drawn: no useful ids to lean on
+        texts = listOf("message"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.CHAT, r.kind)
+  }
+
+  @Test
+  fun `a snapchat chat is recognised by its send-a-chat placeholder`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.SNAPCHAT,
+        ids = emptyList(),
+        texts = listOf("send a chat"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.CHAT, r.kind)
+  }
+
+  @Test
+  fun `a messenger screen with no composer at all stays silent`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.TELEGRAM,
+        ids = listOf("chat_list"),
+        texts = listOf("message"),
+        hasEditable = false,
+      )
+    )
+    assertEquals(ScreenKind.NONE, r.kind)
+  }
+
+  @Test
+  fun `a messenger can never produce a profile capture`() {
+    // Profile-shaped chrome in a messenger must not open the screenshot path.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.WHATSAPP,
+        ids = listOf("profile_header", "row_profile_header"),
+        texts = listOf("142", "1.2k", "384", "posts", "followers", "following"),
+      )
+    )
+    assertFalse(r.isProfile)
+    assertEquals(ScreenKind.NONE, r.kind)
   }
 
   @Test

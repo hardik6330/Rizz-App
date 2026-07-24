@@ -88,7 +88,25 @@ object ScreenClassifier {
   const val HINGE = "co.hinge.app"
   const val FACEBOOK = "com.facebook.katana"
 
-  val SUPPORTED = setOf(INSTAGRAM, TINDER, BUMBLE, HINGE, FACEBOOK)
+  const val WHATSAPP = "com.whatsapp"
+  const val SNAPCHAT = "com.snapchat.android"
+  const val TELEGRAM = "org.telegram.messenger"
+
+  /** Apps with a profile surface worth scoring. Only these can produce PROFILE. */
+  val DATING = setOf(INSTAGRAM, TINDER, BUMBLE, HINGE, FACEBOOK)
+
+  /**
+   * Chat-only apps: general messengers with no dating profile to score, added so the
+   * reply bubble reaches the threads people actually use.
+   *
+   * They can ONLY ever resolve to CHAT — `classify` scores them 0.0 for profile, so
+   * there is no path to a screenshot capture here. That is deliberate and is what
+   * keeps the Play-review story the same as before: we read a conversation you
+   * explicitly tapped ✨ on, and nothing else.
+   */
+  val MESSENGERS = setOf(WHATSAPP, SNAPCHAT, TELEGRAM)
+
+  val SUPPORTED = DATING + MESSENGERS
 
   /** A count like "1,234" / "12.3K" / "1.2m" — the follower/post row. */
   private val COUNT = Regex("^\\d[\\d.,]*[kmKM]?$")
@@ -115,6 +133,37 @@ object ScreenClassifier {
   /** Composer placeholder text, a soft confirm on top of the id + editable field. */
   private val CHAT_TEXT_HINTS = listOf("message", "type a message", "send a message")
 
+  /**
+   * Composer placeholders in the general messengers. These carry the load there,
+   * because a messenger's inbox ALSO has an editable field (the search bar) — so
+   * "editable field present" alone would put the bubble over a list of previews.
+   * A composer says "message"/"send a chat"; a search bar says "search".
+   *
+   * Like every selector in this file these are unversioned and localised — an
+   * app in another language degrades to no bubble, never to a wrong one.
+   */
+  private val MESSENGER_COMPOSER_HINTS = listOf(
+    "message", "type a message", "send a message", "send a chat", "write a message",
+  )
+
+  /** A composer placeholder is a couple of words; an inbox preview is a sentence. */
+  private const val MAX_PLACEHOLDER_LEN = 24
+
+  /**
+   * Per-app id fragments for the messengers, checked as an alternative to the
+   * placeholder (which disappears once the user starts typing).
+   *
+   * WhatsApp's are the confident ones — `conversation_*` and the `entry` composer
+   * have been stable for years. Telegram draws its thread on a canvas and Snapchat
+   * obfuscates, so both lean on the placeholder instead; if the bubble never shows
+   * there, dump `viewIds` from a real device before guessing again.
+   */
+  private val MESSENGER_ID_MARKERS = mapOf(
+    WHATSAPP to arrayOf("conversation", "entry", "conversation_contact_name"),
+    TELEGRAM to arrayOf("chat_", "messages_list", "message_edit_text"),
+    SNAPCHAT to arrayOf("chat_input", "chat_message", "conversation"),
+  )
+
   fun classify(s: ScreenSignals): Classification {
     if (s.packageName !in SUPPORTED) return Classification.NOT_PROFILE
 
@@ -129,6 +178,8 @@ object ScreenClassifier {
       BUMBLE -> bumble(s)
       HINGE -> hinge(s)
       FACEBOOK -> facebookDating(s)
+      // MESSENGERS land here: no dating profile surface, so no PROFILE path and no
+      // screenshot capture — a general messenger can only ever offer a reply.
       else -> 0.0
     }.coerceIn(0.0, 1.0)
 
@@ -160,12 +211,37 @@ object ScreenClassifier {
     if (s.packageName == FACEBOOK && !s.viewIds.hasId("dating") && !s.texts.hasText("dating")) {
       return 0.0
     }
+    if (s.packageName in MESSENGERS) return messengerChatScore(s)
     var score = 0.0
     if (s.viewIds.hasId(*CHAT_ID_MARKERS)) score += 0.50
     // Stands in for "the keyboard is right here" — the moment a reply is useful.
     if (s.hasEditable) score += 0.35
     if (s.texts.any { t -> CHAT_TEXT_HINTS.any { t.startsWith(it) || t.contains(it) } }) score += 0.15
     return score
+  }
+
+  /**
+   * Chat scoring for the general messengers, where the *app* already tells us the
+   * surface is conversations. The only question left is the one that matters:
+   * is this an OPEN thread, or the inbox list?
+   *
+   * A composer is necessary but not sufficient — a messenger inbox has a search
+   * field, which is also editable. So it takes the composer PLUS one confirm that
+   * this is a thread: the composer placeholder, or an app-specific thread id.
+   * Deliberately all-or-nothing rather than additive: partial evidence in a
+   * messenger means "not sure", and not-sure must mean no bubble.
+   */
+  private fun messengerChatScore(s: ScreenSignals): Double {
+    if (!s.hasEditable) return 0.0
+    // Length-bounded: a composer placeholder is a couple of words ("Message…",
+    // "Send a chat"), whereas an inbox row's preview can also start with "message"
+    // and would otherwise put the bubble over the conversation list.
+    val placeholder = s.texts.any { t ->
+      t.length <= MAX_PLACEHOLDER_LEN && MESSENGER_COMPOSER_HINTS.any { t == it || t.startsWith(it) }
+    }
+    val threadId = MESSENGER_ID_MARKERS[s.packageName]
+      ?.let { s.viewIds.hasId(*it) } ?: false
+    return if (placeholder || threadId) 0.85 else 0.0
   }
 
   private fun List<String>.hasId(vararg fragments: String) =

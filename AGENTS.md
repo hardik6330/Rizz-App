@@ -132,30 +132,32 @@ reaches EAS. A build profile only loads them if it declares `"environment"` — 
 --environment preview` before blaming the model. `EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY` is
 intentionally absent, so preview builds hand out Pro free — set it before production.
 
-**`runtimeVersion` is `fingerprint`.** Under `appVersion`, OTA-ing JS that calls a new native
-module without bumping `version` crashes every old build.
+**`runtimeVersion` is `appVersion` — and that is now YOUR responsibility to police.**
+It was `fingerprint`, which is safer and was unusable in practice: every native or dependency
+change minted a fresh runtime version and orphaned every installed build, so each OTA landed
+on zero devices until a new APK was built and reinstalled. Three builds in one morning had
+three fingerprints and an update matched none of them.
 
-**A fingerprint mismatch FAILS the build** in `CONFIGURE_EXPO_UPDATES` ("Runtime version
-calculated on local machine … does not match EAS"). It means your `node_modules` differs from
-EAS's clean install.
+Under `appVersion` every build sharing `version` (`app.json`, currently `1.0.0`) accepts the
+same updates, so JS-only fixes actually reach installed apps. The cost is that the safety net
+is gone:
+
+> **Bump `version` in `app.json` in the SAME change as any native edit.** Native means
+> anything under `modules/`, a new/updated dependency with native code, a plugin, or an
+> `app.json` field that lands in the manifest. OTA-ing JS that calls a native symbol the
+> installed build does not have crashes it on launch — for everyone, with no way to recover
+> except a reinstall. `fingerprint` used to catch this for you. Nothing does now.
+
+Rule of thumb: **JS/TS/assets only → publish an update. Anything else → bump `version`, build,
+reinstall.** `npx expo-updates fingerprint:generate --platform android` still tells you
+whether native actually changed, even though the number no longer gates delivery — diff it
+against the last build's fingerprint when unsure.
 
 **Any local Android build (`expo run:android`, `./gradlew`, opening the project in Android
-Studio) mutates `node_modules` and breaks the fingerprint.** Gradle and its Buildship plugin
-write `build/`, `.gradle/`, `.classpath`, `.project` and `.settings/` into autolinked packages
-— none of which are in the npm tarballs. Some of it the default ignores catch; some of it they
-do not, and deleting the artifacts by hand does NOT reliably restore the hash.
-
-**`npm ci` is the fix. Run it before `eas build` whenever you have built locally.**
-
-```bash
-npm ci
-npx expo-updates fingerprint:generate --platform android   # .hash must equal EAS's
-```
-
-The build log prints both hashes and a per-package diff naming the culprit. `npm pack
-<pkg>@<ver>` and diff its file list against `node_modules/<pkg>` if you need to see what
-changed — but check for MISSING files as well as extra ones, and note the hash can differ even
-when the file lists match.
+Studio) mutates `node_modules`.** Gradle and its Buildship plugin write `build/`, `.gradle/`,
+`.classpath`, `.project` and `.settings/` into autolinked packages — none of which are in the
+npm tarballs. This no longer breaks OTA delivery, but `npm ci` before `eas build` is still the
+fix if a build behaves oddly.
 
 **Native is CNG.** `/android` and `/ios` are ignored by git AND EAS and regenerated from
 `app.json` each build. Editing `android/` locally does nothing — use `app.json` or a plugin.
