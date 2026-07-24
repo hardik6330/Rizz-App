@@ -115,8 +115,23 @@ the sentinel for the "✨ Fresh today" tag (no fake tester invented).
 
 ```bash
 eas build -p android --profile preview                       # APK; needed before ANY update lands
+eas build -p ios --profile simulator                         # iOS, no Apple account needed
 eas update --branch preview --environment preview -m "…"     # JS-only OTA
 ```
+
+**iOS builds without an Apple account: use `--profile simulator`.** It extends
+`preview`, so it carries the same channel and the same `preview` environment (and
+therefore the same Gemini key). Use it to check iOS before paying for anything.
+
+**`app.config.ts` layers over `app.json`; the iOS widget is opt-in.** Everything
+static stays in `app.json`. The widget plugin needs an Apple Team ID — a credential —
+so it attaches only when `APPLE_TEAM_ID` is set, and iOS builds fine without it
+(`widgetBridge.ts` already no-ops when the native module is missing). The old
+`REPLACE_WITH_APPLE_TEAM_ID` placeholder did not fail loudly; it failed at signing,
+after the queue wait, which meant nobody could build iOS at all. Never hand-declare
+the App Group entitlement or an `appExtensions` target next to the plugin — it
+generates both, and doing it twice duplicates the entitlement AND the extension
+target. Verify any config change with `npx expo config --type public`.
 
 **`--environment` is required on `eas update`** (in `--non-interactive` it errors without it).
 It selects which EAS environment's variables get baked into the bundle — the same `preview`

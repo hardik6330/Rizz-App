@@ -15,12 +15,6 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": false,
         "NSSupportsLiveActivitiesFrequentUpdates": false
-      },
-      "entitlements": {
-        "com.apple.security.application-groups": [
-          "group.com.rizzcoach.app.expowidgets"
-        ],
-        "aps-environment": "production"
       }
     },
     "android": {
@@ -56,19 +50,6 @@
         {
           "photosPermission": "RizzCoach reads the chat screenshots you pick so it can craft replies. Nothing is uploaded without your say-so."
         }
-      ],
-      [
-        "@bittingz/expo-widgets",
-        {
-          "ios": {
-            "src": "widgets/ios",
-            "devTeamId": "REPLACE_WITH_APPLE_TEAM_ID",
-            "mode": "production",
-            "moduleDependencies": [],
-            "useLiveActivities": false,
-            "frequentUpdates": false
-          }
-        }
       ]
     ],
     "experiments": {
@@ -78,24 +59,6 @@
     "extra": {
       "router": {},
       "eas": {
-        "build": {
-          "experimental": {
-            "ios": {
-              "appExtensions": [
-                {
-                  "targetName": "RizzCoachWidgetExtension",
-                  "bundleIdentifier": "com.rizzcoach.app.RizzCoachWidgetExtension",
-                  "entitlements": {
-                    "com.apple.security.application-groups": [
-                      "group.com.rizzcoach.app.expowidgets"
-                    ],
-                    "aps-environment": "production"
-                  }
-                }
-              ]
-            }
-          }
-        },
         "projectId": "c3201809-99fb-4e32-afcf-f9093b8749cb"
       }
     },

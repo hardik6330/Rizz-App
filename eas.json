@@ -9,13 +9,26 @@
       "android": {
         "buildType": "apk"
       },
+      "ios": {
+        "resourceClass": "m-medium"
+      },
       "channel": "preview",
       "environment": "preview"
+    },
+    "simulator": {
+      "extends": "preview",
+      "ios": {
+        "simulator": true,
+        "resourceClass": "m-medium"
+      }
     },
     "production": {
       "distribution": "store",
       "android": {
         "buildType": "app-bundle"
+      },
+      "ios": {
+        "resourceClass": "m-medium"
       },
       "channel": "production",
       "environment": "production"
