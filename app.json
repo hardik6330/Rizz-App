@@ -9,7 +9,7 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0A0A12",
     "ios": {
-      "bundleIdentifier": "com.rizzcoach.app",
+      "bundleIdentifier": "com.rizzcoach.chat",
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
