@@ -18,9 +18,12 @@ import java.net.URL
  * shape lives here.
  *
  * NON-NEGOTIABLE, kept identical to gemini.ts:
- *  - `thinkingConfig.thinkingBudget = 0`. gemini-flash-latest is a thinking model
+ *  - `thinkingConfig.thinkingLevel = "low"`. gemini-flash-latest is a thinking model
  *    and thinking tokens count against maxOutputTokens; leave it on and the JSON
- *    comes back truncated. This is the exact bug AGENTS.md warns about.
+ *    comes back truncated. This is the exact bug AGENTS.md warns about. It read
+ *    `thinkingBudget = 0` until the alias rolled to Gemini 3, which rejects that
+ *    key with HTTP 400 — and this path has no mock fallback, so it was the only
+ *    place in the app the outage was visible.
  *  - key in the `x-goog-api-key` header, never the URL.
  *  - `responseMimeType=application/json` + a schema, so the reply parses cleanly.
  *
@@ -97,10 +100,15 @@ object GeminiChatClient {
               .put("required", JSONArray().put("reply"))
               .put("properties", JSONObject().put("reply", JSONObject().put("type", "STRING"))),
           )
+          // Counts thinking AND output, and `thinkingLevel: "low"` still thinks.
+          // Do NOT raise this to "buy headroom": Gemini 3 sizes thinking as a
+          // fraction of the cap, so a full 40-line/4000-char transcript measured
+          // thoughts=236/out=26 at 512 but thoughts=404/out=26 at 2048. Raising it
+          // buys more thinking, latency and cost for an identical one-line reply.
           put("maxOutputTokens", 512)
           put("temperature", 0.9)
           // Load-bearing — see the class header. Do not remove.
-          put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+          put("thinkingConfig", JSONObject().put("thinkingLevel", "low"))
         },
       )
     }

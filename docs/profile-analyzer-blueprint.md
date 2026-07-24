@@ -41,7 +41,7 @@ below the capture layer, so the decision can be deferred exactly once.
 | Concern | Where | Notes |
 |---|---|---|
 | Navigation | `src/app/(tabs)/` | Expo Router, `expo-router/js-tabs`, custom `FloatingTabBar`. Four tabs: Lab, Profile Scan, Bio, Discover. |
-| AI transport | `src/services/gemini.ts` | Single `callGemini<T>`. `gemini-flash-latest`, `thinkingBudget: 0`, schema-forced JSON, throws on failure. |
+| AI transport | `src/services/gemini.ts` | Single `callGemini<T>`. `gemini-flash-latest`, `thinkingLevel: 'low'`, schema-forced JSON, throws on failure. |
 | Engines | `engine.ts`, `bioEngine.ts`, `profileEngine.ts`, `feedEngine.ts` | Each = system prompt + `responseSchema` + mock seeds. All swallow errors into mock fallback. |
 | State | `src/state/useRizzStore.ts` | Zustand + `persist` over MMKV (`src/state/storage.ts`). `partialize` gates what survives reload. |
 | Limits | `src/state/limits.ts` | Pure. `FREE_ANALYSIS_LIMIT` = 3 lifetime, shared across all three AI tools. `FREE_SWIPE_LIMIT` = 10/day. |
@@ -491,7 +491,7 @@ The seam is `ProfileCapture` + "native owns detection, JS owns rules".
   chosen product flow never leaves the host app, so JS is not in the loop at tap time. That
   forces two things the profile path avoided:
   1. **A native Gemini caller** (`GeminiChatClient.kt`) — a faithful copy of `gemini.ts`'s
-     request shape (**`thinkingBudget: 0` included, non-negotiable**). It reads chat *text*, not
+     request shape (**`thinkingLevel: "low"` included, non-negotiable**). It reads chat *text*, not
      a screenshot, so no `takeScreenshot` and no image leaves the device — only the transcript.
   2. **Credits without JS present.** The freemium rule stays in TS; the service reads a
      two-scalar snapshot (`isPro`, `freeRemaining`) that JS pushes via `configureChat` on every

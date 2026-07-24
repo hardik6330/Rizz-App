@@ -14,7 +14,7 @@ fetch.** Model, auth, the thinking fix, error handling and JSON parsing live the
 
 **One documented exception:** `modules/profile-capture/.../GeminiChatClient.kt`. The chat
 bubble generates a reply inside the accessibility service, where the RN/JS context may not
-exist, so it re-implements the `callGemini` request shape in Kotlin (**`thinkingBudget: 0`
+exist, so it re-implements the `callGemini` request shape in Kotlin (**`thinkingLevel: "low"`
 included — same load-bearing fix**). If you change the request shape or model in `gemini.ts`,
 change it there too. This is the only place a Gemini fetch lives outside `callGemini`, and it
 exists only because JS cannot run at that moment — do not add a second one.
@@ -34,12 +34,28 @@ maps then fail to compile until prompt, stages, labels and mock seeds all exist.
 never consented: no appearance/body ratings, no protected-trait inference, no fake/catfish
 verdicts, no location narrowing, no character judgements. Keep rails when editing that prompt.
 
-**`thinkingConfig: { thinkingBudget: 0 }` in `gemini.ts` is load-bearing — do not remove.**
+**`thinkingConfig: { thinkingLevel: 'low' }` in `gemini.ts` is load-bearing — do not remove.**
 `gemini-flash-latest` is a thinking model and thinking tokens count against
 `maxOutputTokens`. Without it the model spends the budget thinking, returns
 `finishReason: MAX_TOKENS`, the JSON comes back truncated, `JSON.parse` throws — and the
 engine **silently falls back to mock data**. Symptom: "the AI ignores my screenshot / shows
 canned results." `gemini.selfcheck.ts` guards this with a deliberately small token cap.
+
+**`gemini-flash-latest` is a rolling alias, and the thinking key changed under it.** It
+now resolves to `gemini-3.6-flash`. Gemini 3 dropped the numeric `thinkingBudget` for a
+`thinkingLevel` enum and **400s on the old key** — "Request contains an invalid argument",
+on every call, so the whole app quietly served mock data until someone noticed. Valid
+levels are `low`, `minimal`, `high`; there is no `none`/`off`, and `high` reproduces the
+MAX_TOKENS truncation. The alias can roll again: if every engine goes canned at once, run
+the selfcheck before suspecting anything else.
+
+**Gemini 3 cannot switch thinking off — but do not "buy headroom" for it.** `thinkingBudget:
+0` used to mean zero; `thinkingLevel: 'low'` only means *less* (a six-line transcript still
+measured `thoughtsTokenCount: 229`). Thinking counts against `maxOutputTokens`, so the
+instinct is to raise the cap — don't. Gemini 3 sizes thinking as a *fraction* of the cap, so
+it self-regulates: the same 40-line transcript measured thoughts=236/out=26 at 512 and
+thoughts=404/out=26 at 2048. Raising the cap buys more thinking, latency and cost for an
+identical answer. Measure with `usageMetadata` before changing any cap.
 
 **The silent mock fallback hides live errors.** Every engine catches failures and returns
 mock data so the app demos offline. When debugging "AI not working", check the console warn

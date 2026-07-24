@@ -84,7 +84,17 @@ export async function callGemini<T>({
         // toward maxOutputTokens. Left on, they starve the answer, the JSON
         // comes back truncated and JSON.parse throws — which every caller
         // swallows into a silent mock fallback. Do not remove.
-        thinkingConfig: { thinkingBudget: 0 },
+        //
+        // This was `thinkingBudget: 0` until the rolling alias reached Gemini 3
+        // (gemini-3.6-flash), which replaced the numeric budget with a level and
+        // now rejects the old key outright — HTTP 400 "Request contains an
+        // invalid argument" on EVERY call, i.e. the whole app on mock data. The
+        // valid levels are "low", "minimal" and "high"; there is no "none", and
+        // "high" reproduces the original truncation bug. Note "low" is not zero:
+        // Gemini 3 cannot disable thinking, so thoughtsTokenCount stays nonzero
+        // (229 on a short chat transcript) and maxOutputTokens must cover
+        // thinking + answer, not just the answer.
+        thinkingConfig: { thinkingLevel: 'low' },
       },
     }),
   });
