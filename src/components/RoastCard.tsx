@@ -73,6 +73,7 @@ const styles = StyleSheet.create({
   },
   overline: {
     ...typo.overline,
+    flexShrink: 1,
     color: palette.ember,
   },
   skulls: {

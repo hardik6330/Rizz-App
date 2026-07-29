@@ -11,6 +11,7 @@ import { HapticPressable } from '@/components/HapticPressable';
 import { VaultItem } from '@/components/VaultItem';
 import { APP_NAME } from '@/constants';
 import { useRizzStore } from '@/state/useRizzStore';
+import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import type { SavedItem } from '@/types';
 import { haptic } from '@/utils/haptics';
@@ -21,6 +22,7 @@ type Filter = (typeof FILTERS)[number];
 
 export default function VaultScreen() {
   const insets = useSafeAreaInsets();
+  const { gutter } = useLayout();
   const toast = useToast();
   const [filter, setFilter] = useState<Filter>('All');
 
@@ -62,11 +64,13 @@ export default function VaultScreen() {
   };
 
   return (
-    <View style={styles.root}>
+    /* Android renders this modal full-screen, so without the top inset the
+       grabber and title sat under the status bar. iOS sheets report 0 here. */
+    <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.grabber} />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: gutter }]}>
         <View style={styles.headerText}>
           <Text style={styles.title}>Your Vault</Text>
           <Text style={styles.subtitle}>
@@ -95,7 +99,7 @@ export default function VaultScreen() {
 
       {/* Category filters */}
       {savedItems.length > 0 && (
-        <View style={styles.filters}>
+        <View style={[styles.filters, { paddingHorizontal: gutter }]}>
           {FILTERS.map((value) => {
             const active = value === filter;
             return (
@@ -120,7 +124,10 @@ export default function VaultScreen() {
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + spacing.xl }]}
+        contentContainerStyle={[
+          styles.list,
+          { paddingHorizontal: gutter, paddingBottom: insets.bottom + spacing.xl },
+        ]}
         ItemSeparatorComponent={() => <View style={{ height: spacing.sm + 2 }} />}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
@@ -163,7 +170,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
   },
@@ -185,7 +191,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-    paddingHorizontal: spacing.xl,
     paddingBottom: spacing.md,
   },
   filterChip: {
@@ -209,7 +214,6 @@ const styles = StyleSheet.create({
     color: palette.textPrimary,
   },
   list: {
-    paddingHorizontal: spacing.xl,
     paddingTop: spacing.xs,
     flexGrow: 1,
   },

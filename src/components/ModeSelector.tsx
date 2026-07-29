@@ -40,8 +40,16 @@ export function ModeSelector({ mode, onChange }: ModeSelectorProps) {
               active && { backgroundColor: `${item.color}24`, borderColor: `${item.color}88` },
             ]}
           >
-            <Text style={styles.emoji}>{item.emoji}</Text>
-            <Text style={[styles.label, active && { color: palette.textPrimary }]}>{item.label}</Text>
+            <Text style={styles.emoji} maxFontSizeMultiplier={1.2}>
+              {item.emoji}
+            </Text>
+            <Text
+              style={[styles.label, active && { color: palette.textPrimary }]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.2}
+            >
+              {item.label}
+            </Text>
           </HapticPressable>
         );
       })}
@@ -56,20 +64,27 @@ const styles = StyleSheet.create({
   },
   pill: {
     flex: 1,
+    // "Vibe Check" is wider than a third of a 320pt phone. Without minWidth 0
+    // it forced the whole row past the gutter and clipped the last pill.
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 11,
+    paddingHorizontal: spacing.xs,
     borderRadius: radii.full,
     backgroundColor: palette.surface,
     borderWidth: 1,
     borderColor: palette.hairline,
   },
   emoji: {
-    fontSize: 13,
+    fontSize: 15,
+    lineHeight: 20,
   },
   label: {
+    // RN defaults flexShrink to 0; text will not shrink into the pill without it.
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: '700',
     color: palette.textSecondary,

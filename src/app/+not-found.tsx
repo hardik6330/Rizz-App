@@ -29,6 +29,7 @@ const styles = StyleSheet.create({
   },
   emoji: {
     fontSize: 44,
+    lineHeight: 52,
   },
   title: {
     fontSize: 19,

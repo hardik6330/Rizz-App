@@ -67,15 +67,23 @@ object GeminiChatClient {
    * Call Gemini and return the best reply, or null on any failure (network, HTTP,
    * block, empty, parse). Null means "do not charge, just toast" upstream.
    */
-  fun suggestReply(ctx: Context, transcript: String): Result? {
+  fun suggestReply(ctx: Context, transcript: String, tone: String): Result? {
     val key = ChatEntitlement.apiKey(ctx)
     if (key.isEmpty()) {
       Log.w(TAG, "no api key configured")
       return null
     }
 
+    val toneGuidelines = when (tone) {
+      "vibe" -> "Make the reply highly empathetic, emotionally intelligent, and focused on matching the other person's energy/vibe. Build smooth rapport."
+      "roast" -> "Make the reply lighthearted, containing a playful tease or witty bantering about the situation or details."
+      "comedy" -> "Make the reply funny, high-energy, and light. Focus on making the other person laugh with a joke or funny comment."
+      else -> ""
+    }
+    val combinedSystemPrompt = "$SYSTEM\n\nCRITICAL TONE INSTRUCTION: The user has requested a reply with \"${tone.uppercase()}\" tone. $toneGuidelines"
+
     val body = JSONObject().apply {
-      put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM))))
+      put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", combinedSystemPrompt))))
       put(
         "contents",
         JSONArray().put(

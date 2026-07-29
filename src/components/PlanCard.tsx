@@ -43,8 +43,12 @@ export function PlanCard({ plan, selected, onSelect }: PlanCardProps) {
               {plan.sub != null && <Text style={styles.sub}>{plan.sub}</Text>}
             </View>
             <View style={styles.priceCol}>
-              <Text style={styles.price}>{plan.price}</Text>
-              <Text style={styles.period}>{plan.period}</Text>
+              <Text style={styles.price} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                {plan.price}
+              </Text>
+              <Text style={styles.period} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                {plan.period}
+              </Text>
             </View>
           </View>
         </LinearGradient>
@@ -109,6 +113,8 @@ const styles = StyleSheet.create({
   },
   priceCol: {
     alignItems: 'flex-end',
+    // Fixed content beside a flex column: shrink the title, never the price.
+    flexShrink: 0,
     gap: 1,
   },
   price: {

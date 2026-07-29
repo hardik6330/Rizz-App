@@ -30,7 +30,9 @@ export function ScreenHeader({ icon, title, tint }: ScreenHeaderProps) {
     <View style={styles.header}>
       <View style={styles.wordmark}>
         <Ionicons name={icon} size={20} color={tint} />
-        <Text style={styles.wordmarkText}>{title}</Text>
+        <Text style={styles.wordmarkText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+          {title}
+        </Text>
       </View>
 
       <View style={styles.headerActions}>
@@ -45,7 +47,10 @@ export function ScreenHeader({ icon, title, tint }: ScreenHeaderProps) {
           />
           {savedCount > 0 && (
             <View style={styles.countBubble}>
-              <Text style={styles.countText}>{Math.min(savedCount, 99)}</Text>
+              {/* Lives in a 17pt bubble — never let the OS font scale grow it. */}
+              <Text style={styles.countText} maxFontSizeMultiplier={1}>
+                {Math.min(savedCount, 99)}
+              </Text>
             </View>
           )}
         </View>
@@ -59,13 +64,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing.sm,
   },
   wordmark: {
     flexDirection: 'row',
     alignItems: 'center',
+    // The title is the only elastic part of this row — the credit meter and the
+    // vault button are fixed, so it absorbs a narrow screen or a large font.
+    flexShrink: 1,
     gap: 6,
   },
   wordmarkText: {
+    flexShrink: 1,
     fontSize: 19,
     fontWeight: '900',
     letterSpacing: -0.5,
@@ -74,6 +84,7 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
     gap: spacing.sm,
   },
   countBubble: {

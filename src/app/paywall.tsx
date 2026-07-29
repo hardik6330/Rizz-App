@@ -23,6 +23,7 @@ import { useToast } from '@/components/Toast';
 import { PRIVACY_URL, TERMS_URL } from '@/constants';
 import { AVATARS, BG } from '@/data/assets';
 import { fetchPlans, purchasePlan, restorePurchases, type Plan } from '@/services/purchases';
+import { CONTENT_MAX, useLayout } from '@/theme/layout';
 import { glow, palette, radii, spacing } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
@@ -35,6 +36,7 @@ const FEATURES: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
 
 export default function PaywallScreen() {
   const insets = useSafeAreaInsets();
+  const { gutter } = useLayout();
   const toast = useToast();
 
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -94,7 +96,16 @@ export default function PaywallScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + spacing.xl }]}
+        contentContainerStyle={[
+          styles.scroll,
+          {
+            paddingHorizontal: gutter,
+            // Android shows this modal full-screen: without the inset the crown
+            // started under the status bar.
+            paddingTop: insets.top + spacing.xxl,
+            paddingBottom: insets.bottom + spacing.xl,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Crown — statically visible: the sell screen never depends on animations */}
@@ -211,7 +222,10 @@ export default function PaywallScreen() {
 
       {/* Delayed close */}
       {showClose && (
-        <Animated.View entering={FadeIn.duration(400)} style={[styles.close, { top: spacing.md }]}>
+        <Animated.View
+          entering={FadeIn.duration(400)}
+          style={[styles.close, { top: insets.top + spacing.sm, left: gutter }]}
+        >
           <CircleIconButton
             icon="close"
             size={36}
@@ -229,6 +243,10 @@ export default function PaywallScreen() {
 
 /** Soft light sweep across the CTA. */
 function Shimmer() {
+  const { width, gutter } = useLayout();
+  // The sweep has to cross the whole CTA. It was a hardcoded 420, which stopped
+  // two thirds of the way across on a tablet and overshot on a small phone.
+  const travel = Math.min(width - gutter * 2, CONTENT_MAX) + 60;
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -241,7 +259,7 @@ function Shimmer() {
 
   const style = useAnimatedStyle(() => ({
     transform: [
-      { translateX: interpolate(progress.value, [0, 1], [-120, 420]) },
+      { translateX: interpolate(progress.value, [0, 1], [-120, travel]) },
       { rotate: '18deg' },
     ],
   }));
@@ -275,8 +293,6 @@ const styles = StyleSheet.create({
     backgroundColor: palette.ink,
   },
   scroll: {
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.xxl + 10,
     gap: spacing.md,
   },
   crownWrap: {
@@ -404,6 +420,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
@@ -418,7 +435,6 @@ const styles = StyleSheet.create({
   },
   close: {
     position: 'absolute',
-    left: spacing.lg,
   },
   skeleton: {
     height: 74,

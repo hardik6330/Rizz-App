@@ -6,7 +6,8 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { absoluteFill, glow, palette, radii } from '@/theme/tokens';
+import { useLayout } from '@/theme/layout';
+import { absoluteFill, glow, palette, radii, spacing } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 import { HapticPressable } from './HapticPressable';
 
@@ -27,10 +28,18 @@ const LABELS: Record<string, string> = {
 /** Frosted floating pill tab bar — the feed scrolls behind it. */
 export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { width, compact } = useLayout();
+  /**
+   * Four items and a labelled active pill: at 18pt each side this row is ~304pt
+   * wide, which is the entire usable width of a 320pt phone. Tighten the item
+   * padding there so the bar keeps its floating margins instead of touching the
+   * screen edges, and cap the pill so it can never exceed them.
+   */
+  const itemPad = compact ? spacing.md : 18;
 
   return (
     <View pointerEvents="box-none" style={[styles.host, { bottom: Math.max(insets.bottom, 14) + 4 }]}>
-      <View style={styles.pill}>
+      <View style={[styles.pill, { maxWidth: width - spacing.lg * 2 }]}>
         <BlurView intensity={55} tint="dark" style={StyleSheet.absoluteFill} />
         <View style={styles.tint} />
         {state.routes.map((route, index) => {
@@ -65,13 +74,15 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                   colors={[palette.violetDeep, palette.violet]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.itemActive}
+                  style={[styles.itemActive, { paddingHorizontal: itemPad }]}
                 >
                   <Ionicons name={icons.filled} size={17} color={palette.textPrimary} />
-                  <Text style={styles.labelActive}>{label}</Text>
+                  <Text style={styles.labelActive} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+                    {label}
+                  </Text>
                 </LinearGradient>
               ) : (
-                <View style={styles.item}>
+                <View style={[styles.item, { paddingHorizontal: itemPad }]}>
                   <Ionicons name={icons.outline} size={19} color={palette.textTertiary} />
                 </View>
               )}
@@ -105,6 +116,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(13,13,21,0.58)',
   },
   itemWrap: {
+    flexShrink: 1,
     borderRadius: radii.full,
     overflow: 'hidden',
   },
@@ -112,7 +124,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 18,
     paddingVertical: 11,
     borderRadius: radii.full,
   },
@@ -120,11 +131,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 18,
     paddingVertical: 11,
     borderRadius: radii.full,
   },
   labelActive: {
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: '700',
     color: palette.textPrimary,

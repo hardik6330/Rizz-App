@@ -2,9 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
+import { CONTENT_MAX, useLayout } from '@/theme/layout';
 import { absoluteFill, glow, palette, radii, spacing } from '@/theme/tokens';
 import { HapticPressable } from './HapticPressable';
 
@@ -15,12 +16,23 @@ interface LockOverlayProps {
 
 /** Full-screen frosted gate shown when the free swipe allowance runs dry. */
 export function LockOverlay({ onUnlock, onRestore }: LockOverlayProps) {
+  const { gutter } = useLayout();
   return (
     <Animated.View entering={FadeIn.duration(320)} style={StyleSheet.absoluteFill}>
       <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
       <View style={styles.veil} />
 
-      <View style={styles.content}>
+      {/* Scrolls because it must survive a landscape phone: at ~390pt tall the
+          icon, headline, body and both CTAs no longer fit, and a centred flex
+          box would simply clip the restore link. `alignSelf: stretch` on the CTA
+          also meant a 1024pt-wide button on a tablet — hence the width cap. */}
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingHorizontal: Math.max(gutter, spacing.xxl) },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.iconWrap}>
           <LinearGradient
             colors={[palette.gold, palette.ember]}
@@ -65,7 +77,7 @@ export function LockOverlay({ onUnlock, onRestore }: LockOverlayProps) {
         >
           <Text style={styles.restore}>Restore purchases</Text>
         </HapticPressable>
-      </View>
+      </ScrollView>
     </Animated.View>
   );
 }
@@ -76,10 +88,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(7,7,11,0.6)',
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.xxl,
+    paddingVertical: spacing.xxl,
     gap: spacing.md,
   },
   iconWrap: {
@@ -119,6 +131,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
     overflow: 'hidden',
     alignSelf: 'stretch',
+    maxWidth: CONTENT_MAX,
+    width: '100%',
     ...glow(palette.violet, 0.55, 22),
   },
   cta: {

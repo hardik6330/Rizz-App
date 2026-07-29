@@ -14,9 +14,12 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { ANALYZE_STAGES } from '@/data/mockAnalysis';
+import { cardHeightFor, useLayout } from '@/theme/layout';
 import { absoluteFill, palette, radii, spacing } from '@/theme/tokens';
 
+/** Designed height on a normal portrait phone; short screens get less. */
 const CARD_HEIGHT = 340;
+const CARD_MIN_HEIGHT = 220;
 const SCAN_HEIGHT = 120;
 
 interface AnalyzingOverlayProps {
@@ -26,6 +29,10 @@ interface AnalyzingOverlayProps {
 
 /** The picked screenshot with a sweeping violet scan beam + staged status. */
 export function AnalyzingOverlay({ uri, stage }: AnalyzingOverlayProps) {
+  const { height } = useLayout();
+  // The beam sweeps the card, so its travel has to track the card's real height
+  // — a fixed 340 overshot the bottom edge on a short screen.
+  const cardHeight = cardHeightFor(height, CARD_HEIGHT, CARD_MIN_HEIGHT);
   const scan = useSharedValue(0);
   const dot = useSharedValue(0.4);
 
@@ -39,7 +46,7 @@ export function AnalyzingOverlay({ uri, stage }: AnalyzingOverlayProps) {
   }, [scan, dot]);
 
   const scanStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: interpolate(scan.value, [0, 1], [0, CARD_HEIGHT - SCAN_HEIGHT]) }],
+    transform: [{ translateY: interpolate(scan.value, [0, 1], [0, cardHeight - SCAN_HEIGHT]) }],
   }));
 
   const dotStyle = useAnimatedStyle(() => ({ opacity: dot.value }));
@@ -48,7 +55,10 @@ export function AnalyzingOverlay({ uri, stage }: AnalyzingOverlayProps) {
   const stageText = ANALYZE_STAGES[Math.min(stage, ANALYZE_STAGES.length - 1)];
 
   return (
-    <Animated.View entering={FadeInDown.springify().damping(16)} style={styles.card}>
+    <Animated.View
+      entering={FadeInDown.springify().damping(16)}
+      style={[styles.card, { height: cardHeight }]}
+    >
       <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
       <View style={styles.scrim} />
 
@@ -98,7 +108,6 @@ export function AnalyzingOverlay({ uri, stage }: AnalyzingOverlayProps) {
 
 const styles = StyleSheet.create({
   card: {
-    height: CARD_HEIGHT,
     borderRadius: radii.xl,
     overflow: 'hidden',
     backgroundColor: palette.surface,

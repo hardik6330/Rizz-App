@@ -40,8 +40,11 @@ class OverlayController(private val context: Context) {
   private var bubble: View? = null
   private var params: WindowManager.LayoutParams? = null
   private var scanAnim: ObjectAnimator? = null
+  private var toneMenu: View? = null
+  private var closeZone: View? = null
+  var onCloseListener: (() -> Unit)? = null
 
-  val isShowing: Boolean get() = bubble != null
+  val isShowing: Boolean get() = bubble != null || toneMenu != null || closeZone != null
 
   private fun dp(value: Float): Int = TypedValue.applyDimension(
     TypedValue.COMPLEX_UNIT_DIP, value, context.resources.displayMetrics
@@ -145,15 +148,184 @@ class OverlayController(private val context: Context) {
   }
 
   fun hide() {
-    val view = bubble ?: return
+    val bView = bubble
+    val tView = toneMenu
     bubble = null
+    toneMenu = null
     params = null
     scanAnim?.cancel()
     scanAnim = null
+    hideCloseZone()
     try {
-      windowManager.removeView(view)
+      if (bView != null) windowManager.removeView(bView)
+      if (tView != null) windowManager.removeView(tView)
     } catch (e: Exception) {
       android.util.Log.w(TAG, "overlay remove failed", e)
+    }
+  }
+
+  fun showToneMenu(onToneSelected: (String) -> Unit) {
+    val bView = bubble ?: return
+    val currentParams = params ?: return
+
+    bView.visibility = View.GONE
+
+    val container = android.widget.LinearLayout(context).apply {
+      orientation = android.widget.LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(8f), dp(4f), dp(8f), dp(4f))
+      background = GradientDrawable().apply {
+        cornerRadius = dp(28f).toFloat()
+        setColor(Color.parseColor("#13131E"))
+        setStroke(dp(1.5f), Color.parseColor("#8B5CF6"))
+      }
+      elevation = dp(8f).toFloat()
+    }
+
+    fun createOptionButton(emoji: String, contentDesc: String, onClick: () -> Unit): TextView {
+      return TextView(context).apply {
+        text = emoji
+        gravity = Gravity.CENTER
+        width = dp(42f)
+        height = dp(42f)
+        textSize = 18f
+        setTextColor(Color.WHITE) // Set text color to white
+        contentDescription = contentDesc
+        setOnClickListener { onClick() }
+      }
+    }
+
+    container.addView(createOptionButton("🔮", "Vibe") {
+      hideToneMenu()
+      onToneSelected("vibe")
+    })
+    container.addView(createOptionButton("🔥", "Roast") {
+      hideToneMenu()
+      onToneSelected("roast")
+    })
+    container.addView(createOptionButton("🎭", "Comedy") {
+      hideToneMenu()
+      onToneSelected("comedy")
+    })
+    container.addView(TextView(context).apply {
+      text = "|"
+      setTextColor(Color.parseColor("#33FFFFFF"))
+      gravity = Gravity.CENTER
+      width = dp(10f)
+      height = dp(42f)
+      textSize = 14f
+    })
+    container.addView(createOptionButton("✕", "Cancel") {
+      hideToneMenu()
+    })
+
+    val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+    } else {
+      @Suppress("DEPRECATION")
+      WindowManager.LayoutParams.TYPE_PHONE
+    }
+
+    val screenW = context.resources.displayMetrics.widthPixels
+    val menuWidth = dp(190f)
+    val lp = WindowManager.LayoutParams(
+      menuWidth,
+      WindowManager.LayoutParams.WRAP_CONTENT,
+      type,
+      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+      android.graphics.PixelFormat.TRANSLUCENT,
+    ).apply {
+      gravity = Gravity.TOP or Gravity.START
+      x = if (currentParams.x + dp(56f)/2 < screenW / 2) {
+        currentParams.x
+      } else {
+        (currentParams.x + dp(56f) - menuWidth).coerceAtLeast(0)
+      }
+      y = currentParams.y
+    }
+
+    try {
+      windowManager.addView(container, lp)
+      toneMenu = container
+    } catch (e: Exception) {
+      android.util.Log.w(TAG, "overlay tone menu add failed", e)
+      bView.visibility = View.VISIBLE
+    }
+  }
+
+  fun hideToneMenu() {
+    val tView = toneMenu
+    toneMenu = null
+    if (tView != null) {
+      try {
+        windowManager.removeView(tView)
+      } catch (e: Exception) {
+        android.util.Log.w(TAG, "overlay remove tone menu failed", e)
+      }
+    }
+    bubble?.visibility = View.VISIBLE
+  }
+
+  private fun showCloseZone() {
+    if (closeZone != null) return
+    val zone = android.widget.FrameLayout(context).apply {
+      background = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(Color.parseColor("#E11D48")) // Rose red
+        setStroke(dp(2f), Color.WHITE)
+      }
+      elevation = dp(8f).toFloat()
+
+      addView(TextView(context).apply {
+        text = "✕"
+        setTextColor(Color.WHITE)
+        textSize = 20f
+        gravity = Gravity.CENTER
+        layoutParams = android.widget.FrameLayout.LayoutParams(
+          android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+          android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+        )
+      })
+    }
+
+    val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+    } else {
+      @Suppress("DEPRECATION")
+      WindowManager.LayoutParams.TYPE_PHONE
+    }
+
+    val size = dp(56f)
+    val lp = WindowManager.LayoutParams(
+      size,
+      size,
+      type,
+      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+      android.graphics.PixelFormat.TRANSLUCENT
+    ).apply {
+      gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+      y = dp(56f) // Bottom margin
+    }
+
+    try {
+      windowManager.addView(zone, lp)
+      closeZone = zone
+    } catch (e: Exception) {
+      android.util.Log.w(TAG, "overlay close zone add failed", e)
+    }
+  }
+
+  private fun hideCloseZone() {
+    val zone = closeZone
+    closeZone = null
+    if (zone != null) {
+      try {
+        windowManager.removeView(zone)
+      } catch (e: Exception) {
+        android.util.Log.w(TAG, "overlay remove close zone failed", e)
+      }
     }
   }
 
@@ -183,24 +355,85 @@ class OverlayController(private val context: Context) {
         MotionEvent.ACTION_MOVE -> {
           val dx = (event.rawX - touchX).toInt()
           val dy = (event.rawY - touchY).toInt()
-          if (!dragging && (abs(dx) > slop || abs(dy) > slop)) dragging = true
+          if (!dragging && (abs(dx) > slop || abs(dy) > slop)) {
+            dragging = true
+            showCloseZone()
+          }
           if (dragging) {
             lp.x = startX + dx
             lp.y = startY + dy
             runCatching { windowManager.updateViewLayout(v, lp) }
+
+            val bubbleLoc = IntArray(2)
+            v.getLocationOnScreen(bubbleLoc)
+            val bubbleCenterX = bubbleLoc[0] + v.width / 2
+            val bubbleCenterY = bubbleLoc[1] + v.height / 2
+
+            val zoneLoc = IntArray(2)
+            closeZone?.getLocationOnScreen(zoneLoc)
+            val zoneCenterX = zoneLoc[0] + (closeZone?.width ?: 0) / 2
+            val zoneCenterY = zoneLoc[1] + (closeZone?.height ?: 0) / 2
+
+            if (closeZone != null) {
+              val dist = Math.hypot(
+                (bubbleCenterX - zoneCenterX).toDouble(),
+                (bubbleCenterY - zoneCenterY).toDouble()
+              )
+              if (dist < dp(100f)) {
+                closeZone?.scaleX = 1.3f
+                closeZone?.scaleY = 1.3f
+              } else {
+                closeZone?.scaleX = 1.0f
+                closeZone?.scaleY = 1.0f
+              }
+            }
           }
           return true
         }
         MotionEvent.ACTION_UP -> {
           if (dragging) {
-            // Snap to whichever edge is closer.
-            val screenW = context.resources.displayMetrics.widthPixels
-            lp.x = if (lp.x + v.width / 2 < screenW / 2) dp(8f) else screenW - v.width - dp(8f)
-            runCatching { windowManager.updateViewLayout(v, lp) }
+            var closed = false
+            val bubbleLoc = IntArray(2)
+            v.getLocationOnScreen(bubbleLoc)
+            val bubbleCenterX = bubbleLoc[0] + v.width / 2
+            val bubbleCenterY = bubbleLoc[1] + v.height / 2
+
+            val zoneLoc = IntArray(2)
+            closeZone?.getLocationOnScreen(zoneLoc)
+            val zoneCenterX = zoneLoc[0] + (closeZone?.width ?: 0) / 2
+            val zoneCenterY = zoneLoc[1] + (closeZone?.height ?: 0) / 2
+
+            if (closeZone != null) {
+              val dist = Math.hypot(
+                (bubbleCenterX - zoneCenterX).toDouble(),
+                (bubbleCenterY - zoneCenterY).toDouble()
+              )
+              if (dist < dp(100f)) {
+                closed = true
+              }
+            }
+
+            hideCloseZone()
+
+            if (closed) {
+              onCloseListener?.invoke()
+              hide()
+            } else {
+              val screenW = context.resources.displayMetrics.widthPixels
+              lp.x = if (lp.x + v.width / 2 < screenW / 2) dp(8f) else screenW - v.width - dp(8f)
+              runCatching { windowManager.updateViewLayout(v, lp) }
+            }
           } else {
             v.performClick()
             onTap()
           }
+          return true
+        }
+        MotionEvent.ACTION_CANCEL -> {
+          hideCloseZone()
+          val screenW = context.resources.displayMetrics.widthPixels
+          lp.x = if (lp.x + v.width / 2 < screenW / 2) dp(8f) else screenW - v.width - dp(8f)
+          runCatching { windowManager.updateViewLayout(v, lp) }
           return true
         }
       }

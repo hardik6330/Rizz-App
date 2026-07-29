@@ -24,6 +24,7 @@ import { BG } from '@/data/assets';
 import { ANALYZE_STAGES } from '@/data/mockAnalysis';
 import { analyzeScreenshot, type EngineInput } from '@/services/engine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
+import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, spacing } from '@/theme/tokens';
 import type { AnalysisResult, EngineMode, ReplyOption } from '@/types';
 import { haptic } from '@/utils/haptics';
@@ -33,6 +34,8 @@ type Phase = 'idle' | 'analyzing' | 'done';
 
 export default function LabScreen() {
   const insets = useSafeAreaInsets();
+  const { gutter } = useLayout();
+  const bottomClearance = useTabBarClearance();
   const toast = useToast();
 
   const [mode, setMode] = useState<EngineMode>('rizz');
@@ -181,7 +184,11 @@ export default function LabScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: insets.top + spacing.sm, paddingBottom: 148 },
+          {
+            paddingHorizontal: gutter,
+            paddingTop: insets.top + spacing.sm,
+            paddingBottom: bottomClearance,
+          },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -190,7 +197,11 @@ export default function LabScreen() {
         {/* Hero copy */}
         {phase === 'idle' && (
           <View style={styles.hero}>
-            <Text style={styles.heroTitle}>Turn screenshots{'\n'}into second dates.</Text>
+            {/* Hard line break + a display size: cap the scale or it overflows
+                the gutter on a small phone at large accessibility text sizes. */}
+            <Text style={styles.heroTitle} maxFontSizeMultiplier={1.25}>
+              Turn screenshots{'\n'}into second dates.
+            </Text>
             <Text style={styles.heroSub}>Drop a chat. The engine handles the rest.</Text>
           </View>
         )}
@@ -292,7 +303,6 @@ const styles = StyleSheet.create({
     backgroundColor: palette.ink,
   },
   scroll: {
-    paddingHorizontal: spacing.xl,
     gap: spacing.lg,
   },
   hero: {

@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -19,6 +19,7 @@ import { consumePendingCapture, isSupported, isWatching } from '@/../modules/pro
 import { BG } from '@/data/assets';
 import { PROFILE_LABELS, PROFILE_STAGES, analyzeProfile } from '@/services/profileEngine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
+import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import type { ProfileCapture, ProfileScanResult, ProfileScore, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
@@ -30,6 +31,8 @@ const MAX_IMAGES = 3;
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const { gutter } = useLayout();
+  const bottomClearance = useTabBarClearance();
   const toast = useToast();
 
   /**
@@ -226,7 +229,11 @@ export default function ProfileScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: insets.top + spacing.sm, paddingBottom: 148 },
+          {
+            paddingHorizontal: gutter,
+            paddingTop: insets.top + spacing.sm,
+            paddingBottom: bottomClearance,
+          },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -253,7 +260,9 @@ export default function ProfileScreen() {
         ) : (
           <>
             <View style={styles.hero}>
-              <Text style={styles.heroTitle}>{labels.heroTitle}</Text>
+              <Text style={styles.heroTitle} maxFontSizeMultiplier={1.25}>
+                {labels.heroTitle}
+              </Text>
               <Text style={styles.heroSub}>{labels.heroSub}</Text>
             </View>
 
@@ -381,9 +390,12 @@ function ScanReport({
   onFeedback,
   showUpsell,
 }: ScanReportProps) {
-  const { width } = useWindowDimensions();
+  const { width, gutter } = useLayout();
   const [tab, setTab] = useState<TabKey>('quick');
-  const cardWidth = width - spacing.xl * 2 - spacing.md;
+  // Peek the next card. Must track the live gutter — on a tablet the gutter is
+  // most of the screen, and the old `spacing.xl * 2` made these cards wider
+  // than the column they sit in.
+  const cardWidth = width - gutter * 2 - spacing.md;
 
   const labels = PROFILE_LABELS[mode];
   const tint = mode === 'self' ? palette.cyan : palette.violet;
@@ -424,7 +436,10 @@ function ScanReport({
           <Text style={styles.reportName}>{result.name ?? labels.fallbackName}</Text>
           {result.tagline != null && <Text style={styles.reportTagline}>{result.tagline}</Text>}
         </View>
-        <Text style={styles.reportDate}>{dateLabel}</Text>
+        {/* Fixed-width neighbours either side: never let the date push them off. */}
+        <Text style={styles.reportDate} numberOfLines={1} maxFontSizeMultiplier={1.2}>
+          {dateLabel}
+        </Text>
         <CircleIconButton icon="refresh" size={38} onPress={onReset} accessibilityLabel="Scan a new profile" />
       </Animated.View>
 
@@ -504,6 +519,7 @@ function ScanReport({
               <Text
                 style={[styles.tabLabel, active && { color: palette.textPrimary }]}
                 numberOfLines={1}
+                maxFontSizeMultiplier={1.2}
               >
                 {tabLabels[t.key]}
               </Text>
@@ -608,7 +624,6 @@ const styles = StyleSheet.create({
     backgroundColor: palette.ink,
   },
   scroll: {
-    paddingHorizontal: spacing.xl,
     gap: spacing.lg,
   },
   hero: {
@@ -868,6 +883,7 @@ const styles = StyleSheet.create({
   },
   tabEmoji: {
     fontSize: 12,
+    lineHeight: 16,
   },
   tabLabel: {
     // React Native defaults flexShrink to 0 (unlike the web), so without this the

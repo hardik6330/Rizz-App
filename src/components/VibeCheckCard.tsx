@@ -43,7 +43,9 @@ export function VibeCheckCard({ vibe }: VibeCheckCardProps) {
           <Text style={styles.persona}>{vibe.persona}</Text>
         </View>
         <View style={styles.confidenceChip}>
-          <Text style={styles.confidenceText}>{vibe.confidence}% sure</Text>
+          <Text style={styles.confidenceText} numberOfLines={1} maxFontSizeMultiplier={1.2}>
+            {vibe.confidence}% sure
+          </Text>
         </View>
       </View>
 
@@ -109,6 +111,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   emojiBubble: {
+    flexShrink: 0,
     width: 52,
     height: 52,
     borderRadius: 26,
@@ -120,6 +123,7 @@ const styles = StyleSheet.create({
   },
   emoji: {
     fontSize: 24,
+    lineHeight: 30,
   },
   headerText: {
     flex: 1,
@@ -137,6 +141,7 @@ const styles = StyleSheet.create({
     color: palette.textPrimary,
   },
   confidenceChip: {
+    flexShrink: 0,
     paddingHorizontal: spacing.sm,
     paddingVertical: 5,
     borderRadius: radii.full,

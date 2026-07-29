@@ -54,7 +54,25 @@ class RizzAccessibilityService : AccessibilityService() {
 
   override fun onServiceConnected() {
     super.onServiceConnected()
-    overlay = OverlayController(this)
+    overlay = OverlayController(this).apply {
+      /**
+       * Dragging the bubble onto ✕ is the user saying "stop showing me this" — so
+       * it flips the same kill switch the in-app toggle owns, rather than hiding
+       * the bubble for one screen and having it reappear on the next profile.
+       *
+       * Persisted, so the app's switch reads OFF the next time it refreshes
+       * (analyzer.tsx re-reads on resume, profile.tsx on focus) and so the choice
+       * survives the process being killed. Turning it back on is a deliberate act
+       * in the app — which is the same rule as the first grant: enabled in
+       * Settings must never by itself mean "watching my screen".
+       */
+      onCloseListener = {
+        setEnabledPersisted(this@RizzAccessibilityService, false)
+        CaptureStore.clear()
+        lastSignature = null
+        toast(getString(R.string.rizz_bubble_disabled))
+      }
+    }
     // Restore the kill switch across process death. When the user swipes the app
     // out of recents, this whole process (and the static ENABLED) dies; the system
     // rebinds the service in a fresh process with no JS to turn it back on. Without
@@ -164,7 +182,13 @@ class RizzAccessibilityService : AccessibilityService() {
     val label = getString(if (chat) R.string.rizz_bubble_chat_label else R.string.rizz_bubble_label)
     main.post {
       overlay?.show(label) {
-        if (chat) onChatAnalyzeTapped(pkg) else onAnalyzeTapped(pkg, signals, result)
+        if (chat) {
+          overlay?.showToneMenu { tone ->
+            onChatAnalyzeTapped(pkg, tone)
+          }
+        } else {
+          onAnalyzeTapped(pkg, signals, result)
+        }
       }
     }
   }
@@ -309,7 +333,7 @@ class RizzAccessibilityService : AccessibilityService() {
   /** A scraped line and which side of the thread it sits on. */
   private data class ChatMsg(val text: String, val side: String) // "them" | "you" | ""
 
-  private fun onChatAnalyzeTapped(pkg: String) {
+  private fun onChatAnalyzeTapped(pkg: String, tone: String) {
     if (capturing) return
 
     // Same order as the JS gate would apply: a dead key is a different failure from
@@ -331,7 +355,7 @@ class RizzAccessibilityService : AccessibilityService() {
     // most), THEN scroll up for history. batches[0] is newest.
     val batches = ArrayList<List<ChatMsg>>()
     rootInActiveWindow?.let { batches.add(readMessages(it)) }
-    scrollAndRead(pkg, findScrollable(rootInActiveWindow), batches, CHAT_SCROLLS, 0)
+    scrollAndRead(pkg, findScrollable(rootInActiveWindow), batches, CHAT_SCROLLS, 0, tone)
 
     // Backstop: whatever hangs downstream, never leave the button wedged. Generous
     // because a slow network generate legitimately takes many seconds.
@@ -354,20 +378,21 @@ class RizzAccessibilityService : AccessibilityService() {
     batches: ArrayList<List<ChatMsg>>,
     remaining: Int,
     scrolledUp: Int,
+    tone: String,
   ) {
     if (remaining <= 0 || scrollable == null ||
       !scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
     ) {
-      finishChat(pkg, batches, scrolledUp)
+      finishChat(pkg, batches, scrolledUp, tone)
       return
     }
     main.postDelayed({
       rootInActiveWindow?.let { batches.add(readMessages(it)) }
-      scrollAndRead(pkg, findScrollable(rootInActiveWindow), batches, remaining - 1, scrolledUp + 1)
+      scrollAndRead(pkg, findScrollable(rootInActiveWindow), batches, remaining - 1, scrolledUp + 1, tone)
     }, SCROLL_SETTLE_MS)
   }
 
-  private fun finishChat(pkg: String, batches: ArrayList<List<ChatMsg>>, scrolledUp: Int) {
+  private fun finishChat(pkg: String, batches: ArrayList<List<ChatMsg>>, scrolledUp: Int, tone: String) {
     // Put the user back where they were — fire-and-forget, it doesn't affect the
     // transcript we've already collected.
     restoreScroll(scrolledUp)
@@ -380,7 +405,7 @@ class RizzAccessibilityService : AccessibilityService() {
     }
 
     chatExecutor.execute {
-      val result = GeminiChatClient.suggestReply(this, transcript)
+      val result = GeminiChatClient.suggestReply(this, transcript, tone)
       main.post {
         if (result == null) {
           // A failure must NOT charge a credit — recordConsumed only runs on success.

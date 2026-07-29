@@ -12,6 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { BG } from '@/data/assets';
+import { cardHeightFor, useLayout } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import { HapticPressable } from './HapticPressable';
 
@@ -40,7 +41,15 @@ export function GlowDropZone({
   accent: accentProp,
   background,
 }: GlowDropZoneProps) {
+  const { height } = useLayout();
   const pulse = useSharedValue(0);
+  /**
+   * `minHeight`, not `height`: the copy inside grows with the OS font scale and
+   * used to be clipped by the fixed 300. The cap keeps the designed size on any
+   * normal portrait phone and shrinks it on short screens (landscape, a folded
+   * cover display) where 300 was most of the page.
+   */
+  const cardHeight = cardHeightFor(height, 300, 200);
 
   useEffect(() => {
     pulse.value = withRepeat(
@@ -68,7 +77,7 @@ export function GlowDropZone({
         feedback="medium"
         onPress={onPress}
         accessibilityLabel={locked ? 'Unlock more analyses' : title}
-        style={styles.card}
+        style={[styles.card, { minHeight: cardHeight }]}
       >
         <Image
           source={locked ? BG.ember : background}
@@ -119,7 +128,6 @@ const styles = StyleSheet.create({
     ...Platform.select({ android: { elevation: 14 } }),
   },
   card: {
-    height: 300,
     borderRadius: radii.xl,
     overflow: 'hidden',
     backgroundColor: palette.surface,

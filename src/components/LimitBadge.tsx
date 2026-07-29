@@ -17,7 +17,7 @@ export function LimitBadge({ used, limit, icon = 'flash' }: LimitBadgeProps) {
   return (
     <View style={[styles.pill, { borderColor: `${tint}55`, backgroundColor: `${tint}1A` }]}>
       <Ionicons name={icon} size={12} color={tint} />
-      <Text style={[styles.text, { color: tint }]}>
+      <Text style={[styles.text, { color: tint }]} numberOfLines={1} maxFontSizeMultiplier={1.2}>
         {Math.min(used, limit)}/{limit} free
       </Text>
     </View>
@@ -29,7 +29,9 @@ export function ProChip() {
   return (
     <View style={[styles.pill, styles.proPill]}>
       <Ionicons name="diamond" size={12} color={palette.gold} />
-      <Text style={[styles.text, { color: palette.gold }]}>PRO</Text>
+      <Text style={[styles.text, { color: palette.gold }]} maxFontSizeMultiplier={1.2}>
+        PRO
+      </Text>
     </View>
   );
 }

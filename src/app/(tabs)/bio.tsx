@@ -20,6 +20,7 @@ import { StagedLoader } from '@/components/StagedLoader';
 import { useToast } from '@/components/Toast';
 import { BIO_STAGES, optimizeBio } from '@/services/bioEngine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
+import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import type { BioOption, BioResult, BioVibe } from '@/types';
 import { haptic } from '@/utils/haptics';
@@ -41,6 +42,8 @@ const VIBES: BioVibe[] = ['Funny', 'Sarcastic', 'Chill', 'Ambitious'];
 
 export default function BioScreen() {
   const insets = useSafeAreaInsets();
+  const { gutter } = useLayout();
+  const bottomClearance = useTabBarClearance();
   const toast = useToast();
 
   const [phase, setPhase] = useState<Phase>('idle');
@@ -153,9 +156,18 @@ export default function BioScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: insets.top + spacing.sm, paddingBottom: 148 },
+          {
+            paddingHorizontal: gutter,
+            paddingTop: insets.top + spacing.sm,
+            paddingBottom: bottomClearance,
+          },
         ]}
         keyboardShouldPersistTaps="handled"
+        // This is the only screen with text inputs, and the multiline "current
+        // bio" field sits at the very bottom — on iOS the keyboard covered it
+        // outright. Android already gets this from adjustResize.
+        automaticallyAdjustKeyboardInsets
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
       >
         <ScreenHeader icon="person" title="Bio Lab" tint={palette.mint} />
@@ -196,7 +208,9 @@ export default function BioScreen() {
         ) : (
           <>
             <View style={styles.hero}>
-              <Text style={styles.heroTitle}>A bio that gets{'\n'}right-swiped.</Text>
+              <Text style={styles.heroTitle} maxFontSizeMultiplier={1.25}>
+                A bio that gets{'\n'}right-swiped.
+              </Text>
               <Text style={styles.heroSub}>Pick a few things you love — the engine writes the rest.</Text>
             </View>
 
@@ -264,7 +278,11 @@ export default function BioScreen() {
                         },
                       ]}
                     >
-                      <Text style={[styles.vibeLabel, active && { color: palette.textPrimary }]}>
+                      <Text
+                        style={[styles.vibeLabel, active && { color: palette.textPrimary }]}
+                        numberOfLines={1}
+                        maxFontSizeMultiplier={1.2}
+                      >
                         {item}
                       </Text>
                     </HapticPressable>
@@ -361,7 +379,6 @@ const styles = StyleSheet.create({
     backgroundColor: palette.ink,
   },
   scroll: {
-    paddingHorizontal: spacing.xl,
     gap: spacing.lg,
   },
   hero: {
@@ -433,15 +450,22 @@ const styles = StyleSheet.create({
   },
   vibePill: {
     flex: 1,
+    // Four pills across a 320pt phone: without minWidth 0 the longest label
+    // ("Ambitious") forces its pill past its share and pushes the row wide.
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 11,
+    paddingHorizontal: spacing.xs,
     borderRadius: radii.full,
     backgroundColor: palette.surface,
     borderWidth: 1,
     borderColor: palette.hairline,
   },
   vibeLabel: {
+    // RN defaults flexShrink to 0, so text will not shrink into a bounded pill
+    // on its own — and numberOfLines cannot ellipsize what was never bounded.
+    flexShrink: 1,
     fontSize: 12.5,
     fontWeight: '700',
     color: palette.textSecondary,

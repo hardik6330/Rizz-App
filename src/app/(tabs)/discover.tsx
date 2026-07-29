@@ -2,15 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  FlatList,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-  type ViewToken,
-} from 'react-native';
+import { FlatList, ScrollView, StyleSheet, Text, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FeedCard } from '@/components/FeedCard';
@@ -24,6 +16,7 @@ import { generateFreshOpeners } from '@/services/feedEngine';
 import { restorePurchases } from '@/services/purchases';
 import { swipesUsedToday, todayKey } from '@/state/limits';
 import { useRizzStore } from '@/state/useRizzStore';
+import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { categoryColor, palette, radii, spacing } from '@/theme/tokens';
 import type { FeedCategory, FeedItem } from '@/types';
 import { haptic } from '@/utils/haptics';
@@ -38,8 +31,11 @@ const FILTERS: { key: FeedCategory | 'All'; label: string }[] = [
 ];
 
 export default function DiscoverScreen() {
-  const { height } = useWindowDimensions();
+  // Page height is the window height, so this must be the live value — it is
+  // what makes the feed re-lay-out on rotation and on a foldable's hinge.
+  const { height, gutter } = useLayout();
   const insets = useSafeAreaInsets();
+  const bottomClearance = useTabBarClearance();
   const toast = useToast();
 
   const [index, setIndex] = useState(0);
@@ -192,7 +188,12 @@ export default function DiscoverScreen() {
         maxToRenderPerBatch={3}
         windowSize={5}
         ListFooterComponent={
-          <EndCard height={height} isPro={isPro} onGoPro={() => router.push('/paywall')} />
+          <EndCard
+            height={height}
+            bottomClearance={bottomClearance}
+            isPro={isPro}
+            onGoPro={() => router.push('/paywall')}
+          />
         }
       />
 
@@ -201,15 +202,17 @@ export default function DiscoverScreen() {
         pointerEvents="box-none"
         style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}
       >
-        <View style={styles.titleRow}>
+        <View style={[styles.titleRow, { paddingHorizontal: gutter }]}>
           <View style={styles.wordmark}>
             <Ionicons name="flame" size={20} color={palette.ember} />
-            <Text style={styles.title}>Discover</Text>
+            <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+              Discover
+            </Text>
           </View>
           <View style={styles.topRight}>
             {isPro ? <ProChip /> : <LimitBadge used={swipesToday} limit={FREE_SWIPE_LIMIT} icon="flame" />}
             <View style={styles.counterChip}>
-              <Text style={styles.counterText}>
+              <Text style={styles.counterText} maxFontSizeMultiplier={1.2}>
                 {data.length === 0 ? '0/0' : `${Math.min(index + 1, data.length)}/${data.length}`}
               </Text>
             </View>
@@ -219,7 +222,7 @@ export default function DiscoverScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
+          contentContainerStyle={[styles.filterRow, { paddingHorizontal: gutter }]}
         >
           {FILTERS.map(({ key, label }) => {
             const active = key === filter;
@@ -236,7 +239,12 @@ export default function DiscoverScreen() {
                   active && { backgroundColor: `${accent}2E`, borderColor: `${accent}88` },
                 ]}
               >
-                <Text style={[styles.filterText, active && { color: palette.textPrimary }]}>{label}</Text>
+                <Text
+                  style={[styles.filterText, active && { color: palette.textPrimary }]}
+                  maxFontSizeMultiplier={1.2}
+                >
+                  {label}
+                </Text>
               </HapticPressable>
             );
           })}
@@ -255,15 +263,17 @@ export default function DiscoverScreen() {
 /** Final page of the feed — closes the loop instead of silently running out. */
 function EndCard({
   height,
+  bottomClearance,
   isPro,
   onGoPro,
 }: {
   height: number;
+  bottomClearance: number;
   isPro: boolean;
   onGoPro: () => void;
 }) {
   return (
-    <View style={[styles.endCard, { height }]}>
+    <View style={[styles.endCard, { height, paddingBottom: bottomClearance }]}>
       <Text style={styles.endEmoji}>🔥</Text>
       <Text style={styles.endTitle}>That&apos;s today&apos;s drop</Text>
       <Text style={styles.endSub}>
@@ -291,7 +301,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.md,
     paddingHorizontal: spacing.xxl,
-    paddingBottom: 120,
     backgroundColor: palette.ink,
   },
   endEmoji: {
@@ -335,16 +344,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
+    gap: spacing.sm,
   },
   wordmark: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
     gap: 6,
   },
   filterRow: {
     gap: spacing.sm,
-    paddingHorizontal: spacing.xl,
   },
   filterChip: {
     paddingHorizontal: 14,
@@ -371,6 +380,7 @@ const styles = StyleSheet.create({
   topRight: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
     gap: spacing.sm,
   },
   counterChip: {

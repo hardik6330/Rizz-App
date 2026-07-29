@@ -15,6 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { RAIL_WIDTH, useLayout } from '@/theme/layout';
 import { categoryColor, palette, radii, spacing } from '@/theme/tokens';
 import type { FeedItem } from '@/types';
 import { ActionRail } from './ActionRail';
@@ -31,8 +32,15 @@ interface FeedCardProps {
 /** One full-screen Discovery page: cinematic background + the line + rail. */
 export function FeedCard({ item, height, saved, onCopy, onToggleSave, onShare }: FeedCardProps) {
   const insets = useSafeAreaInsets();
+  const { gutter, landscape } = useLayout();
   const accent = categoryColor(item.category);
   const longLine = item.text.length > 110;
+  /**
+   * A landscape phone is ~half as tall as a portrait one, but this card's copy
+   * block is unchanged — at the portrait size the quote alone overflows the
+   * page. Step the display type down and give the tab bar less slack instead.
+   */
+  const bottomPad = insets.bottom + (landscape ? 84 : 132);
 
   const heartScale = useSharedValue(0);
   const heartOpacity = useSharedValue(0);
@@ -86,12 +94,29 @@ export function FeedCard({ item, height, saved, onCopy, onToggleSave, onShare }:
         style={StyleSheet.absoluteFill}
       />
 
-      <View style={[styles.content, { paddingBottom: insets.bottom + 132 }]}>
+      <View
+        style={[
+          styles.content,
+          {
+            paddingLeft: gutter,
+            // Clear the rail: its own right offset + width + breathing room.
+            paddingRight: gutter + RAIL_WIDTH + spacing.lg,
+            paddingBottom: bottomPad,
+          },
+        ]}
+      >
         <View style={[styles.categoryChip, { backgroundColor: `${accent}29`, borderColor: `${accent}77` }]}>
-          <Text style={[styles.categoryText, { color: accent }]}>{item.category.toUpperCase()}</Text>
+          <Text style={[styles.categoryText, { color: accent }]} maxFontSizeMultiplier={1.2}>
+            {item.category.toUpperCase()}
+          </Text>
         </View>
 
-        <Text style={[styles.line, longLine && styles.lineSmall]}>“{item.text}”</Text>
+        <Text
+          style={[styles.line, (longLine || landscape) && styles.lineSmall]}
+          maxFontSizeMultiplier={1.3}
+        >
+          “{item.text}”
+        </Text>
 
         <View style={styles.contextRow}>
           <Ionicons name="chatbubble-ellipses-outline" size={13} color={palette.textSecondary} />
@@ -121,7 +146,9 @@ export function FeedCard({ item, height, saved, onCopy, onToggleSave, onShare }:
         onCopy={onCopy}
         onToggleSave={onToggleSave}
         onShare={onShare}
-        style={{ bottom: insets.bottom + 148 }}
+        /* Hugs the screen edge on a phone (`gutter - spacing.md` is the original
+           12), and follows the centred column on a tablet. */
+        style={{ bottom: bottomPad + spacing.lg, right: Math.max(spacing.md, gutter - spacing.md) }}
       />
 
         <Animated.View style={[styles.heartOverlay, animatedHeartStyle]} pointerEvents="none">
@@ -136,8 +163,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'flex-end',
-    paddingLeft: spacing.xl,
-    paddingRight: 92,
     gap: spacing.md,
   },
   categoryChip: {

@@ -2,15 +2,15 @@
   "expo": {
     "name": "RizzCoach",
     "slug": "rizzcoach",
-    "version": "1.0.0",
-    "orientation": "portrait",
+    "version": "1.0.1",
+    "orientation": "default",
     "icon": "./assets/generated/icon.png",
     "scheme": "rizzcoach",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0A0A12",
     "ios": {
       "bundleIdentifier": "com.rizzcoach.chat",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": false,
@@ -59,15 +59,12 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "c3201809-99fb-4e32-afcf-f9093b8749cb"
+        "projectId": "703bba8d-5847-4fd6-8ccd-201540b75983"
       }
     },
-    "owner": "hugging001fceeeee",
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "updates": {
-      "url": "https://u.expo.dev/c3201809-99fb-4e32-afcf-f9093b8749cb"
-    }
+    "owner": "huggingfffce"
   }
 }

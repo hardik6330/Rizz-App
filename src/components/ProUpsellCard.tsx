@@ -52,6 +52,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   iconWrap: {
+    flexShrink: 0,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -77,6 +78,7 @@ const styles = StyleSheet.create({
     color: palette.textSecondary,
   },
   cta: {
+    flexShrink: 0,
     paddingHorizontal: spacing.lg,
     paddingVertical: 10,
     borderRadius: radii.full,

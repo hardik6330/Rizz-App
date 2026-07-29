@@ -5,7 +5,8 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 # RizzCoach
 
 Expo Router app. Screens in `src/app/(tabs)/`, AI in `src/services/`, persisted state in
-`src/state/`, design tokens in `src/theme/tokens.ts`.
+`src/state/`, design tokens in `src/theme/tokens.ts`, responsive rules in
+`src/theme/layout.ts`.
 
 ## Gemini engines — read this before touching any `*Engine.ts`
 
@@ -98,9 +99,54 @@ change appears to do nothing.
 AI items reuse the bundled backgrounds from `data/assets.ts` and use `testedBy.age === 0` as
 the sentinel for the "✨ Fresh today" tag (no fake tester invented).
 
+## Responsive layout — `src/theme/layout.ts`
+
+`tokens.ts` owns the design language (colour, type, spacing). **`layout.ts` owns everything
+that depends on the *device*: screen width, height, safe-area insets and the OS font scale.**
+Two numbers used to be copy-pasted into every screen — a 24pt gutter and `paddingBottom: 148`
+— and neither adapted to anything. Both are now derived; do not reintroduce either.
+
+- **`useLayout()` → `{ width, height, fontScale, gutter, landscape, compact, tablet }`.**
+  `gutter` is the *only* horizontal padding a screen body should use. It tightens below 360pt
+  and, past `CONTENT_MAX` (560), grows so the column stays readable and lands centred — which
+  is why there is no max-width wrapper anywhere. It drops straight into the existing
+  `paddingHorizontal`, so screens keep their shape.
+- **`useTabBarClearance()` is the bottom padding of every screen behind the floating tab
+  bar.** It mirrors `FloatingTabBar`'s own geometry *including font-scale growth*; the old
+  flat 148 let the last card slide under the bar at large accessibility text sizes. If you
+  change the bar's padding or label size, change `TAB_BAR_HEIGHT` with it.
+- **`cardHeightFor(windowHeight, designed, min)`** for hero cards. `GlowDropZone` and
+  `AnalyzingOverlay` had fixed heights that clipped their own copy at large font scales and
+  ate a whole landscape screen. `AnalyzingOverlay`'s scan beam interpolates over this value —
+  hardcode the height again and the beam overshoots the card.
+- **`RAIL_WIDTH`** is what `FeedCard` reserves for `ActionRail`. Its `paddingRight` is
+  `gutter + RAIL_WIDTH + spacing.lg`; the rail's own `right` is `max(spacing.md, gutter -
+  spacing.md)`, which is the original 12 on a phone and tracks the centred column on a tablet.
+
+**`flex: 1` on a pill needs `minWidth: 0`, and its label needs `flexShrink: 1`.** RN defaults
+`flexShrink` to 0 (unlike the web), so a label that doesn't fit forces its pill past its share
+of the row and spills outside the gutter — and `numberOfLines` cannot ellipsize text that was
+never given a bounded width. This bit `ModeSelector` ("Vibe Check"), the Bio vibe row
+("Ambitious") and the Profile report tabs. Any new segmented row needs all three:
+`minWidth: 0`, `flexShrink: 1`, `numberOfLines={1}`.
+
+**Font scale: cap chrome, never cap content.** Body copy, results and AI output scale freely —
+that is an accessibility setting, not a suggestion. Text living inside a fixed-size container
+(tab bar labels, credit meters, count bubbles, chips) gets `maxFontSizeMultiplier` 1.0–1.3, or
+it bursts its container at 200% system text.
+
+**Both modals are full-screen on Android.** `vault` and `paywall` must apply `insets.top`
+themselves — iOS sheets report 0 there, so it is free on iOS and load-bearing on Android.
+Without it the Vault title and the paywall close button sit under the status bar.
+
+Rotation and tablets are enabled (`orientation: "default"`, `ios.supportsTablet: true`), so
+**every new screen must survive a ~390pt-tall viewport.** A centred `flex: 1` column silently
+clips there — `LockOverlay` had to become a `ScrollView` for exactly this reason.
+
 ## Conventions
 
-- Read tokens from `src/theme/tokens.ts`. Never hardcode hex or px in screens.
+- Read tokens from `src/theme/tokens.ts`. Never hardcode hex or px in screens. Screen gutters
+  and tab-bar clearance come from `layout.ts`, never from `spacing.xl` / a literal.
 - All touchables route through `HapticPressable` so touch feel stays consistent.
 - The three AI tools share `<ScreenHeader icon title tint />` (wordmark + credit meter +
   vault) and `<StagedLoader stages stage badge tint />` (text-only "thinking" card). The Lab
@@ -110,6 +156,9 @@ the sentinel for the "✨ Fresh today" tag (no fake tester invented).
 - `toast.show(msg, ms?)` — pass a longer duration for long messages (default 1.7s).
 - Persisted state must be added to `partialize` in `useRizzStore.ts` or it won't survive
   reload.
+- `bio.tsx` is the only screen with text inputs; its ScrollView carries
+  `automaticallyAdjustKeyboardInsets` because the multiline field is the last thing on the
+  page and iOS covered it outright. Any new input screen needs the same prop.
 
 ## Shipping (EAS)
 
@@ -153,7 +202,8 @@ change minted a fresh runtime version and orphaned every installed build, so eac
 on zero devices until a new APK was built and reinstalled. Three builds in one morning had
 three fingerprints and an update matched none of them.
 
-Under `appVersion` every build sharing `version` (`app.json`, currently `1.0.0`) accepts the
+Under `appVersion` every build sharing `version` (`app.json`, currently `1.0.1` — bumped when
+rotation and tablet support were enabled) accepts the
 same updates, so JS-only fixes actually reach installed apps. The cost is that the safety net
 is gone:
 
@@ -188,3 +238,9 @@ node --env-file=.env src/services/gemini.selfcheck.ts   # live API (1 tiny call)
 `*.selfcheck.ts` are framework-free Node scripts (Node 24 strips types natively) and are
 excluded from `tsconfig.json`. Add one next to non-trivial pure logic; don't add a test
 framework.
+
+**`layout.ts` deliberately has no selfcheck.** It transitively imports `react-native` (via
+`tokens.ts`), which Node cannot parse — and the alternative, duplicating the spacing values
+into an import-free module, is worse than the arithmetic being unguarded. Verify layout
+changes with `npx expo export --platform android`, which catches everything a type error
+wouldn't.

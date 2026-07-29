@@ -20,6 +20,6 @@
   android:canRetrieveWindowContent="true"
   android:canTakeScreenshot="true"
   android:notificationTimeout="300"
-  android:packageNames="com.instagram.android,com.tinder,com.bumble.app,co.hinge.app,com.facebook.katana"
+  android:packageNames="com.instagram.android,com.tinder,com.bumble.app,co.hinge.app,com.facebook.katana,com.whatsapp,com.snapchat.android,org.telegram.messenger"
   android:description="@string/rizz_accessibility_description"
   android:summary="@string/rizz_accessibility_summary" />

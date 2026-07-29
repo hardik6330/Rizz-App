@@ -84,6 +84,7 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   categoryChip: {
@@ -103,6 +104,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     justifyContent: 'center',
+    flexShrink: 0,
     gap: spacing.sm,
   },
 });

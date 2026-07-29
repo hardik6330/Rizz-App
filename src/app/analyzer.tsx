@@ -10,6 +10,7 @@ import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
 import { useRizzStore } from '@/state/useRizzStore';
 import { isSupported, isEnabled, permissions, setEnabled } from '@/../modules/profile-capture';
+import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
@@ -26,6 +27,7 @@ import { haptic } from '@/utils/haptics';
  */
 export default function AnalyzerScreen() {
   const insets = useSafeAreaInsets();
+  const { gutter } = useLayout();
   const toast = useToast();
 
   const [a11y, setA11y] = useState(false);
@@ -74,7 +76,13 @@ export default function AnalyzerScreen() {
 
   if (!isSupported) {
     return (
-      <View style={[styles.root, styles.center, { paddingTop: insets.top }]}>
+      <View
+        style={[
+          styles.root,
+          styles.center,
+          { paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: gutter },
+        ]}
+      >
         <Text style={styles.title}>Android only</Text>
         <Text style={styles.body}>
           The one-tap analyzer needs Android&apos;s accessibility APIs. On this device, use
@@ -90,7 +98,15 @@ export default function AnalyzerScreen() {
   return (
     <View style={styles.root}>
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + spacing.lg }]}
+        contentContainerStyle={[
+          styles.scroll,
+          {
+            paddingHorizontal: gutter,
+            paddingTop: insets.top + spacing.lg,
+            // Gesture-nav devices put the home bar right under the last button.
+            paddingBottom: insets.bottom + spacing.xxxl,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
@@ -231,8 +247,8 @@ function Bullet({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: st
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: palette.ink },
-  center: { alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.lg },
-  scroll: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  center: { alignItems: 'center', justifyContent: 'center', gap: spacing.lg },
+  scroll: { gap: spacing.lg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   wordmark: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   wordmarkText: { fontSize: 16, fontWeight: '800', letterSpacing: -0.3, color: palette.textPrimary },
