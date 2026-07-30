@@ -9,7 +9,7 @@ import { db } from '../db/client.ts';
 import { Errors } from '../lib/errors.ts';
 import { todayKey } from '../lib/limits.ts';
 import { log } from '../lib/logger.ts';
-import { chargeCredit, creditsFor, refundCredit } from '../middleware/credits.ts';
+import { chargeCredit, creditsEnvelope, creditsFor, refundCredit } from '../middleware/credits.ts';
 
 export const ai = new Hono();
 
@@ -63,8 +63,7 @@ async function charged<T>(userId: string, run: () => Promise<T>): Promise<T> {
 }
 
 async function withCredits(userId: string, result: unknown) {
-  const { isPro, remaining } = await creditsFor(userId);
-  return { result, credits: { is_pro: isPro, remaining: isPro ? null : remaining } };
+  return { result, credits: creditsEnvelope(await creditsFor(userId)) };
 }
 
 // ── POST /v1/ai/lab ──────────────────────────────────────────────────────────
@@ -266,7 +265,15 @@ ai.post('/chat', async (c) => {
     return data;
   });
 
-  const { isPro, remaining } = await creditsFor(sub);
+  const credits = await creditsFor(sub);
   // Flat shape: the Kotlin client reads `reply` off the top level.
-  return c.json({ reply: data.reply, credits: { is_pro: isPro, remaining: isPro ? null : remaining } });
+  //
+  // `remaining` is kept ALONGSIDE the standard envelope because
+  // GeminiChatClient.kt parses `credits.optInt("remaining")`. That is native, so
+  // dropping the key needs an app.json `version` bump and a rebuild, not an OTA —
+  // and the accessibility service would silently read 0 credits until then.
+  return c.json({
+    reply: data.reply,
+    credits: { ...creditsEnvelope(credits), remaining: credits.isPro ? null : credits.remaining },
+  });
 });
