@@ -15,6 +15,7 @@ assertSafetyRails();
 
 export const app = new Hono();
 
+app.get('/', (c) => c.text('Server is running!'));
 app.get('/healthz', (c) => c.json({ ok: true }));
 
 /*
