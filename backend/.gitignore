@@ -2,4 +2,3 @@ node_modules/
 dist/
 .env
 ca.pem
-api/index.js

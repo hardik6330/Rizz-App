@@ -13,8 +13,5 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true
   },
-  // `../api/index.ts` is the Vercel entrypoint. It lives at the repo root because
-  // that is where Vercel looks, but it is server code — the app's tsconfig
-  // excludes it, so it is checked here or nowhere.
-  "include": ["src/**/*.ts", "drizzle.config.ts", "../src/state/limits.ts", "../api/**/*.ts"]
+  "include": ["src/**/*.ts", "drizzle.config.ts", "../src/state/limits.ts"]
 }

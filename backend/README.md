@@ -62,16 +62,17 @@ No Docker. Two targets are configured, both from the **repo root** — never wit
 root set to `backend/`, because `lib/limits.ts` re-exports the app's `src/state/limits.ts` and
 that file is outside `backend/`.
 
-### Vercel — `vercel.json` + `api/index.ts`
+### Vercel — `vercel.json` + `api/index.mjs`
 
 Import the repo, leave Root Directory as `./`, add the env vars below, deploy. `installCommand`
 only installs `backend/`, so the root Expo dependencies are never touched.
 
-Four things are load-bearing:
+Five things are load-bearing:
 
 | | Why |
 |---|---|
-| `@hono/node-server/vercel`, not `hono/vercel` | The latter selects the Edge runtime, which has no TCP sockets, so mysql2 cannot reach Aiven at all |
+| The function is a **bundle**, not source | Every import here ends in `.ts`. Vercel's Node builder transpiles file-by-file and does **not** rewrite specifiers, so loading `src/` directly dies with `ERR_MODULE_NOT_FOUND … 'backend/src/ai/prompts.ts'` on the first request. `npm run build:vercel` bundles to `dist/vercel.mjs`; `api/index.mjs` is a committed one-line re-export, because Vercel scans `api/` in the **source** tree and never finds a generated entrypoint |
+| `@hono/node-server/vercel` + a single `export default` | mysql2 needs a real TCP socket, so this must be the Node runtime — `hono/vercel` is the Web/Edge handler. And named `GET`/`POST` exports are Next.js App Router only; a plain Vercel function exporting just those has no handler at all |
 | `maxDuration: 60` | Must stay **above** the 45s `AbortSignal.timeout` in `ai/gateway.ts`. Serverless has no SIGTERM, so that abort is the only thing that still lets `charged()` refund. Vercel's default is 10s and Hobby caps at 60s — a 3–15s Gemini call needs the headroom |
 | `connectionLimit: 1` when `process.env.VERCEL` | Every warm instance gets its own pool; Aiven's small plans cap `max_connections` in the low tens |
 | The catch-all rewrite | Vercel preserves the original URL through a rewrite into a function, so Hono still sees `/v1/…` and needs no `basePath()` |

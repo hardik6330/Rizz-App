@@ -2,12 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
 
   "installCommand": "npm ci --prefix backend",
-  "buildCommand": "",
+  "buildCommand": "npm run build:vercel --prefix backend",
 
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
 
   "functions": {
-    "api/index.ts": {
+    "api/index.mjs": {
       "maxDuration": 60,
       "memory": 512
     }
