@@ -9,24 +9,29 @@
  * `ERR_MODULE_NOT_FOUND … '/var/task/backend/src/ai/prompts.ts'` on the first
  * request. esbuild resolves all of it at build time instead.
  *
- * The adapter is `hono/vercel`, NOT `@hono/node-server/vercel`.
+ * ## Why this is hand-rolled instead of an adapter
  *
- * The node-server adapter builds the request with `Readable.toWeb(incoming)`, and
- * Vercel's launcher has ALREADY drained that stream into `req.body`. The reader
- * therefore never yields, `await c.req.json()` never settles, and every POST in
- * the service hung until Vercel killed the function at maxDuration — logged as a
- * runtime timeout with no error, while GETs were fine. Client-side that looks
- * exactly like an outage: `callApi` throws and all four engines serve mock data.
+ * Both published adapters fail here, in opposite directions, and both fail as a
+ * 60s `FUNCTION_INVOCATION_TIMEOUT` with no error logged — which the client sees
+ * as a total outage, so `callApi` throws and all four engines silently serve mock
+ * data. "The AI ignores my screenshot" was this, for every POST, in production.
  *
- * `hono/vercel` is `(req) => app.fetch(req)` — Vercel's Node runtime accepts a
- * Web-standard handler and hands it a real `Request`, body included. Web-shaped
- * is NOT Edge-shaped: the runtime is still Node unless something declares
- * otherwise, so mysql2 keeps its raw TCP socket to Aiven. Do not add
- * `export const runtime = 'edge'` — that has no sockets and the DB dies.
+ *   - `@hono/node-server/vercel` gets the shape right but the body wrong: it
+ *     builds the request with `Readable.toWeb(incoming)`, and Vercel's launcher
+ *     has already drained that stream. The reader never yields, so
+ *     `await c.req.json()` never settles. GETs were fine; every POST hung.
+ *   - `hono/vercel` is `(req) => app.fetch(req)`, which needs Vercel to invoke the
+ *     function with a web `Request`. It does not — it passes Node's
+ *     `(req, res)`. `app.fetch` receives an `IncomingMessage`, nothing is ever
+ *     written to `res`, and now even `GET /` hangs. Strictly worse.
  *
- * One `export default` too — named `GET`/`POST`/`PUT` exports are the Next.js App
- * Router convention and are not detected by a plain Vercel function, so a file
- * exporting only those has no handler at all.
+ * So: Node signature, and read the body from wherever the launcher actually left
+ * it. `bodyOf()` is the whole fix and its `complete` guard is the load-bearing
+ * line — never await `end` on a stream that has already ended.
+ *
+ * Keep the default export a single function. Named `GET`/`POST` exports are the
+ * Next.js App Router convention and are not detected by a plain Vercel function,
+ * so a file exporting only those has no handler at all.
  *
  * What `src/index.ts` does that this deliberately cannot:
  *
@@ -43,8 +48,56 @@
  * request URL through a rewrite into a function, so Hono still sees `/v1/ai/…`
  * and needs no basePath().
  */
-import { handle } from 'hono/vercel';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { app } from './app.ts';
 
-export default handle(app);
+/** Vercel's launcher may hand the body over parsed, raw, or not at all. */
+type VercelRequest = IncomingMessage & { body?: unknown };
+
+/**
+ * The body, however the platform chose to deliver it.
+ *
+ * `req.body` is what the launcher parsed: an object for `application/json`, a
+ * string for text, a Buffer otherwise. Only when it is absent is the stream still
+ * worth reading — and only if it has not already ended, because awaiting `end` on
+ * a spent stream is precisely the hang this file exists to avoid.
+ */
+export async function bodyOf(req: VercelRequest): Promise<Uint8Array | string | undefined> {
+  if (req.method === 'GET' || req.method === 'HEAD') return undefined;
+
+  const parsed = req.body;
+  if (parsed !== undefined && parsed !== null) {
+    if (typeof parsed === 'string') return parsed;
+    if (Buffer.isBuffer(parsed)) return new Uint8Array(parsed);
+    return JSON.stringify(parsed);
+  }
+
+  if (req.readableEnded || req.complete) return undefined;
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return chunks.length ? new Uint8Array(Buffer.concat(chunks)) : undefined;
+}
+
+export default async function handler(req: VercelRequest, res: ServerResponse): Promise<void> {
+  const proto = (req.headers['x-forwarded-proto'] as string | undefined) ?? 'https';
+  const url = `${proto}://${req.headers.host ?? 'localhost'}${req.url ?? '/'}`;
+
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value === undefined || key.startsWith(':')) continue;
+    for (const one of Array.isArray(value) ? value : [value]) headers.append(key, one);
+  }
+
+  const body = await bodyOf(req);
+  // A re-serialized body rarely matches the original length, and a wrong
+  // content-length makes `Request` truncate or reject it.
+  if (body !== undefined) headers.delete('content-length');
+
+  const response = await app.fetch(new Request(url, { method: req.method, headers, body }));
+
+  res.statusCode = response.status;
+  response.headers.forEach((value, key) => res.setHeader(key, value));
+  res.end(Buffer.from(await response.arrayBuffer()));
+}

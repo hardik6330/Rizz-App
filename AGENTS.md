@@ -316,12 +316,27 @@ landed as 1.0.1 → 1.0.2 for exactly this reason.
 npx tsc --noEmit                                        # must pass
 node src/state/limits.selfcheck.ts                      # swipe-allowance + store-key rules
 cd backend && node --env-file=.env --import tsx src/ai/gateway.selfcheck.ts   # live API (1 tiny call)
+cd backend && node --env-file=.env --import tsx src/vercel.selfcheck.ts       # serverless POST body
 cd backend && npx tsc --noEmit                          # server must pass too
 ```
 
 `*.selfcheck.ts` are framework-free Node scripts (Node 24 strips types natively) and are
 excluded from `tsconfig.json`. Add one next to non-trivial pure logic; don't add a test
 framework.
+
+**Run `vercel.selfcheck.ts` after touching `backend/src/vercel.ts`, and never trust a local
+run to cover it.** `npm run dev` uses `src/index.ts` and a real Node server, so the serverless
+entrypoint is the one file in the repo that no local check exercises. Both published Hono
+Vercel adapters are broken on a plain function in `api/`, in opposite directions, and both fail
+as a bare 60s `FUNCTION_INVOCATION_TIMEOUT` with nothing logged: `@hono/node-server/vercel`
+rebuilds the body from a stream Vercel already drained, so `c.req.json()` never settles and
+every POST hangs (GETs are fine — which is why `/healthz` looked healthy for hours);
+`hono/vercel` expects to be handed a web `Request` and gets Node's `(req, res)`, so nothing is
+written to `res` and even `GET /` hangs. Hence the hand-rolled `(req, res)` handler. Read the
+body from `req.body` when the launcher parsed it and **only** read the stream when it has not
+ended — awaiting `end` on a spent stream is the hang. On the client this is indistinguishable
+from an outage: `callApi` throws and all four engines serve mock seeds, i.e. "the AI ignores my
+screenshot."
 
 **`layout.ts` deliberately has no selfcheck.** It transitively imports `react-native` (via
 `tokens.ts`), which Node cannot parse — and the alternative, duplicating the spacing values
