@@ -64,8 +64,18 @@ that file is outside `backend/`.
 
 ### Vercel — `vercel.json` + `api/index.mjs`
 
-Import the repo, leave Root Directory as `./`, add the env vars below, deploy. `installCommand`
-only installs `backend/`, so the root Expo dependencies are never touched.
+Import the repo, add the env vars below, deploy. `installCommand` only installs `backend/`, so
+the root Expo dependencies are never touched.
+
+> **Root Directory must be `./`, NOT `backend`.** It is the one setting that lives in the
+> dashboard rather than in this repo, and getting it wrong fails in a way that reads like a
+> broken build command: `vercel.json` is still read from the repo root, but the commands run
+> inside the Root Directory, so `cd backend && …` reports `No such file or directory`. The tell
+> is `Detected "engines": { "node": ">=22" }` in the build log — that field only exists in
+> `backend/package.json`, so seeing it means Vercel is sitting one directory too deep.
+>
+> It cannot be worked around from here: Vercel discovers functions in `<root>/api/`, and esbuild
+> has to reach `src/state/limits.ts` at the repo root because `lib/limits.ts` re-exports it.
 
 Five things are load-bearing:
 
