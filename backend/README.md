@@ -86,6 +86,7 @@ Five things are load-bearing:
 | `maxDuration: 60` | Must stay **above** the 45s `AbortSignal.timeout` in `ai/gateway.ts`. Serverless has no SIGTERM, so that abort is the only thing that still lets `charged()` refund. Vercel's default is 10s and Hobby caps at 60s — a 3–15s Gemini call needs the headroom |
 | `connectionLimit: 1` when `process.env.VERCEL` | Every warm instance gets its own pool; Aiven's small plans cap `max_connections` in the low tens |
 | The catch-all rewrite | Vercel preserves the original URL through a rewrite into a function, so Hono still sees `/v1/…` and needs no `basePath()` |
+| `framework: null` + an empty `public/` | Without the first, Vercel's Node-server detector hunts for `index.js`/`server.js` and never looks in `api/` — `No entrypoint found`. With it, Vercel then demands a static output directory it can serve, so the build makes an empty one. Nothing is ever served from `public/`; it is gitignored and recreated each build. Do **not** point `outputDirectory` at `.` to satisfy this — that publishes the whole repo as static files |
 
 Accepted costs: `rateLimit` becomes per-instance and effectively off (the per-day cap in
 `middleware/credits.ts` is in the database and still holds the Gemini bill); and an unreachable
