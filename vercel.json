@@ -4,7 +4,7 @@
   "framework": null,
 
   "installCommand": "cd backend && npm ci --include=dev",
-  "buildCommand": "mkdir -p public && cd backend && npm run build:vercel",
+  "buildCommand": "cd backend && npm run build:vercel",
   "outputDirectory": "public",
 
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],

@@ -25,7 +25,3 @@ web-build/
 # a file-type secret (GOOGLE_SERVICES_JSON / GOOGLE_SERVICES_PLIST), never committed.
 google-services.json
 GoogleService-Info.plist
-
-# Vercel demands a static output directory even for an API-only project. The
-# build creates it empty; nothing is ever served from it. See backend/README.md.
-public/

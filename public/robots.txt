@@ -1,0 +1,12 @@
+# This is an API, not a website. Nothing here should be indexed.
+#
+# It is also the one file that makes Vercel's `outputDirectory` valid: with
+# `framework: null` and a buildCommand, Vercel rejects both a missing and an
+# EMPTY output directory, so `public/` needs real content checked in.
+#
+# Deliberately not an index.html: Vercel resolves the filesystem BEFORE applying
+# the catch-all rewrite in vercel.json, so a `public/index.html` would shadow the
+# API's own `GET /`. A robots.txt is served at /robots.txt and leaves every other
+# path to the function.
+User-agent: *
+Disallow: /
