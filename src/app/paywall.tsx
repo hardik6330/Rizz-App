@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -22,6 +22,7 @@ import { PlanCard } from '@/components/PlanCard';
 import { useToast } from '@/components/Toast';
 import { PRIVACY_URL, TERMS_URL } from '@/constants';
 import { AVATARS, BG } from '@/data/assets';
+import { track, type PaywallSource } from '@/services/analytics';
 import { fetchPlans, purchasePlan, restorePurchases, type Plan } from '@/services/purchases';
 import { CONTENT_MAX, useLayout } from '@/theme/layout';
 import { glow, palette, radii, spacing } from '@/theme/tokens';
@@ -36,6 +37,14 @@ const FEATURES: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
 
 export default function PaywallScreen() {
   const insets = useSafeAreaInsets();
+  /*
+   * Both paywall events are logged HERE, once, rather than at the ten
+   * `router.push('/paywall')` call sites — the source rides in as a route param,
+   * so a new entry point is attributed for free and the two events can never
+   * drift apart. An unrecognised or absent param reads as 'manual'.
+   */
+  const { source } = useLocalSearchParams<{ source?: PaywallSource }>();
+  const entry: PaywallSource = source ?? 'manual';
   const { gutter } = useLayout();
   const toast = useToast();
 
@@ -44,6 +53,8 @@ export default function PaywallScreen() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [showClose, setShowClose] = useState(false);
+  /** Read in the unmount cleanup, which closes over the first render's state. */
+  const convertedRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -52,12 +63,16 @@ export default function PaywallScreen() {
       setPlans(fetched);
       setSelectedId(fetched.find((plan) => plan.badge)?.id ?? fetched[0]?.id ?? null);
     });
+    track({ name: 'paywall_viewed', source: entry });
     const closeTimer = setTimeout(() => setShowClose(true), 1400);
     return () => {
       mounted = false;
       clearTimeout(closeTimer);
+      // Fires on every exit — the ✕, the hardware back button, and the automatic
+      // dismissal after a purchase. `converted` is what separates the three.
+      track({ name: 'paywall_dismissed', source: entry, converted: convertedRef.current });
     };
-  }, []);
+  }, [entry]);
 
   const buy = async () => {
     if (!selectedId || busy || done) return;
@@ -66,6 +81,7 @@ export default function PaywallScreen() {
     const unlocked = await purchasePlan(selectedId);
     if (unlocked) {
       haptic.success();
+      convertedRef.current = true;
       setDone(true);
       setTimeout(() => router.back(), 1200);
     } else {
@@ -78,6 +94,7 @@ export default function PaywallScreen() {
     haptic.light();
     const restored = await restorePurchases();
     if (restored) {
+      convertedRef.current = true;
       toast.show('Pro restored — welcome back');
       setTimeout(() => router.back(), 900);
     } else {

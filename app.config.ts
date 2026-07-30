@@ -35,8 +35,58 @@ const APPLE_TEAM_ID = process.env.APPLE_TEAM_ID ?? '';
 /** An Apple Team ID is 10 alphanumeric characters. Anything else is a stub. */
 const hasTeamId = /^[A-Z0-9]{10}$/i.test(APPLE_TEAM_ID);
 
+/**
+ * Firebase (Analytics + Crashlytics) is OPT-IN, for the same reason the widget is.
+ *
+ * `google-services.json` is a per-project file that cannot be committed, and the
+ * Google Services Gradle plugin **hard-fails the build** when it is missing —
+ * not at config time, but deep inside a Gradle task after the EAS queue wait.
+ * Wiring the plugins unconditionally would mean nobody could build Android until
+ * they knew to go and fetch a file.
+ *
+ * So: env var unset → no Firebase plugins → the app builds exactly as it does
+ * today, and `services/analytics.ts` no-ops because the native module is absent.
+ * Set → Analytics and Crashlytics switch on with no code change.
+ *
+ * Gated on the env var rather than on the file being present, to match
+ * APPLE_TEAM_ID above — one opt-in mechanism in this file, not two — and because
+ * EAS supplies the file through exactly this variable anyway.
+ *
+ * Get it from the Firebase console (Project settings → Your apps → Android,
+ * package `com.rizzcoach.app`). Locally:
+ *   GOOGLE_SERVICES_JSON=./google-services.json npx expo prebuild -p android
+ * In EAS, upload it as a file-type secret and the variable becomes its path:
+ *   eas env:create --environment preview --name GOOGLE_SERVICES_JSON \
+ *     --type file --value ./google-services.json
+ */
+const GOOGLE_SERVICES_JSON = process.env.GOOGLE_SERVICES_JSON ?? '';
+const GOOGLE_SERVICES_PLIST = process.env.GOOGLE_SERVICES_PLIST ?? '';
+const hasFirebaseAndroid = GOOGLE_SERVICES_JSON.length > 0;
+const hasFirebaseIos = GOOGLE_SERVICES_PLIST.length > 0;
+const hasFirebase = hasFirebaseAndroid || hasFirebaseIos;
+
+const FIREBASE_PLUGINS = [
+  '@react-native-firebase/app',
+  '@react-native-firebase/crashlytics',
+];
+
 export default ({ config }: ConfigContext): ExpoConfig => {
-  const base = config as ExpoConfig;
+  let base = config as ExpoConfig;
+
+  if (hasFirebase) {
+    base = {
+      ...base,
+      // Only declare the platform that was actually configured — pointing at a
+      // missing file is the same hard Gradle failure this branch exists to avoid.
+      ...(hasFirebaseAndroid
+        ? { android: { ...base.android, googleServicesFile: GOOGLE_SERVICES_JSON } }
+        : {}),
+      ...(hasFirebaseIos
+        ? { ios: { ...base.ios, googleServicesFile: GOOGLE_SERVICES_PLIST } }
+        : {}),
+      plugins: [...(base.plugins ?? []), ...FIREBASE_PLUGINS],
+    };
+  }
 
   if (!hasTeamId) {
     // The common path: a complete, buildable iOS app without the widget.

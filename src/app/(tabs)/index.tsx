@@ -109,7 +109,7 @@ export default function LabScreen() {
   const pickScreenshot = useCallback(async () => {
     if (outOfCredits) {
       haptic.warning();
-      router.push('/paywall');
+      router.push('/paywall?source=out_of_credits');
       return;
     }
 
@@ -279,7 +279,7 @@ export default function LabScreen() {
               <RoastCard roast={result.roast} onShare={() => void shareRoast()} />
             )}
 
-            {outOfCredits && <ProUpsellCard onPress={() => router.push('/paywall')} />}
+            {outOfCredits && <ProUpsellCard onPress={() => router.push('/paywall?source=upsell_card')} />}
           </View>
         )}
 

@@ -4,32 +4,30 @@ import android.content.Context
 
 /**
  * The narrow bridge that lets the accessibility service answer "may I generate a
- * reply?" WITHOUT owning the freemium rule.
+ * reply?" and "who am I?" WITHOUT owning the freemium rule.
  *
- * The rule still lives in JS (`useOutOfCredits`, `FREE_ANALYSIS_LIMIT`, `limits.ts`).
- * The service just can't reach it: it runs when the React context may not exist, so
- * it reads a SNAPSHOT that JS pushes down on launch and on every resume —
- * `isPro` + `freeRemaining`. This is a single, explicit contract of two scalars,
+ * The rule lives on the server now (`backend/src/middleware/credits.ts`). The
+ * service still keeps a local snapshot because it must gate a tap instantly and
+ * offline — but the snapshot is a CACHE, refreshed from the server's response on
+ * every generation, not a second implementation.
+ *
+ * JS pushes the snapshot down on launch and every resume: the API base URL, the
+ * anonymous install id, `isPro` and `freeRemaining`. A single explicit contract,
  * NOT a parse of Zustand's persisted JSON (blueprint §4.7 option (a), rejected):
  * there is nothing here to drift because JS overwrites it whole every time.
  *
- * The counter-flow is symmetric. When the inline reply succeeds and burns a free
- * credit, native decrements its local `freeRemaining` (so back-to-back taps gate
- * correctly before the next resume) and increments `consumedPending`. JS drains
- * `consumedPending` on resume and folds it into the real `analysisCount`, then
- * pushes a fresh snapshot. JS stays the source of truth; native holds only a cache
- * and a pending delta.
- *
- * Also the one place the Gemini key crosses into native: JS hands it down here
- * (it is already in the JS bundle via EXPO_PUBLIC_GEMINI_API_KEY) rather than the
- * native side reading BuildConfig, so there is exactly one key definition. Same
- * shipping caveat as gemini.ts — this key is extractable from the build; move both
- * behind a proxy before launch.
+ * **This used to hold the Gemini API key.** It no longer does, and nothing here
+ * can call Google. The install id is stored instead: it never expires, so the
+ * bubble can authenticate itself days after the app was last opened, which a 24h
+ * access token could not. The token it mints is cached beside it and is the only
+ * short-lived value in this file.
  */
 object ChatEntitlement {
 
   private const val PREFS = "rizz_chat_entitlement"
-  private const val KEY_API = "api_key"
+  private const val KEY_API_URL = "api_url"
+  private const val KEY_INSTALL = "install_id"
+  private const val KEY_TOKEN = "access_token"
   private const val KEY_PRO = "is_pro"
   private const val KEY_REMAINING = "free_remaining"
   private const val KEY_CONSUMED = "consumed_pending"
@@ -37,26 +35,33 @@ object ChatEntitlement {
   private fun prefs(ctx: Context) =
     ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-  /** JS pushes the whole snapshot. Never touches `consumed_pending`. */
-  fun configure(ctx: Context, apiKey: String, isPro: Boolean, freeRemaining: Int) {
+  /** JS pushes the whole snapshot. Never touches the token or `consumed_pending`. */
+  fun configure(ctx: Context, apiUrl: String, installId: String, isPro: Boolean, freeRemaining: Int) {
     prefs(ctx).edit()
-      .putString(KEY_API, apiKey)
+      .putString(KEY_API_URL, apiUrl.trimEnd('/'))
+      .putString(KEY_INSTALL, installId)
       .putBoolean(KEY_PRO, isPro)
       .putInt(KEY_REMAINING, freeRemaining.coerceAtLeast(0))
       .apply()
   }
 
-  fun apiKey(ctx: Context): String = prefs(ctx).getString(KEY_API, "") ?: ""
+  fun apiUrl(ctx: Context): String = prefs(ctx).getString(KEY_API_URL, "") ?: ""
+
+  fun installId(ctx: Context): String = prefs(ctx).getString(KEY_INSTALL, "") ?: ""
+
+  fun accessToken(ctx: Context): String = prefs(ctx).getString(KEY_TOKEN, "") ?: ""
+
+  fun setAccessToken(ctx: Context, token: String) {
+    prefs(ctx).edit().putString(KEY_TOKEN, token).apply()
+  }
 
   /**
-   * A live key by the same rule as `isLiveKey` in gemini.ts: long enough and not a
-   * stub. Without it the inline path has nothing to call, so the tap should say so
-   * rather than silently do nothing.
+   * Is there an API to call? Replaces the old `hasLiveKey`.
+   *
+   * Without a configured URL the inline path has nothing to talk to, so the tap
+   * should say so rather than silently do nothing.
    */
-  fun hasLiveKey(ctx: Context): Boolean {
-    val key = apiKey(ctx)
-    return key.length >= 30 && !key.lowercase().contains("mock")
-  }
+  fun hasApi(ctx: Context): Boolean = apiUrl(ctx).startsWith("http")
 
   /** Pro, or at least one free credit left in the snapshot. */
   fun canGenerate(ctx: Context): Boolean {
@@ -65,20 +70,28 @@ object ChatEntitlement {
   }
 
   /**
-   * Record a successful, credit-burning generation. Pro burns nothing. Free
-   * decrements the local snapshot AND bumps the pending delta for JS to reconcile.
-   * Call ONLY after a reply is actually produced — a failed call must never charge.
+   * Take the server's balance verbatim after a successful generation.
+   *
+   * This replaced a local `recordConsumed()` that decremented its own counter and
+   * queued a delta for JS to fold in. With the server charging the credit, that
+   * would have counted the same generation twice — once natively and once again
+   * when JS reconciled. The server is the only thing that decides a balance now;
+   * this just mirrors it so the next tap gates correctly without a round trip.
    */
-  fun recordConsumed(ctx: Context) {
-    val p = prefs(ctx)
-    if (p.getBoolean(KEY_PRO, false)) return
-    p.edit()
-      .putInt(KEY_REMAINING, (p.getInt(KEY_REMAINING, 0) - 1).coerceAtLeast(0))
-      .putInt(KEY_CONSUMED, p.getInt(KEY_CONSUMED, 0) + 1)
+  fun applyServerCredits(ctx: Context, isPro: Boolean, remaining: Int) {
+    prefs(ctx).edit()
+      .putBoolean(KEY_PRO, isPro)
+      .putInt(KEY_REMAINING, if (isPro) 9999 else remaining.coerceAtLeast(0))
       .apply()
   }
 
-  /** JS drains this on resume, folds it into `analysisCount`, and resets it. */
+  /**
+   * Retained so JS's existing resume hook keeps compiling and stays correct.
+   *
+   * Always 0 now — the server owns the count, so there is no local delta to fold
+   * in. Kept rather than deleted because removing it would mean touching the JS
+   * resume path for no behavioural gain, and a future offline queue would refill it.
+   */
   fun consumePending(ctx: Context): Int {
     val p = prefs(ctx)
     val n = p.getInt(KEY_CONSUMED, 0)

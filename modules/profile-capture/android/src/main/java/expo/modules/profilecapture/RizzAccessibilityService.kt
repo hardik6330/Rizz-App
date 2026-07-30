@@ -67,6 +67,7 @@ class RizzAccessibilityService : AccessibilityService() {
        * Settings must never by itself mean "watching my screen".
        */
       onCloseListener = {
+        RizzAnalytics.bubbleDismissed(this@RizzAccessibilityService)
         setEnabledPersisted(this@RizzAccessibilityService, false)
         CaptureStore.clear()
         lastSignature = null
@@ -79,6 +80,7 @@ class RizzAccessibilityService : AccessibilityService() {
     // this the bubble silently never returns until the app is opened again.
     ENABLED = loadEnabled(this)
     RUNNING = true
+    RizzAnalytics.serviceConnected(this)
     Log.i(TAG, "service connected (enabled=$ENABLED)")
   }
 
@@ -180,8 +182,12 @@ class RizzAccessibilityService : AccessibilityService() {
     lastSignature = signature
     val chat = result.kind == ScreenKind.CHAT
     val label = getString(if (chat) R.string.rizz_bubble_chat_label else R.string.rizz_bubble_label)
+    // After the signature guard, so a scroll that re-fires content-changed on the
+    // same screen does not inflate the impression count.
+    RizzAnalytics.bubbleShown(this, result.kind)
     main.post {
       overlay?.show(label) {
+        RizzAnalytics.bubbleTapped(this, result.kind)
         if (chat) {
           overlay?.showToneMenu { tone ->
             onChatAnalyzeTapped(pkg, tone)
@@ -336,9 +342,9 @@ class RizzAccessibilityService : AccessibilityService() {
   private fun onChatAnalyzeTapped(pkg: String, tone: String) {
     if (capturing) return
 
-    // Same order as the JS gate would apply: a dead key is a different failure from
-    // being out of credits, and both must say so rather than silently no-op.
-    if (!ChatEntitlement.hasLiveKey(this)) {
+    // Same order as the JS gate would apply: an unconfigured API is a different
+    // failure from being out of credits, and both must say so rather than no-op.
+    if (!ChatEntitlement.hasApi(this)) {
       toast(getString(R.string.rizz_chat_no_key))
       return
     }
@@ -408,11 +414,14 @@ class RizzAccessibilityService : AccessibilityService() {
       val result = GeminiChatClient.suggestReply(this, transcript, tone)
       main.post {
         if (result == null) {
-          // A failure must NOT charge a credit — recordConsumed only runs on success.
+          // A failure must NOT charge — the server refunds its own charge, and
+          // nothing is applied here.
           toast(getString(R.string.rizz_chat_failed))
         } else {
           copyToClipboard(result.reply)
-          ChatEntitlement.recordConsumed(this)
+          // The server's balance, verbatim. Never a local decrement — that would
+          // count the same generation twice.
+          ChatEntitlement.applyServerCredits(this, result.isPro, result.remaining)
           toast(getString(R.string.rizz_chat_copied))
           hideBubble()
         }

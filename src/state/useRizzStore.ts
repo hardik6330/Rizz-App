@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import type { FeedItem, SavedItem } from '@/types';
 import { nextSwipeState, todayKey } from './limits';
+import { onCreditsChanged } from './session';
 import { zustandStorage } from './storage';
 
 interface RizzState {
@@ -99,6 +100,23 @@ export const useRizzStore = create<RizzState>()(
     },
   ),
 );
+
+/**
+ * The server's credit count wins.
+ *
+ * `analysisCount` stays a local optimistic cache so the paywall can appear
+ * without a round trip, but the server holds the real balance — it is the thing
+ * that actually gates the Gemini call, and a device that reinstalls to reset
+ * MMKV must not get three more free analyses. Every API response carries the
+ * authoritative number and lands here.
+ *
+ * `isPro` is included because entitlement is now verified against RevenueCat
+ * server-side (`POST /v1/user/pro`); trusting the device would make the credit
+ * gate decorative.
+ */
+onCreditsChanged(({ is_pro, analysis_count }) => {
+  useRizzStore.setState({ isPro: is_pro, analysisCount: analysis_count });
+});
 
 /** Reactive "is this line saved" selector. */
 export const useIsSaved = (id: string) =>

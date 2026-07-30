@@ -20,3 +20,8 @@ web-build/
 # .easignore. Committing the prebuild output ships stale native code.
 /android
 /ios
+
+# Firebase config — per-project, contains project API keys. Supplied to EAS as
+# a file-type secret (GOOGLE_SERVICES_JSON / GOOGLE_SERVICES_PLIST), never committed.
+google-services.json
+GoogleService-Info.plist

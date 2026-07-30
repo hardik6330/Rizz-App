@@ -13,6 +13,7 @@ import {
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
+import { apiBase, installId } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { palette } from '@/theme/tokens';
 
@@ -78,7 +79,10 @@ export default function RootLayout() {
       for (let i = 0; i < consumed; i++) store.incrementAnalysis();
       const { isPro, analysisCount } = useRizzStore.getState();
       const remaining = isPro ? 9999 : Math.max(0, FREE_ANALYSIS_LIMIT - analysisCount);
-      configureChat(process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? '', isPro, remaining);
+      // The install id, never a token: the bubble fires days after the app was
+      // last opened, by which point a 24h token is dead. And never the Gemini
+      // key — nothing native can call Google any more.
+      void installId().then((id) => configureChat(apiBase(), id, isPro, remaining));
     };
     sync();
     const sub = AppState.addEventListener('change', (s) => s === 'active' && sync());

@@ -8,7 +8,7 @@
     <string name="rizz_bubble_label">Analyze this profile with RizzCoach</string>
     <string name="rizz_chat_copied">✨ Reply copied — paste &amp; send</string>
     <string name="rizz_chat_failed">Couldn\'t reach the coach — try again</string>
-    <string name="rizz_chat_no_key">RizzCoach isn\'t set up yet — open the app once</string>
+    <string name="rizz_chat_no_key">RizzCoach isn\'t connected yet — open the app once</string>
     <string name="rizz_chat_out_of_credits">Out of free replies — open RizzCoach to unlock</string>
     <string name="rizz_chat_reading">Reading the chat…</string>
     <string name="rizz_chat_unreadable">Couldn\'t read the conversation</string>

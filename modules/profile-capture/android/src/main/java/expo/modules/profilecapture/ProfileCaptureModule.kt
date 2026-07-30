@@ -102,8 +102,8 @@ class ProfileCaptureModule : Module() {
      * Push the current entitlement snapshot + Gemini key to the service. Call on
      * launch and on every resume so the native cache never goes stale.
      */
-    Function("configureChat") { apiKey: String, isPro: Boolean, freeRemaining: Int ->
-      ChatEntitlement.configure(context, apiKey, isPro, freeRemaining)
+    Function("configureChat") { apiUrl: String, installId: String, isPro: Boolean, freeRemaining: Int ->
+      ChatEntitlement.configure(context, apiUrl, installId, isPro, freeRemaining)
     }
 
     /**

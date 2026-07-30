@@ -88,7 +88,7 @@ export default function BioScreen() {
   const optimize = useCallback(async () => {
     if (outOfCredits) {
       haptic.warning();
-      router.push('/paywall');
+      router.push('/paywall?source=out_of_credits');
       return;
     }
     if (!canOptimize) {
@@ -201,7 +201,7 @@ export default function BioScreen() {
               />
             ))}
 
-            {outOfCredits && <ProUpsellCard onPress={() => router.push('/paywall')} />}
+            {outOfCredits && <ProUpsellCard onPress={() => router.push('/paywall?source=upsell_card')} />}
           </View>
         ) : phase === 'working' ? (
           <StagedLoader stages={BIO_STAGES} stage={stage} badge="WRITING" tint={palette.mint} />

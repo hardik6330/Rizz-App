@@ -34,7 +34,7 @@ declare class ProfileCaptureNativeModule extends NativeModule {
   openOverlaySettings(): void;
   consumePendingCapture(): NativeCapture | null;
   clearPendingCapture(): void;
-  configureChat(apiKey: string, isPro: boolean, freeRemaining: number): void;
+  configureChat(apiUrl: string, installId: string, isPro: boolean, freeRemaining: number): void;
   consumeChatUsage(): number;
 }
 
@@ -132,18 +132,31 @@ export function clearPendingCapture(): void {
 //
 // The chat bubble generates a reply natively and copies it to the clipboard, so
 // unlike the profile flow there is no app launch where JS can apply the freemium
-// rule. Instead JS pushes a credit/key SNAPSHOT down (`configureChat`) and drains
-// the usage the native side accrued (`consumeChatUsage`). The rule itself stays in
-// JS — see `useOutOfCredits` and `state/limits.ts`. Both no-op off Android.
+// rule. Instead JS pushes an identity + credit SNAPSHOT down (`configureChat`) and
+// the native side calls the same `/v1/ai/chat` route the app would. The rule itself
+// lives on the server now; this snapshot only gates the tap instantly and offline.
+// Both no-op off Android.
 // ---------------------------------------------------------------------------
 
 /**
- * Push the current entitlement snapshot + Gemini key to the native service. Call on
- * launch and every resume so the native cache can never go stale. `freeRemaining`
- * is the JS-owned free-credit balance (large when Pro).
+ * Push the API base URL, the anonymous install id and the entitlement snapshot to
+ * the native service. Call on launch and every resume so the native cache cannot
+ * go stale.
+ *
+ * The install id rather than an access token: the bubble fires days after the app
+ * was last opened, by which time a 24h token is dead. The id never expires, so
+ * the service mints its own token when it needs one.
+ *
+ * This used to carry the Gemini API key. It does not any more — nothing native
+ * can call Google.
  */
-export function configureChat(apiKey: string, isPro: boolean, freeRemaining: number): void {
-  native?.configureChat(apiKey, isPro, freeRemaining);
+export function configureChat(
+  apiUrl: string,
+  installId: string,
+  isPro: boolean,
+  freeRemaining: number,
+): void {
+  native?.configureChat(apiUrl, installId, isPro, freeRemaining);
 }
 
 /**

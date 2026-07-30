@@ -10,19 +10,31 @@ Expo Router app. Screens in `src/app/(tabs)/`, AI in `src/services/`, persisted 
 
 ## Gemini engines — read this before touching any `*Engine.ts`
 
-**All Gemini traffic goes through `services/gemini.ts` (`callGemini`). Never hand-roll a
-fetch.** Model, auth, the thinking fix, error handling and JSON parsing live there once.
+**The app no longer calls Gemini. `backend/` does.** `services/gemini.ts` was deleted: it
+held `EXPO_PUBLIC_GEMINI_API_KEY`, which is inlined into the JS bundle and readable by anyone
+who unzips the APK, with no server-side quota behind it — an open-ended bill, not a bounded
+one. The key, every system prompt, every `responseSchema`, the model choice, the thinking fix,
+credit enforcement and rate limiting all live on the server now.
+
+**All AI traffic goes through `services/api.ts` (`callApi`). Never hand-roll a fetch.**
+`isLiveApi` (from `state/session.ts`) replaces `isLiveKey`: it is true when
+`EXPO_PUBLIC_API_URL` is set, and false means every engine serves mock seeds exactly as
+before. Identity is `state/session.ts` — an anonymous install id the **server** mints on first
+launch, traded for a 24h JWT. It is not generated on the device: RN has no `crypto` global, so
+that would mean either `expo-crypto` (native, therefore a rebuild rather than an OTA) or
+`Math.random`, and this id is the credential that owns a user's credits.
 
 **One documented exception:** `modules/profile-capture/.../GeminiChatClient.kt`. The chat
 bubble generates a reply inside the accessibility service, where the RN/JS context may not
-exist, so it re-implements the `callGemini` request shape in Kotlin (**`thinkingLevel: "low"`
-included — same load-bearing fix**). If you change the request shape or model in `gemini.ts`,
-change it there too. This is the only place a Gemini fetch lives outside `callGemini`, and it
-exists only because JS cannot run at that moment — do not add a second one.
+exist, so it re-implements the request shape in Kotlin (**`thinkingLevel: "low"` included —
+same load-bearing fix**). It is **still calling Google directly**, so the Gemini key cannot be
+revoked until it is repointed at `POST /v1/ai/chat` — native, so that needs a `version` bump
+and a rebuild. Do not add a second exception.
 
-Four engines sit on top of it: `engine.ts` (chat screenshot), `bioEngine.ts` (bio
-optimizer), `profileEngine.ts` (profile scan), `feedEngine.ts` (daily Discover
-lines). Each contributes only a system prompt, a `responseSchema` and mock seeds.
+Four engines sit on top of `callApi`: `engine.ts` (chat screenshot), `bioEngine.ts` (bio
+optimizer), `profileEngine.ts` (profile scan), `feedEngine.ts` (daily Discover lines). They
+now contribute only a request body and mock seeds — prompts and schemas moved to
+`backend/src/ai/`.
 
 **`profileEngine.ts` has two modes and ONE result shape.** `'self'` coaches your own
 profile; `'them'` reads someone else's and returns openers. `swipeStopper` /
@@ -35,12 +47,14 @@ maps then fail to compile until prompt, stages, labels and mock seeds all exist.
 never consented: no appearance/body ratings, no protected-trait inference, no fake/catfish
 verdicts, no location narrowing, no character judgements. Keep rails when editing that prompt.
 
-**`thinkingConfig: { thinkingLevel: 'low' }` in `gemini.ts` is load-bearing — do not remove.**
+**`thinkingConfig: { thinkingLevel: 'low' }` in `backend/src/ai/gateway.ts` is load-bearing —
+do not remove.**
 `gemini-flash-latest` is a thinking model and thinking tokens count against
 `maxOutputTokens`. Without it the model spends the budget thinking, returns
 `finishReason: MAX_TOKENS`, the JSON comes back truncated, `JSON.parse` throws — and the
 engine **silently falls back to mock data**. Symptom: "the AI ignores my screenshot / shows
-canned results." `gemini.selfcheck.ts` guards this with a deliberately small token cap.
+canned results." `backend/src/ai/gateway.selfcheck.ts` guards this with a deliberately small
+token cap.
 
 **`gemini-flash-latest` is a rolling alias, and the thinking key changed under it.** It
 now resolves to `gemini-3.6-flash`. Gemini 3 dropped the numeric `thinkingBudget` for a
@@ -62,12 +76,77 @@ identical answer. Measure with `usageMetadata` before changing any cap.
 mock data so the app demos offline. When debugging "AI not working", check the console warn
 (`[engine] live analysis failed`) first — a live key does NOT mean you're seeing live output.
 
-**Key detection:** `isLiveKey` = length ≥ 30 and no "mock" substring. Google issues both
-`AIza…` and `AQ.…` formats; both go in the `x-goog-api-key` header, never the URL.
+**Key detection:** server-side only. `GEMINI_API_KEY` is validated at boot by `backend/src/env.ts`,
+which **exits** rather than starting half-configured. Google issues both `AIza…` and `AQ.…`
+formats; both go in the `x-goog-api-key` header, never the URL.
 
-**Adding an engine:** write a system prompt + `responseSchema` (uppercase OpenAPI types) +
-mock seeds, then call `callGemini<T>({ system, parts, schema })`. Use `imagePart()` for
-vision. Verify against the live API before wiring UI.
+**Prompts are versioned by content hash**, not by a hand-bumped constant — `promptVersion()`
+in `gateway.ts` logs the first 8 hex of sha256(prompt) on every call, so
+`engine + prompt + outputTokens` attributes a quality or cost change to a specific edit. A
+declared version is wrong the first time someone tweaks a prompt without bumping it.
+
+**Adding an engine:** it is now a two-sided change. Server: a system prompt in
+`backend/src/ai/prompts.ts`, a `responseSchema` (uppercase OpenAPI types) in `schemas.ts`, and
+a route in `routes/ai.ts` that wraps the call in `charged()` so a failure refunds. Client: a
+request body and mock seeds, then `callApi<T>(path, body)`. Verify against the live API before
+wiring UI.
+
+**Credits and entitlement are server-side.** `chargeCredit()` is one atomic conditional
+`UPDATE` that fails closed — a double-tap cannot spend the same credit twice (verified: 10
+concurrent requests, exactly 3 granted). The store's `analysisCount` is now an optimistic
+cache that every API response overwrites with the server's number, so reinstalling to clear
+MMKV no longer grants three more analyses. Pro is verified against RevenueCat by
+`POST /v1/user/pro`, which re-issues the token — call it after a purchase and after a restore
+or a subscriber gets cut off at three analyses.
+
+## Analytics — `src/services/analytics.ts` + `RizzAnalytics.kt`
+
+**`track()` takes an event from a fixed union, never a name and a payload.** This app
+transmits screenshots of other people's private conversations; a free-form
+`track('x', {...body})` would put a transcript in an analytics warehouse forever, in another
+company's jurisdiction, with no delete story. Same rule and same reason as
+`backend/src/lib/logger.ts`. There is no overload that accepts arbitrary data, so the mistake
+has nowhere to live. Never add a param carrying message text, bios, names, openers, `uiText`,
+the package name of the app being viewed, or the install id.
+
+**`app_open`, `first_open`, `session_start`, `screen_view` and `app_exception` are collected
+automatically and are RESERVED** — logging them by hand is silently dropped. That is why
+there is no `appOpen()`. `pro_purchased` is deliberately not named `purchase`: that is a GA4
+commerce event expecting `currency`/`value`/`items`, RevenueCat already reports revenue, and a
+half-populated `purchase` corrupts GA4's revenue model.
+
+**Firebase is opt-in, gated on `GOOGLE_SERVICES_JSON` in `app.config.ts`** — the same
+mechanism as `APPLE_TEAM_ID`, for the same reason. The Google Services Gradle plugin hard-fails
+a build with no `google-services.json`, deep inside a Gradle task after the EAS queue wait.
+Unset means no plugins, the app builds exactly as before, and `analytics.ts` no-ops because the
+native module is absent. Set it and everything switches on with no code change.
+
+**Both loaders inline a literal `require`.** Metro resolves `require` at build time from a
+string literal; a variable argument fails the whole bundle with "Invalid call at line N". That
+is why there are two near-identical functions instead of one helper — same constraint
+`widgetBridge.ts` works within.
+
+**`bubble_shown` / `bubble_tapped` are logged from Kotlin, and that is why this app uses
+Firebase at all.** The bubble's entire lifecycle runs inside the accessibility service, in a
+process where there is no JS context to call — the service runs whether or not the RN app is
+alive. They are also the two most valuable events in the product. A native SDK is the only way
+they land in the same user's funnel instead of an orphaned second identity. `RizzAnalytics.kt`
+resolves Firebase reflectively and swallows every failure: a crash there does not fail an
+analytics call, it silently kills the user's ability to analyse anything until they re-enable
+the service in Settings.
+
+**`bubble_shown` fires after the signature guard in `showBubble`**, or scrolling a profile
+re-fires content-changed on the same screen and inflates the impression count.
+
+**Crashlytics only — Sentry is deliberately absent.** They are the same product. Firebase is
+already mandatory for the Kotlin-side events, so Crashlytics is nearly free incrementally and
+it captures native crashes in the accessibility service, which a JS-first SDK handles poorly.
+Two crash SDKs means two dashboards, duplicate alerts and double the native weight for one
+signal.
+
+**Paywall events are logged once, inside `paywall.tsx`.** The source rides in as a route param
+(`/paywall?source=…`), so a new entry point is attributed for free and `paywall_viewed` cannot
+drift from `paywall_dismissed`. Do not instrument the `router.push` call sites.
 
 ## Freemium rules
 
@@ -192,7 +271,8 @@ regardless — to zero devices if nothing matching is installed. Build first, th
 **Build keys come from the EAS environment, not `.env`.** `.env` is gitignored so it never
 reaches EAS. A build profile only loads them if it declares `"environment"` — `preview` and
 `production` do. Drop that field and the build still succeeds, with no Gemini key baked in:
-`isLiveKey` reads stub and every engine silently serves mock data. `eas env:list
+`EXPO_PUBLIC_API_URL` is missing, `isLiveApi` is false and every engine silently serves mock
+data. `eas env:list
 --environment preview` before blaming the model. `EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY` is
 intentionally absent, so preview builds hand out Pro free — set it before production.
 
@@ -224,6 +304,9 @@ Studio) mutates `node_modules`.** Gradle and its Buildship plugin write `build/`
 npm tarballs. This no longer breaks OTA delivery, but `npm ci` before `eas build` is still the
 fix if a build behaves oddly.
 
+**Adding Firebase, or any native dependency, means a `version` bump — not an OTA.** Analytics
+landed as 1.0.1 → 1.0.2 for exactly this reason.
+
 **Native is CNG.** `/android` and `/ios` are ignored by git AND EAS and regenerated from
 `app.json` each build. Editing `android/` locally does nothing — use `app.json` or a plugin.
 
@@ -232,7 +315,8 @@ fix if a build behaves oddly.
 ```bash
 npx tsc --noEmit                                        # must pass
 node src/state/limits.selfcheck.ts                      # swipe-allowance + store-key rules
-node --env-file=.env src/services/gemini.selfcheck.ts   # live API (1 tiny call)
+cd backend && node --env-file=.env --import tsx src/ai/gateway.selfcheck.ts   # live API (1 tiny call)
+cd backend && npx tsc --noEmit                          # server must pass too
 ```
 
 `*.selfcheck.ts` are framework-free Node scripts (Node 24 strips types natively) and are

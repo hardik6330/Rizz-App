@@ -68,7 +68,7 @@ export default function ProfileScreen() {
   const addImages = useCallback(async () => {
     if (outOfCredits) {
       haptic.warning();
-      router.push('/paywall');
+      router.push('/paywall?source=out_of_credits');
       return;
     }
     const remaining = MAX_IMAGES - images.length;
@@ -165,7 +165,7 @@ export default function ProfileScreen() {
 
     if (outOfCredits) {
       haptic.warning();
-      router.push('/paywall');
+      router.push('/paywall?source=out_of_credits');
       return;
     }
     const shot = capture.images[0];
@@ -576,7 +576,7 @@ function ScanReport({
         />
       </View>
 
-      {showUpsell && <ProUpsellCard onPress={() => router.push('/paywall')} />}
+      {showUpsell && <ProUpsellCard onPress={() => router.push('/paywall?source=upsell_card')} />}
     </View>
   );
 }

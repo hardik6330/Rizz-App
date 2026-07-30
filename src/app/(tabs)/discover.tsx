@@ -95,7 +95,7 @@ export default function DiscoverScreen() {
     if (locked && !pushedPaywall.current) {
       pushedPaywall.current = true;
       haptic.warning();
-      const timer = setTimeout(() => router.push('/paywall'), 420);
+      const timer = setTimeout(() => router.push('/paywall?source=swipe_limit'), 420);
       return () => clearTimeout(timer);
     }
     if (!locked) pushedPaywall.current = false;
@@ -192,7 +192,7 @@ export default function DiscoverScreen() {
             height={height}
             bottomClearance={bottomClearance}
             isPro={isPro}
-            onGoPro={() => router.push('/paywall')}
+            onGoPro={() => router.push('/paywall?source=swipe_limit')}
           />
         }
       />
@@ -252,7 +252,7 @@ export default function DiscoverScreen() {
       </View>
 
       {locked && (
-        <LockOverlay onUnlock={() => router.push('/paywall')} onRestore={() => void handleRestore()} />
+        <LockOverlay onUnlock={() => router.push('/paywall?source=swipe_limit')} onRestore={() => void handleRestore()} />
       )}
 
       {toast.element}

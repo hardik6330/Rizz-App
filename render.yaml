@@ -1,0 +1,63 @@
+# Render Blueprint — the deploy for `backend/`. No Docker.
+#
+# This lives at the REPO ROOT, not in backend/, and so does the build: `npm run
+# build` bundles `src/lib/limits.ts`, which re-exports `../../../src/state/limits.ts`
+# from the app. That path only resolves with the whole repo checked out. The
+# build command is explicit, so the root package.json (Expo, ~1GB of deps) is
+# never installed — only backend/ is.
+#
+# Render's native Node runtime is used deliberately: this API holds a mysql2 pool
+# and needs a real SIGTERM to drain a 3-15s Gemini call, or the refund inside
+# charged() never runs and the user is charged for nothing. That rules out any
+# serverless target. See backend/README.md.
+#
+#   Deploy: Render dashboard -> New -> Blueprint -> pick this repo.
+services:
+  - type: web
+    name: rizzcoach-api
+    runtime: node
+    # Closest Render region to the Aiven MySQL service in Bangalore. Latency to
+    # the database dominates request time here — every AI call does 2-3 round
+    # trips before Gemini is even called.
+    region: singapore
+    plan: starter
+    # `npm ci`, not `npm install` — a local `expo run:android` writes build/ and
+    # .gradle/ into autolinked node_modules, and a lockfile-respecting install is
+    # what keeps the deploy reproducible.
+    buildCommand: cd backend && npm ci && npm run build
+    startCommand: cd backend && node dist/index.js
+    # Fails the deploy instead of serving a broken instance. index.ts already
+    # exits(1) on an unreachable DB, so this is the second half of that contract:
+    # no health check means Render happily routes traffic at a dead process.
+    healthCheckPath: /healthz
+    envVars:
+      # backend/package.json says >=22, but Render reads the ROOT package.json
+      # for `engines`, so pin it here or you get Render's default.
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: AI_ENABLED
+        value: "true"
+      # Render sets PORT itself; env.ts coerces it. Do not hardcode 8787 here.
+      #
+      # Everything below is a credential: `sync: false` means Render prompts for
+      # it once at blueprint apply and never writes it into this file. Nothing
+      # secret belongs in git — that is the whole reason backend/ exists.
+      - key: JWT_SECRET
+        generateValue: true # openssl rand -hex 32, done by Render
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      # Aiven signs with a per-project CA that is not in Node's trust store.
+      # There is no file to point at here, so paste the PEM itself, newlines and
+      # all — databaseCa() in db/client.ts accepts either form.
+      - key: DATABASE_CA
+        sync: false
+      # Optional. While REVENUECAT_SECRET_KEY is unset the server takes the
+      # client's Pro claim on trust — index.ts logs `revenueCat: MOCK` to say so.
+      - key: REVENUECAT_SECRET_KEY
+        sync: false
+      - key: REVENUECAT_WEBHOOK_SECRET
+        sync: false

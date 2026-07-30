@@ -10,6 +10,7 @@ import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
 import { useRizzStore } from '@/state/useRizzStore';
 import { isSupported, isEnabled, permissions, setEnabled } from '@/../modules/profile-capture';
+import { track } from '@/services/analytics';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
@@ -53,6 +54,15 @@ export default function AnalyzerScreen() {
     setOn(isEnabled());
   }, []);
 
+  /*
+   * Funnel step 1. This screen IS the accessibility ask, so reaching it is the
+   * top of the funnel — the denominator every later step is measured against.
+   * Fires once per visit, not per permission re-read.
+   */
+  useEffect(() => {
+    if (isSupported) track({ name: 'a11y_prompt_seen' });
+  }, []);
+
   // Both permissions are granted in Settings, outside our process — so re-read
   // them every time the user comes back rather than trusting cached state.
   useEffect(() => {
@@ -71,6 +81,9 @@ export default function AnalyzerScreen() {
     }
     haptic.medium();
     setOn(setEnabled(next));
+    // Funnel step 3 — the conversion. Both permissions granted AND the switch on
+    // is the only state in which the product actually works.
+    track(next ? { name: 'a11y_enabled' } : { name: 'a11y_disabled', via: 'app_toggle' });
     toast.show(next ? 'Watching for profiles & chats' : 'Turned off — nothing is read');
   };
 
@@ -152,6 +165,7 @@ export default function AnalyzerScreen() {
           done={a11y}
           onPress={() => {
             haptic.light();
+            track({ name: 'a11y_settings_opened' });
             permissions.openAccessibilitySettings();
           }}
         />

@@ -1,45 +1,28 @@
 import { BG, BG_FALLBACK } from '@/data/assets';
 import type { FeedCategory, FeedItem } from '@/types';
 import { uid } from '@/utils/misc';
-import { callGemini, isLiveKey } from './gemini';
+import { callApi, isLiveApi } from './api';
 
 const BG_KEYS = Object.keys(BG) as (keyof typeof BG)[];
 
 /**
- * Daily "fresh openers" engine — Gemini text generation.
+ * Daily "fresh openers" engine.
  *
  * Generates a small batch of brand-new opening lines so the Discover feed
  * changes every day instead of showing the same curated set forever. Called
  * once per day by the Discover screen; the result is cached in the store.
- * Shared transport lives in `gemini.ts`.
+ * Shared transport lives in `api.ts`.
+ *
+ * The batch is identical for every user, so the server generates it once per day
+ * globally and serves the cached row after that. This used to be one generation
+ * per device per day — the same prompt bought N times for the same answer.
  */
 
 // One request either way — a bigger batch costs the same call and keeps the
 // feed from dead-ending before the free swipe allowance runs out.
 const BATCH_SIZE = 15;
 
-const SYSTEM_PROMPT = `You are RizzCoach's line writer. Generate ${BATCH_SIZE} fresh, original dating opening/reply lines for a daily inspiration feed. Spread them across the four categories: Opener (first message), Comeback (witty reply), Recovery (re-engage after going quiet), Closer (ask them out). Each line: sounds like a real human under 35, clever and specific, never creepy, cheesy, sexual, or a tired pickup cliché. For each also give a short "context" (when to use it, max 6 words) and a realistic "successRate" integer 60-92.`;
-
-const RESULT_SCHEMA = {
-  type: 'OBJECT',
-  required: ['lines'],
-  properties: {
-    lines: {
-      type: 'ARRAY',
-      items: {
-        type: 'OBJECT',
-        required: ['text', 'category', 'context', 'successRate'],
-        properties: {
-          text: { type: 'STRING' },
-          category: { type: 'STRING', enum: ['Opener', 'Comeback', 'Recovery', 'Closer'] },
-          context: { type: 'STRING' },
-          successRate: { type: 'INTEGER', description: '60-92' },
-        },
-      },
-    },
-  },
-} as const;
-
+/** One generated line, before it is decorated with a background and an id. */
 interface RawLine {
   text: string;
   category: FeedCategory;
@@ -66,15 +49,9 @@ function toFeedItems(lines: RawLine[]): FeedItem[] {
 
 /** Returns a fresh batch, or [] on failure so Discover falls back to the base feed. */
 export async function generateFreshOpeners(): Promise<FeedItem[]> {
-  if (!isLiveKey) return toFeedItems(MOCK_LINES);
+  if (!isLiveApi) return toFeedItems(MOCK_LINES);
   try {
-    const parsed = await callGemini<{ lines: RawLine[] }>({
-      system: SYSTEM_PROMPT,
-      parts: [{ text: "Write today's fresh lines." }],
-      schema: RESULT_SCHEMA,
-      maxOutputTokens: 4096,
-      temperature: 1.1,
-    });
+    const parsed = await callApi<{ lines: RawLine[] }>('/v1/ai/feed', { count: BATCH_SIZE });
     return toFeedItems(parsed.lines ?? []);
   } catch (error) {
     console.warn('[feedEngine] daily generation failed — using base feed', error);

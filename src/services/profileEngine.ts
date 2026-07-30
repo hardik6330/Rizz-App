@@ -1,6 +1,6 @@
 import type { ProfileCapture, ProfileScanInput, ProfileScanResult, ScanMode } from '@/types';
 import { uid, wait } from '@/utils/misc';
-import { callGemini, imagePart, isLiveKey } from './gemini';
+import { callApi, imagePayload, isLiveApi } from './api';
 
 /**
  * The Profile Scan engine — Gemini vision over 1–3 profile screenshots.
@@ -14,7 +14,11 @@ import { callGemini, imagePart, isLiveKey } from './gemini';
  * carries bio lines in 'self' mode and openers in 'them' mode — both are
  * copy/save-to-vault strings, so the existing UI works untouched.
  *
- * Shared transport lives in `gemini.ts`. Never hand-roll a fetch.
+ * Shared transport lives in `api.ts`. Never hand-roll a fetch.
+ *
+ * Both system prompts — including the 'them'-mode HARD RULES block, which is
+ * the thing keeping this feature ethical — now live on the server, where
+ * `assertSafetyRails()` refuses to boot if they are edited away.
  */
 
 /** Staged status copy shown while a profile is being scanned. */
@@ -101,9 +105,9 @@ export const PROFILE_LABELS: Record<
 
 export async function analyzeProfile(input: ProfileScanInput): Promise<ProfileScanResult> {
   const mode = input.mode ?? 'self';
-  if (isLiveKey) {
+  if (isLiveApi) {
     try {
-      return await analyzeWithGemini(input, mode);
+      return await analyzeViaApi(input, mode);
     } catch (error) {
       console.warn('[profileEngine] live scan failed — falling back to simulation', error);
     }
@@ -112,122 +116,21 @@ export async function analyzeProfile(input: ProfileScanInput): Promise<ProfileSc
 }
 
 // ---------------------------------------------------------------------------
-// Live path — Gemini vision over multiple images
+// Live path — POST /v1/ai/profile
 // ---------------------------------------------------------------------------
 
-const SELF_PROMPT = `You are RizzCoach's Profile Coach. The user sends 1-3 screenshots that should show ONE person's own dating or Instagram profile (bio, prompts, photos). Your job is to audit that profile and coach them to a glow-up.
-
-FIRST, classify the images. Set "isProfile" to true ONLY if they clearly show a dating/social profile (a bio, prompt answers, or profile photos of a person). Set it to false for anything else — chat/DM screenshots, memes, random photos, documents, blank images, non-profile app screenshots. When false, set "rejectionReason" to one friendly sentence telling them what to upload instead (e.g. "That looks like a chat, not a profile — upload your dating profile or Instagram."), and you may leave the other fields empty/zero.
-
-When isProfile is true, read the bio/prompts AND the visual cues in the photos, then produce an upbeat, specific, encouraging coaching report:
-- name: the profile's display name if visible, else omit.
-- tagline: the small age/location line under the name if visible (e.g. "GJ 21"), else omit.
-- summary: 1-2 warm sentences framing the overall vibe and the glow-up opportunity.
-- swipeStopper: score 0-10 for how much the PHOTOS stop the scroll, plus a 1-2 sentence note (mention roughly what % of profiles they beat, and what would push them higher).
-- intentClarity: score 0-10 for how clearly the BIO signals who they are and what they want, plus a 1-2 sentence note.
-- workingAndFix: 1-3 short paragraphs on what's already working and the concrete upgrades to make.
-- bioLines: 3-4 ready-to-use bio lines that show personality and subtly signal intent. First person, under 35, genuine, never cheesy or clichéd.
-- quickWin: one punchy "if you only fix 1 thing today, do THIS" instruction.
-- photoTuneUp: 4-6 specific bullet tips for the photos (lead photo, variety, lighting, remove obscured shots, group photo, smiling).
-- competition: 3-5 bullet tips on how to stand out from other profiles vying for the same matches.
-
-Be honest but kind and motivating — this is their own profile. Never body-shame or comment on protected traits; coach effort and presentation only.`;
-
-const THEM_PROMPT = `You are RizzCoach's wingmate. The user sends 1-3 screenshots of SOMEONE ELSE'S dating or Instagram profile — someone they're thinking about messaging. Your job is to help them open a conversation that actually lands, by paying attention to what the profile is genuinely offering.
-
-FIRST, classify the images. Set "isProfile" to true ONLY if they clearly show a dating/social profile (a bio, prompt answers, or profile photos of a person). Set it to false for anything else — chat/DM screenshots, memes, random photos, documents, blank images, non-profile app screenshots. When false, set "rejectionReason" to one friendly sentence telling them what to upload instead (e.g. "That looks like a chat, not a profile — upload the profile you want to open."), and you may leave the other fields empty/zero.
-
-When isProfile is true, read the bio/prompts AND the visual cues, then produce a warm, specific, useful read:
-- name: their display name if visible, else omit.
-- tagline: the small age/location line under the name if visible, else omit.
-- summary: 1-2 sentences on the vibe this profile is putting out and the most promising way in.
-- swipeStopper: score 0-10 for how strong and distinctive a first impression this profile makes, plus a 1-2 sentence note on what's carrying it.
-- intentClarity: score 0-10 for how much genuine, specific material there is here to start a conversation from (hobbies, prompts, opinions, places), plus a 1-2 sentence note naming the richest hook.
-- workingAndFix: 1-3 short paragraphs on what this profile is signalling — the interests, the effort, the humour, what they seem to be looking for. Read what is actually there; do not invent a backstory.
-- bioLines: 3-4 ready-to-send opening messages. Each must reference something SPECIFIC and visible in this profile — a prompt answer, an object, a place, a stated interest. First person, under 35 words, curious and warm. No pickup lines, no negging, no compliments on their body or face, no copy-paste openers that would work on anyone.
-- quickWin: one punchy "if you send one thing, send THIS" instruction, and why it fits this profile.
-- photoTuneUp: 4-6 bullets on what the photos suggest about how they spend their time — activities, places, pets, travel, the company they keep. Observations about content and context ONLY. Never rate, rank or comment on their appearance, body or attractiveness.
-- competition: 3-5 bullets of genuinely good questions to ask them, drawn from gaps or hooks in the profile — things a curious person would actually want to know.
-
-HARD RULES — these override everything above:
-- This is a real person who did not consent to being analyzed. Be respectful in a way you'd be comfortable with them reading.
-- NEVER infer or comment on sexual orientation, religion, ethnicity, politics, health, disability, income, or any protected trait.
-- NEVER rate, rank or describe their body or attractiveness. No "hotness", no numbers on looks.
-- NEVER guess whether the profile is fake, a bot, or a catfish. You cannot know this, and being wrong is harmful.
-- NEVER infer their address, workplace, school or any location narrower than a city they have themselves stated.
-- NEVER produce a verdict on their character, or "red flags" framed as warnings about who they are. If something is ambiguous, frame it as a question worth asking, not a judgement.
-- If the profile suggests they may be a minor, set isProfile to false with a rejectionReason saying you can't analyze this profile.
-- Help the user be genuinely interested in this person. You are not helping them manipulate, pressure or "win" anyone.`;
-
-const SYSTEM_PROMPTS: Record<ScanMode, string> = { self: SELF_PROMPT, them: THEM_PROMPT };
-
-const SCORE_SCHEMA = {
-  type: 'OBJECT',
-  required: ['score', 'note'],
-  properties: {
-    score: { type: 'INTEGER', description: '0-10' },
-    note: { type: 'STRING' },
-  },
-} as const;
-
-const RESULT_SCHEMA = {
-  type: 'OBJECT',
-  required: [
-    'isProfile',
-    'summary',
-    'swipeStopper',
-    'intentClarity',
-    'workingAndFix',
-    'bioLines',
-    'quickWin',
-    'photoTuneUp',
-    'competition',
-  ],
-  properties: {
-    isProfile: { type: 'BOOLEAN' },
-    rejectionReason: { type: 'STRING' },
-    name: { type: 'STRING' },
-    tagline: { type: 'STRING' },
-    summary: { type: 'STRING' },
-    swipeStopper: SCORE_SCHEMA,
-    intentClarity: SCORE_SCHEMA,
-    workingAndFix: { type: 'ARRAY', items: { type: 'STRING' } },
-    bioLines: { type: 'ARRAY', items: { type: 'STRING' } },
-    quickWin: { type: 'STRING' },
-    photoTuneUp: { type: 'ARRAY', items: { type: 'STRING' } },
-    competition: { type: 'ARRAY', items: { type: 'STRING' } },
-  },
-} as const;
-
-async function analyzeWithGemini(
+async function analyzeViaApi(
   input: ProfileScanInput,
   mode: ScanMode,
 ): Promise<ProfileScanResult> {
-  const { images } = input;
   const { uiText } = input as ProfileCapture;
-  const shots = images.length > 1 ? `these ${images.length} screenshots` : 'this screenshot';
-  const parsed = await callGemini<Omit<ProfileScanResult, 'id' | 'createdAt'>>({
-    system: SYSTEM_PROMPTS[mode],
-    parts: [
-      ...images.map((img) => imagePart(img.base64, img.mimeType)),
-      {
-        text:
-          mode === 'self'
-            ? `Audit ${shots} of my profile and return the full glow-up report.`
-            : `Read ${shots} of a profile I'm thinking about messaging, and return the full report.`,
-      },
-      // Accessibility captures carry the on-screen text. It's a hint only: the tree
-      // says nothing about photos, which is where most of the report's value is.
-      ...(uiText
-        ? [
-            {
-              text: `Text extracted from the screen. Use it only to disambiguate what you can already see — the image is authoritative, and anything here that the image contradicts is wrong:\n${uiText}`,
-            },
-          ]
-        : []),
-    ],
-    schema: RESULT_SCHEMA,
-    temperature: 0.85,
+  const parsed = await callApi<Omit<ProfileScanResult, 'id' | 'createdAt'>>('/v1/ai/profile', {
+    images: input.images.map((img) => imagePayload(img.base64, img.mimeType)),
+    mode,
+    // Accessibility captures carry the on-screen text. It is a hint only, and the
+    // server fences it into the user turn — never the system instruction —
+    // because it comes off a screen an attacker may control.
+    ui_text: uiText,
   });
   return { ...parsed, id: uid(), createdAt: Date.now() };
 }

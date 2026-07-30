@@ -2,7 +2,7 @@
   "expo": {
     "name": "RizzCoach",
     "slug": "rizzcoach",
-    "version": "1.0.1",
+    "version": "1.0.3",
     "orientation": "default",
     "icon": "./assets/generated/icon.png",
     "scheme": "rizzcoach",
@@ -15,7 +15,8 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": false,
         "NSSupportsLiveActivitiesFrequentUpdates": false
-      }
+      },
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "package": "com.rizzcoach.app",
@@ -28,8 +29,10 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -65,6 +68,9 @@
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "owner": "huggingfffce"
+    "owner": "huggingfffce",
+    "updates": {
+      "url": "https://u.expo.dev/703bba8d-5847-4fd6-8ccd-201540b75983"
+    }
   }
 }

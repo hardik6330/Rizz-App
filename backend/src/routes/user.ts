@@ -1,0 +1,85 @@
+import { sql } from 'drizzle-orm';
+import { Hono } from 'hono';
+import { z } from 'zod';
+
+import { db } from '../db/client.ts';
+import { Errors } from '../lib/errors.ts';
+import { signAccess } from '../lib/jwt.ts';
+import { FREE_ANALYSIS_LIMIT } from '../lib/limits.ts';
+import { log } from '../lib/logger.ts';
+import { checkEntitlement } from '../lib/revenuecat.ts';
+import { creditsFor } from '../middleware/credits.ts';
+
+export const user = new Hono();
+
+/**
+ * The client reconciles MMKV against this on launch and on resume — beside the
+ * existing `consumeChatUsage()` call in _layout.tsx. MMKV stays an optimistic
+ * cache so the paywall still appears instantly; this is the truth.
+ *
+ * Swipe counts are deliberately absent: FREE_SWIPE_LIMIT gates a feed that is
+ * generated once globally and cached, so swiping costs nothing and reinstalling
+ * to reset it causes no financial harm. It stays in MMKV. See blueprint §6.3.
+ */
+user.get('/credits', async (c) => {
+  const { sub } = c.get('user');
+  const { isPro, analysisCount, remaining } = await creditsFor(sub);
+  return c.json({
+    is_pro: isPro,
+    analysis_count: analysisCount,
+    credits_remaining: isPro ? null : remaining,
+    limits: { free_analysis: FREE_ANALYSIS_LIMIT },
+  });
+});
+
+const ProBody = z.object({
+  rc_app_user_id: z.string().min(1).max(128),
+  /** Consulted ONLY in mock mode — see lib/revenuecat.ts. */
+  claimed_pro: z.boolean().default(false),
+});
+
+/**
+ * Sync entitlement after a purchase or a restore, and re-issue the token.
+ *
+ * Without this the server believes every user is free, and a paying subscriber
+ * is cut off after three analyses — the credit gate reads `is_pro` off the row,
+ * not off anything the app says. Call it after `purchasePlan()`, after a
+ * restore, and on launch.
+ *
+ * The client does not get to assert its own entitlement: it sends the RevenueCat
+ * user id, and the server asks RevenueCat.
+ */
+user.post('/pro', async (c) => {
+  const { sub } = c.get('user');
+  const body = ProBody.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) throw Errors.badRequest('rc_app_user_id is required');
+
+  const { isPro, expiresAt, verified } = await checkEntitlement(
+    body.data.rc_app_user_id,
+    body.data.claimed_pro,
+  );
+
+  await db.execute(sql`
+    UPDATE users
+       SET rc_app_user_id         = ${body.data.rc_app_user_id},
+           is_pro                 = ${isPro ? 1 : 0},
+           entitlement_expires_at = ${expiresAt},
+           updated_at             = ${Date.now()}
+     WHERE id = ${sub}
+  `);
+
+  log.info('user.pro', { isPro, verified });
+
+  // Re-sign: the old token keeps asserting the old entitlement until it expires.
+  const { token, expiresIn } = await signAccess({ sub, pro: isPro });
+  const { analysisCount, remaining } = await creditsFor(sub);
+
+  return c.json({
+    access_token: token,
+    expires_in: expiresIn,
+    is_pro: isPro,
+    analysis_count: analysisCount,
+    credits_remaining: isPro ? null : remaining,
+    limits: { free_analysis: FREE_ANALYSIS_LIMIT },
+  });
+});
