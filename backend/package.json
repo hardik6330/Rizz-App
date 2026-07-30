@@ -6,7 +6,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "dev": "node --env-file=.env --import tsx --watch src/index.ts",
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --packages=external",
+    "build": "esbuild src/vercel.ts --bundle --platform=node --target=node22 --format=esm --outfile=api/index.js --packages=external",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
