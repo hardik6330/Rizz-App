@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 
-import { isLiveRevenueCatKey, nextSwipeState, swipesUsedToday, todayKey } from './limits.ts';
+import { isLiveRevenueCatKey, nextScanHistory, nextSwipeState, swipesUsedToday, todayKey } from './limits.ts';
 
 const TODAY = '2026-07-16';
 const YESTERDAY = '2026-07-15';
@@ -62,3 +62,37 @@ assert.equal(isLiveRevenueCatKey(null), false);
 assert.equal(isLiveRevenueCatKey('sk_live_deadbeef'), false);
 
 console.log('✅ limits self-check passed');
+
+// ── Scan history ────────────────────────────────────────────────────────────
+// Both failures here are silent: duplicates look like a UI glitch, and an
+// uncapped list just makes launches slowly heavier.
+const r = (id: string) => ({ id });
+
+assert.deepEqual(
+  nextScanHistory([r('a')], r('b'), 20),
+  [r('b'), r('a')],
+  'newest report comes first',
+);
+
+assert.deepEqual(
+  nextScanHistory([r('a'), r('b')], r('a'), 20),
+  [r('a'), r('b')],
+  're-adding the same id moves it to the front instead of duplicating',
+);
+assert.equal(
+  nextScanHistory([r('a'), r('b')], r('a'), 20).length,
+  2,
+  'a re-add never grows the list',
+);
+
+const long = Array.from({ length: 20 }, (_, i) => r(`old-${i}`));
+const capped = nextScanHistory(long, r('new'), 20);
+assert.equal(capped.length, 20, 'the cap holds');
+assert.equal(capped[0].id, 'new', 'the newest survives the cap');
+assert.equal(
+  capped.some((item) => item.id === 'old-19'),
+  false,
+  'the oldest is the one dropped',
+);
+
+console.log('scan history: ok');

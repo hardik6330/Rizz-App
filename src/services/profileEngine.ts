@@ -124,7 +124,7 @@ async function analyzeViaApi(
   mode: ScanMode,
 ): Promise<ProfileScanResult> {
   const { uiText } = input as ProfileCapture;
-  const parsed = await callApi<Omit<ProfileScanResult, 'id' | 'createdAt'>>('/v1/ai/profile', {
+  const parsed = await callApi<Omit<ProfileScanResult, 'id' | 'createdAt' | 'mode'>>('/v1/ai/profile', {
     images: input.images.map((img) => imagePayload(img.base64, img.mimeType)),
     mode,
     // Accessibility captures carry the on-screen text. It is a hint only, and the
@@ -132,14 +132,14 @@ async function analyzeViaApi(
     // because it comes off a screen an attacker may control.
     ui_text: uiText,
   });
-  return { ...parsed, id: uid(), createdAt: Date.now() };
+  return { ...parsed, id: uid(), createdAt: Date.now(), mode };
 }
 
 // ---------------------------------------------------------------------------
 // Simulation path — offline demo mode
 // ---------------------------------------------------------------------------
 
-type ScanSeed = Omit<ProfileScanResult, 'id' | 'createdAt'>;
+type ScanSeed = Omit<ProfileScanResult, 'id' | 'createdAt' | 'mode'>;
 
 /**
  * Non-empty on purpose: `simulateScan` indexes into these, so a mode with an
@@ -280,5 +280,5 @@ async function simulateScan(mode: ScanMode): Promise<ProfileScanResult> {
   const seed = seeds[rotation[mode] % seeds.length];
   rotation[mode] += 1;
   const clone = JSON.parse(JSON.stringify(seed)) as ScanSeed;
-  return { ...clone, id: uid(), createdAt: Date.now() };
+  return { ...clone, id: uid(), createdAt: Date.now(), mode };
 }

@@ -23,6 +23,7 @@ import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import type { ProfileCapture, ProfileScanResult, ProfileScore, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
+import { timeAgo } from '@/utils/misc';
 
 type Phase = 'idle' | 'working' | 'done';
 type Pick = { uri: string; base64: string; mimeType: string };
@@ -53,8 +54,11 @@ export default function ProfileScreen() {
   const tint = mode === 'self' ? palette.cyan : palette.violet;
 
   const savedItems = useRizzStore((state) => state.savedItems);
+  const scanHistory = useRizzStore((state) => state.scanHistory);
   const incrementAnalysis = useRizzStore((state) => state.incrementAnalysis);
   const toggleSave = useRizzStore((state) => state.toggleSave);
+  const addScan = useRizzStore((state) => state.addScan);
+  const removeScan = useRizzStore((state) => state.removeScan);
 
   const outOfCredits = useOutOfCredits();
 
@@ -136,6 +140,7 @@ export default function ProfileScreen() {
       }
       setResult(scanResult);
       setPhase('done');
+      addScan(scanResult);
       incrementAnalysis();
       haptic.success();
     } catch (error) {
@@ -145,7 +150,7 @@ export default function ProfileScreen() {
     } finally {
       if (stageTimer.current) clearInterval(stageTimer.current);
     }
-  }, [images, incrementAnalysis, mode, toast]);
+  }, [addScan, images, incrementAnalysis, mode, toast]);
 
   /**
    * Pick up a capture from the accessibility bubble.
@@ -204,6 +209,27 @@ export default function ProfileScreen() {
   };
 
 
+  /**
+   * Reopen a stored report.
+   *
+   * The mode comes off the report, never off screen state: a 'them' scan opened
+   * while the tab sits in its default 'self' would relabel openers as bio lines.
+   * Images are cleared so backing out lands on the drop pad rather than on the
+   * thumbnails of whatever was scanned last.
+   */
+  const openScan = (entry: ProfileScanResult) => {
+    haptic.light();
+    setMode(entry.mode);
+    setImages([]);
+    setResult(entry);
+    setPhase('done');
+  };
+
+  const forgetScan = (entry: ProfileScanResult) => {
+    removeScan(entry.id);
+    toast.show('Removed from history');
+  };
+
   const copyLine = async (text: string) => {
     await Clipboard.setStringAsync(text);
     haptic.success();
@@ -242,7 +268,7 @@ export default function ProfileScreen() {
         {phase === 'done' && result != null ? (
           <ScanReport
             result={result}
-            mode={mode}
+            mode={result.mode}
             onReset={reset}
             isLineSaved={isLineSaved}
             onCopyLine={(t) => void copyLine(t)}
@@ -321,6 +347,60 @@ export default function ProfileScreen() {
                   </Text>
                 </HapticPressable>
               </>
+            )}
+
+            {/*
+              * Past reports. Kept on this screen rather than in the Vault: the
+              * Vault holds individual lines to send, a report is the whole
+              * analysis, and this is where someone looks for "that scan I ran".
+              */}
+            {scanHistory.length > 0 && (
+              <View style={styles.history}>
+                <Text style={styles.historyTitle}>Recent scans</Text>
+                {scanHistory.map((entry) => {
+                  const entryTint = entry.mode === 'self' ? palette.cyan : palette.violet;
+                  return (
+                    <HapticPressable
+                      key={entry.id}
+                      onPress={() => openScan(entry)}
+                      accessibilityLabel={`Open scan of ${entry.name ?? PROFILE_LABELS[entry.mode].fallbackName}`}
+                      style={styles.historyRow}
+                    >
+                      <View
+                        style={[
+                          styles.historyIcon,
+                          { backgroundColor: `${entryTint}1A`, borderColor: `${entryTint}55` },
+                        ]}
+                      >
+                        <Ionicons
+                          name={entry.mode === 'self' ? 'person-outline' : 'search-outline'}
+                          size={14}
+                          color={entryTint}
+                        />
+                      </View>
+                      {/* minWidth 0 + flexShrink: the name must ellipsize, not shove
+                        * the timestamp and the remove button out of the gutter. */}
+                      <View style={styles.historyText}>
+                        <Text style={styles.historyName} numberOfLines={1}>
+                          {entry.name ?? PROFILE_LABELS[entry.mode].fallbackName}
+                        </Text>
+                        <Text style={styles.historyMeta} numberOfLines={1}>
+                          {timeAgo(entry.createdAt)}
+                          {entry.tagline != null ? ` · ${entry.tagline}` : ''}
+                        </Text>
+                      </View>
+                      <HapticPressable
+                        onPress={() => forgetScan(entry)}
+                        accessibilityLabel="Remove from history"
+                        hitSlop={10}
+                        style={styles.historyRemove}
+                      >
+                        <Ionicons name="close" size={14} color={palette.textTertiary} />
+                      </HapticPressable>
+                    </HapticPressable>
+                  );
+                })}
+              </View>
             )}
 
             {/* One-tap analyzer — Android only, hidden where the module is absent. */}
@@ -694,6 +774,55 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.2,
     color: palette.ink,
+  },
+  history: {
+    gap: spacing.sm,
+  },
+  historyTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: palette.textTertiary,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.hairline,
+  },
+  historyIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  /* `minWidth: 0` is what lets the name ellipsize instead of pushing the
+   * timestamp and the remove button past the gutter — see AGENTS.md. */
+  historyText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  historyName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: palette.textPrimary,
+    flexShrink: 1,
+  },
+  historyMeta: {
+    fontSize: 11,
+    color: palette.textTertiary,
+    flexShrink: 1,
+  },
+  historyRemove: {
+    padding: spacing.xs,
   },
   analyzerRow: {
     flexDirection: 'row',

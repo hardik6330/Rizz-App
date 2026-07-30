@@ -46,3 +46,20 @@ export function isLiveRevenueCatKey(key: string | undefined | null): boolean {
   if (!key) return false;
   return /^(appl|goog)_/.test(key) && !key.toLowerCase().includes('mock');
 }
+
+/**
+ * Next scan-history list: newest first, one entry per id, capped.
+ *
+ * Pure and here rather than inline in the store because `useRizzStore` cannot be
+ * imported by a Node self-check (it reaches react-native and MMKV), and both
+ * halves of this fail silently. Without the id filter a remount re-adds the
+ * report already on screen and history shows it twice; without the cap MMKV grows
+ * without bound, and it is memory-mapped and read whole on launch.
+ */
+export function nextScanHistory<T extends { id: string }>(
+  history: T[],
+  entry: T,
+  limit: number,
+): T[] {
+  return [entry, ...history.filter((item) => item.id !== entry.id)].slice(0, limit);
+}

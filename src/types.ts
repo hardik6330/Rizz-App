@@ -140,6 +140,15 @@ export type ScanMode = 'self' | 'them';
 export interface ProfileScanResult {
   id: string;
   createdAt: number;
+  /**
+   * Which mode produced this report.
+   *
+   * Stamped by the engine rather than tracked beside it, because `PROFILE_LABELS`
+   * renames every section per mode: a 'them' report reopened from history while
+   * the screen sits in 'self' would relabel openers as bio lines and score a
+   * stranger's profile as the user's own.
+   */
+  mode: ScanMode;
   /** False when the screenshots aren't a readable dating/social profile. */
   isProfile: boolean;
   /** Set only when isProfile is false — a short reason to show the user. */

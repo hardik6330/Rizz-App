@@ -2,13 +2,27 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
-import type { FeedItem, SavedItem } from '@/types';
-import { nextSwipeState, todayKey } from './limits';
+import type { FeedItem, ProfileScanResult, SavedItem } from '@/types';
+import { nextScanHistory, nextSwipeState, todayKey } from './limits';
 import { onCreditsChanged } from './session';
 import { zustandStorage } from './storage';
 
+/**
+ * Reports kept in Profile Scan's history, newest first.
+ *
+ * Capped because these live in MMKV, which is memory-mapped and read whole on
+ * launch: a report is a few KB of prose and an unbounded list would grow forever
+ * on a screen that only ever shows the recent ones.
+ *
+ * ponytail: fixed cap, no pagination. Add paging only if someone actually wants
+ * to scroll months back.
+ */
+const SCAN_HISTORY_LIMIT = 20;
+
 interface RizzState {
   savedItems: SavedItem[];
+  /** Past Profile Scan reports, newest first. Capped at SCAN_HISTORY_LIMIT. */
+  scanHistory: ProfileScanResult[];
   analysisCount: number;
   /** Swipes used on `swipeDate`. Rolls over to 0 on a new day. */
   swipeCount: number;
@@ -31,6 +45,8 @@ interface RizzState {
   toggleSave: (item: Omit<SavedItem, 'savedAt'>) => void;
   removeSaved: (id: string) => void;
   clearVault: () => void;
+  addScan: (result: ProfileScanResult) => void;
+  removeScan: (id: string) => void;
   incrementAnalysis: () => void;
   incrementSwipe: () => void;
   setPro: (isPro: boolean) => void;
@@ -43,6 +59,7 @@ export const useRizzStore = create<RizzState>()(
   persist(
     (set) => ({
       savedItems: [],
+      scanHistory: [],
       analysisCount: 0,
       swipeCount: 0,
       swipeDate: null,
@@ -67,6 +84,19 @@ export const useRizzStore = create<RizzState>()(
 
       clearVault: () => set({ savedItems: [] }),
 
+      /**
+       * Keyed by id so re-adding the same report replaces it rather than
+       * duplicating — the scan screen calls this on every completed scan, and a
+       * remount must not push a second copy of the report already on screen.
+       */
+      addScan: (result) =>
+        set((state) => ({
+          scanHistory: nextScanHistory(state.scanHistory, result, SCAN_HISTORY_LIMIT),
+        })),
+
+      removeScan: (id) =>
+        set((state) => ({ scanHistory: state.scanHistory.filter((scan) => scan.id !== id) })),
+
       incrementAnalysis: () => set((state) => ({ analysisCount: state.analysisCount + 1 })),
 
       // Free swipes are a DAILY allowance — see state/limits.ts.
@@ -87,6 +117,7 @@ export const useRizzStore = create<RizzState>()(
       storage: createJSONStorage(() => zustandStorage),
       partialize: (state) => ({
         savedItems: state.savedItems,
+        scanHistory: state.scanHistory,
         analysisCount: state.analysisCount,
         swipeCount: state.swipeCount,
         swipeDate: state.swipeDate,
