@@ -25,3 +25,5 @@ web-build/
 # a file-type secret (GOOGLE_SERVICES_JSON / GOOGLE_SERVICES_PLIST), never committed.
 google-services.json
 GoogleService-Info.plist
+.vercel
+.env*

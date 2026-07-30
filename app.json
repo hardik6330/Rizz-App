@@ -2,7 +2,7 @@
   "expo": {
     "name": "RizzCoach",
     "slug": "rizzcoach",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "default",
     "icon": "./assets/generated/icon.png",
     "scheme": "rizzcoach",
