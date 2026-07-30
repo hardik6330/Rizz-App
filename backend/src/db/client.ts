@@ -26,6 +26,13 @@ export const pool = mysql.createPool({
    */
   connectionLimit: process.env.VERCEL ? 1 : 10,
   enableKeepAlive: true,
+  /*
+   * Fail fast. A blocked Aiven allowlist drops packets rather than refusing them,
+   * so without this the connect hangs until Vercel kills the function at 60s and
+   * logs a timeout instead of the real error — and the client, having waited a
+   * minute, quietly serves mock data.
+   */
+  connectTimeout: 8_000,
   timezone: 'Z',
   /*
    * `rejectUnauthorized` stays true in both branches. Every row this connection
