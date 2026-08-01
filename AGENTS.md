@@ -214,6 +214,23 @@ that is an accessibility setting, not a suggestion. Text living inside a fixed-s
 (tab bar labels, credit meters, count bubbles, chips) gets `maxFontSizeMultiplier` 1.0–1.3, or
 it bursts its container at 200% system text.
 
+**Reduce Motion is already handled by Reanimated — do not hand-roll it.** Every animation
+defaults to `ReduceMotion.System`, so `withTiming` jumps to its final value and `withRepeat`
+stops after one pass. What that leaves behind is a *resting state*, and that is the only thing
+worth checking: a pulsing dot settles lit (fine), but `AnalyzingOverlay`'s scan beam froze
+parked at the bottom edge of the card for the whole analysis, reading as a rendering bug. So
+that one beam is gated on `useReducedMotion()` and removed outright. Any new looping animation:
+check where it *stops*, don't add another hook.
+
+**Palette contrast is arithmetic, not taste — `contrast.selfcheck.ts` owns it.** `textTertiary`
+shipped at 3.19:1 on `surfaceHigh` while carrying 12px body copy and TextInput placeholders,
+which is a Play Store accessibility finding that neither `tsc` nor a screenshot can see. It is
+now `#868697` (4.75:1). The check also asserts `textSecondary`/`textTertiary` stay ≥1.2× apart,
+because the tempting fix is to make every grey the same grey and lose the type hierarchy.
+`violetDeep` (2.33:1) is deliberately unchecked — it is only ever a gradient stop, and WCAG does
+not apply to decoration; make it text and the check will fail, which is intended. `surfaceHigh`
+is the worst of the three surfaces, so check new greys there.
+
 **Both modals are full-screen on Android.** `vault` and `paywall` must apply `insets.top`
 themselves — iOS sheets report 0 there, so it is free on iOS and load-bearing on Android.
 Without it the Vault title and the paywall close button sit under the status bar.
@@ -232,6 +249,13 @@ clips there — `LockOverlay` had to become a `ScrollView` for exactly this reas
   uses `AnalyzingOverlay` instead — it sweeps a beam over the picked image, a genuinely
   different visual.
 - Free-credit gate: `useOutOfCredits()` from the store. Don't re-derive it.
+- **Any screen that shows a result by flipping `phase` to `'done'` needs
+  `useBackToIdle(phase === 'done', reset)`.** All three AI tools render the report *in
+  place* rather than pushing a route, and each tab is the root of its own stack — so
+  Android hardware back skipped past the report and exited the app, with users reading the
+  refresh icon as "scan another" rather than "close". Pass `false` during `'working'`: the
+  request is in flight and the credit is already charged. `reset` must be a `useCallback`
+  or the listener resubscribes every render.
 - `toast.show(msg, ms?)` — pass a longer duration for long messages (default 1.7s).
 - Persisted state must be added to `partialize` in `useRizzStore.ts` or it won't survive
   reload.
@@ -315,6 +339,7 @@ landed as 1.0.1 → 1.0.2 for exactly this reason.
 ```bash
 npx tsc --noEmit                                        # must pass
 node src/state/limits.selfcheck.ts                      # swipe-allowance + store-key rules
+node src/theme/contrast.selfcheck.ts                    # palette vs WCAG AA (reads tokens.ts as text)
 cd backend && node --env-file=.env --import tsx src/ai/gateway.selfcheck.ts   # live API (1 tiny call)
 cd backend && node --env-file=.env --import tsx src/vercel.selfcheck.ts       # serverless POST body
 cd backend && npx tsc --noEmit                          # server must pass too

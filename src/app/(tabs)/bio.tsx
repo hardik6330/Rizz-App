@@ -24,6 +24,7 @@ import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import type { BioOption, BioResult, BioVibe } from '@/types';
 import { haptic } from '@/utils/haptics';
+import { useBackToIdle } from '@/utils/useBackToIdle';
 
 type Phase = 'idle' | 'working' | 'done';
 
@@ -125,11 +126,15 @@ export default function BioScreen() {
     }
   }, [outOfCredits, canOptimize, interests, vibe, currentBio, incrementAnalysis, toast]);
 
-  const reset = () => {
+  // useCallback so useBackToIdle's listener does not resubscribe every render.
+  const reset = useCallback(() => {
     haptic.light();
     setPhase('idle');
     setResult(null);
-  };
+  }, []);
+
+  // Android back closes the result instead of exiting the app. See useBackToIdle.
+  useBackToIdle(phase === 'done', reset);
 
   const copyBio = async (text: string) => {
     await Clipboard.setStringAsync(text);

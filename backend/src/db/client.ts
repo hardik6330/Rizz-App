@@ -41,7 +41,21 @@ export const pool = mysql.createPool({
    * `ssl: { rejectUnauthorized: false }` is the usual fix for a managed-MySQL
    * cert error; supply DATABASE_CA instead.
    */
-  ssl: { ca: databaseCa(), rejectUnauthorized: true },
+  /*
+   * `checkServerIdentity` is skipped ONLY when a CA is pinned. Railway's MySQL
+   * serves MySQL's own auto-generated cert, whose CN is
+   * `MySQL_Server_9.4.0_Auto_Generated_Server_Certificate` — it can never match
+   * `*.proxy.rlwy.net`, so the hostname check fails on a cert that is otherwise
+   * exactly the one we expect. Pinning the issuing CA is the stronger guarantee
+   * anyway: its key is unique to this instance, so only this server can present
+   * a chain that verifies. With no CA pinned this stays undefined and Node does
+   * the full public-CA + hostname check.
+   */
+  // The cast is mysql2's SslOptions omitting checkServerIdentity from its types;
+  // it forwards the whole object to tls.connect, which honours it.
+  ssl: (databaseCa()
+    ? { ca: databaseCa(), rejectUnauthorized: true, checkServerIdentity: () => undefined }
+    : { rejectUnauthorized: true }) as mysql.SslOptions,
 });
 
 /**

@@ -24,6 +24,7 @@ import { palette, radii, spacing } from '@/theme/tokens';
 import type { ProfileCapture, ProfileScanResult, ProfileScore, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { timeAgo } from '@/utils/misc';
+import { useBackToIdle } from '@/utils/useBackToIdle';
 
 type Phase = 'idle' | 'working' | 'done';
 type Pick = { uri: string; base64: string; mimeType: string };
@@ -201,12 +202,22 @@ export default function ProfileScreen() {
     }, []),
   );
 
-  const reset = () => {
+  /**
+   * Back out of a report to the drop pad — which is also where "Recent scans"
+   * lives, so the report you just closed is the top row waiting for you.
+   *
+   * `useCallback` so the hardware-back effect below does not resubscribe on every
+   * render, and so `onReset` stays a stable prop.
+   */
+  const reset = useCallback(() => {
     haptic.light();
     setPhase('idle');
     setImages([]);
     setResult(null);
-  };
+  }, []);
+
+  // Back out of the report instead of out of the app. See useBackToIdle.
+  useBackToIdle(phase === 'done', reset);
 
 
   /**
@@ -349,10 +360,45 @@ export default function ProfileScreen() {
               </>
             )}
 
+            {/* One-tap analyzer — Android only, hidden where the module is absent. */}
+            {isSupported && (
+              <HapticPressable
+                onPress={() => {
+                  haptic.light();
+                  router.push('/analyzer');
+                }}
+                accessibilityLabel="Analyzer settings"
+                style={styles.analyzerRow}
+              >
+                <Ionicons name={watching ? 'sparkles' : 'sparkles-outline'} size={16} color={palette.violet} />
+                <View style={styles.analyzerText}>
+                  <Text style={styles.analyzerTitle}>
+                    {watching ? 'Analyzing profiles' : 'Read profiles'}
+                  </Text>
+                  <Text style={styles.analyzerSub}>
+                    {watching
+                      ? 'Open a profile in Instagram, Tinder, Bumble or Hinge — or any chat in WhatsApp, Snapchat & Telegram — and tap ✨.'
+                      : 'Turn on to get an ✨ button in Instagram, Tinder, Bumble, Hinge, WhatsApp, Snapchat & Telegram.'}
+                  </Text>
+                </View>
+                {!watching && <View style={styles.analyzerDot} />}
+                <Ionicons name="chevron-forward" size={15} color={palette.textTertiary} />
+              </HapticPressable>
+            )}
+
             {/*
-              * Past reports. Kept on this screen rather than in the Vault: the
-              * Vault holds individual lines to send, a report is the whole
-              * analysis, and this is where someone looks for "that scan I ran".
+              * Past reports, below the analyzer row rather than above it.
+              *
+              * Kept on this screen rather than in the Vault: the Vault holds
+              * individual lines to send, a report is the whole analysis, and this is
+              * where someone looks for "that scan I ran". It sits after the analyzer
+              * row so the scan funnel — drop pad, then how to get the ✨ button — is
+              * never pushed down the page by a list that grows to 20 rows.
+              *
+              * The icon and tint are the ONLY place mode surfaces in the UI: cyan
+              * person for your own profile, violet magnifier for someone else's.
+              * There is no mode selector — mode is decided by the capture, and
+              * `openScan` reads it back off the stored report.
               */}
             {scanHistory.length > 0 && (
               <View style={styles.history}>
@@ -401,32 +447,6 @@ export default function ProfileScreen() {
                   );
                 })}
               </View>
-            )}
-
-            {/* One-tap analyzer — Android only, hidden where the module is absent. */}
-            {isSupported && (
-              <HapticPressable
-                onPress={() => {
-                  haptic.light();
-                  router.push('/analyzer');
-                }}
-                accessibilityLabel="Analyzer settings"
-                style={styles.analyzerRow}
-              >
-                <Ionicons name={watching ? 'sparkles' : 'sparkles-outline'} size={16} color={palette.violet} />
-                <View style={styles.analyzerText}>
-                  <Text style={styles.analyzerTitle}>
-                    {watching ? 'Analyzing their profiles' : 'Read their profiles'}
-                  </Text>
-                  <Text style={styles.analyzerSub}>
-                    {watching
-                      ? 'Open a profile in Instagram, Tinder, Bumble or Hinge — or any chat in WhatsApp, Snapchat & Telegram — and tap ✨.'
-                      : 'Turn on to get an ✨ button in Instagram, Tinder, Bumble, Hinge, WhatsApp, Snapchat & Telegram.'}
-                  </Text>
-                </View>
-                {!watching && <View style={styles.analyzerDot} />}
-                <Ionicons name="chevron-forward" size={15} color={palette.textTertiary} />
-              </HapticPressable>
             )}
 
             <View style={styles.privacyRow}>

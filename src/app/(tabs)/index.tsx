@@ -29,6 +29,7 @@ import { palette, spacing } from '@/theme/tokens';
 import type { AnalysisResult, EngineMode, ReplyOption } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { shareText } from '@/utils/misc';
+import { useBackToIdle } from '@/utils/useBackToIdle';
 
 type Phase = 'idle' | 'analyzing' | 'done';
 
@@ -143,14 +144,18 @@ export default function LabScreen() {
     void runAnalysis(mode, 1.15);
   };
 
-  const reset = () => {
+  // useCallback so useBackToIdle's listener does not resubscribe every render.
+  const reset = useCallback(() => {
     haptic.light();
     setPhase('idle');
     setImageUri(null);
     setResults({});
     shot.current = null;
     charged.current = false;
-  };
+  }, []);
+
+  // Android back closes the result instead of exiting the app. See useBackToIdle.
+  useBackToIdle(phase === 'done', reset);
 
   const copyText = async (text: string) => {
     await Clipboard.setStringAsync(text);

@@ -8,6 +8,7 @@ import Animated, {
   LinearTransition,
   interpolate,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
@@ -33,6 +34,14 @@ export function AnalyzingOverlay({ uri, stage }: AnalyzingOverlayProps) {
   // The beam sweeps the card, so its travel has to track the card's real height
   // — a fixed 340 overshot the bottom edge on a short screen.
   const cardHeight = cardHeightFor(height, CARD_HEIGHT, CARD_MIN_HEIGHT);
+  /*
+   * Reanimated already honours Reduce Motion for us — every animation defaults to
+   * `ReduceMotion.System`, so `withRepeat` stops after one pass. For the pulsing
+   * dot that is a fine resting state (it settles lit). For the beam it is not: it
+   * freezes parked at the bottom edge of the card for the whole analysis, reading
+   * as a rendering bug rather than as "motion off". So drop it entirely instead.
+   */
+  const reduceMotion = useReducedMotion();
   const scan = useSharedValue(0);
   const dot = useSharedValue(0.4);
 
@@ -62,18 +71,20 @@ export function AnalyzingOverlay({ uri, stage }: AnalyzingOverlayProps) {
       <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
       <View style={styles.scrim} />
 
-      <Animated.View style={[styles.scan, scanStyle]}>
-        <LinearGradient
-          colors={[
-            'transparent',
-            'rgba(139,92,246,0.28)',
-            'rgba(139,92,246,0.85)',
-            'rgba(139,92,246,0.28)',
-            'transparent',
-          ]}
-          style={{ flex: 1 }}
-        />
-      </Animated.View>
+      {!reduceMotion && (
+        <Animated.View style={[styles.scan, scanStyle]}>
+          <LinearGradient
+            colors={[
+              'transparent',
+              'rgba(139,92,246,0.28)',
+              'rgba(139,92,246,0.85)',
+              'rgba(139,92,246,0.28)',
+              'transparent',
+            ]}
+            style={{ flex: 1 }}
+          />
+        </Animated.View>
+      )}
 
       <View style={styles.badge}>
         <Animated.View style={[styles.badgeDot, dotStyle]} />

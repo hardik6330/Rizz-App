@@ -28,7 +28,15 @@ export const palette = {
   // Text
   textPrimary: '#F7F7FA',
   textSecondary: '#A2A2B5',
-  textTertiary: '#6A6A78',
+  /*
+   * Lightened from #6A6A78 for WCAG AA. It carries 12–12.5px copy (analyzer step
+   * bodies, paywall footnotes, vault captions) and TextInput placeholders, so it is
+   * "normal" text at 4.5:1, not large text at 3:1 — and it measured 3.19:1 on
+   * surfaceHigh, the worst of the three surfaces. This clears it at 4.75:1 while
+   * staying a step below textSecondary (6.77:1); lighten it further and the two
+   * greys collapse into one. Check any new grey against all three surfaces.
+   */
+  textTertiary: '#868697',
 } as const;
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 } as const;
