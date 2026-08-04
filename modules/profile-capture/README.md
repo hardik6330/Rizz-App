@@ -71,7 +71,7 @@ to justify at review. Keep it minimal.
 
 ## Play Store reality
 
-Read `docs/profile-analyzer-blueprint.md` §6 before submitting. Short version: Play's
+Read `docs/README.md` §6 before submitting. Short version: Play's
 Accessibility API policy limits the API to functionality serving users with disabilities, and
 this is not that. Meta's and Match Group's terms separately prohibit automated profile
 collection. Rejection risk is high and independent of code quality. `strings.xml`'s

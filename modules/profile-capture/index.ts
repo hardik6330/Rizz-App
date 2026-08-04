@@ -13,7 +13,7 @@ import type { ProfileCapture, SupportedApp } from '@/types';
  *
  * The native side owns detection and capture ONLY. It never decides whether the
  * user has credits — that stays in `useOutOfCredits`. See
- * docs/profile-analyzer-blueprint.md §4.7.
+ * docs/README.md §6.
  */
 
 interface NativeCapture {

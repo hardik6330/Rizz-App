@@ -1,7 +1,7 @@
 import { bigint, char, date, index, int, json, mysqlEnum, mysqlTable, smallint, tinyint, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
 
 /**
- * Three tables. See docs/backend-blueprint.md §6 for what is deliberately absent
+ * Three tables. See docs/README.md §5 for what is deliberately absent
  * and the condition that earns each deferred table.
  *
  * NEVER add: images, transcripts, replies, reports, saved items, or any PII.

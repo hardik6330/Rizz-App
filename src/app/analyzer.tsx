@@ -21,7 +21,7 @@ import { haptic } from '@/utils/haptics';
  * This screen IS the compliance surface. It must say, before the user reaches
  * Settings, exactly what is read, when, and what leaves the device. Google review
  * reads it, and so does the user. If the behaviour changes, this copy changes
- * first — see docs/profile-analyzer-blueprint.md §6.
+ * first — see docs/README.md §6.
  *
  * Two Settings round-trips (accessibility, then overlay) is a brutal funnel;
  * measure drop-off at each step before optimising anything else here.

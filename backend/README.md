@@ -1,6 +1,6 @@
 # RizzCoach API
 
-Phase 1 of [docs/backend-blueprint.md](../docs/backend-blueprint.md): get the Gemini key off the
+Phase 1 of [docs/README.md](../docs/README.md): get the Gemini key off the
 device.
 
 ## Why this exists
