@@ -27,6 +27,8 @@ export type ScanMode = 'self' | 'them';
 const LAB_INTRO = `You are RizzCoach, an elite dating-conversation strategist. The user sends a screenshot of a chat (dating app or texts). You analyze the OTHER person's messages and the user's own game, then produce:`;
 
 const LAB_SECTIONS = {
+  read: `read — transcribe before you advise. "lastMessage" is the final message visible in the screenshot, quoted verbatim, and "lastFrom" says who sent it. "thread" is one short line naming what the conversation is actually about right now (the running joke, the plan being made, the question left open). Fill this FIRST; everything below must answer THIS message, not the conversation in general. If the image is not a readable chat, say so here in plain words.`,
+
   replies: `replies — exactly 3 messages the user could send next, ids "a", "b" and "c": one Smooth (warm, sincere), one Playful (teasing, funny), one Bold (direct, moves things forward). Set spice 1-3 per reply (1 safe, 2 flirty, 3 spicy).
 
 These get copied straight into the chat, so each one must read as if the USER typed it on their phone — not as if an app wrote it:
@@ -54,9 +56,9 @@ const LAB_GROUNDING = `Ground everything in what is actually visible in the scre
 
 /** Which sections each mode renders. Asking for all four and showing one burned ~3x the tokens. */
 export const LAB_MODE_SECTIONS: Record<EngineMode, (keyof typeof LAB_SECTIONS)[]> = {
-  rizz: ['replies', 'sims'],
-  vibe: ['vibe'],
-  roast: ['roast'],
+  rizz: ['read', 'replies', 'sims'],
+  vibe: ['read', 'vibe'],
+  roast: ['read', 'roast'],
 };
 
 export function labPrompt(mode: EngineMode): string {

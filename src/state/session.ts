@@ -96,6 +96,31 @@ export async function installId(): Promise<string> {
 }
 
 /**
+ * Pull the server's true balance into the store. Launch and every resume.
+ *
+ * The bubble spends credits in a process the store cannot see: the accessibility
+ * service charges `/v1/ai/chat` directly and only mirrors the result into its own
+ * SharedPreferences snapshot. Without this the meter still reads 3/3 after a
+ * dozen bubble replies, and — worse — `_layout.tsx` then pushes that stale number
+ * back down, overwriting the accurate snapshot the service just wrote.
+ *
+ * Silent on failure: it is a reconciliation, not a gate. MMKV stays an optimistic
+ * cache so the paywall still appears without a round trip.
+ */
+export async function refreshCredits(): Promise<void> {
+  if (!isLiveApi) return;
+  try {
+    const res = await fetch(apiUrl('/v1/user/credits'), {
+      headers: { Authorization: `Bearer ${await accessToken()}` },
+    });
+    if (!res.ok) return;
+    onCredits?.((await res.json()) as Credits);
+  } catch {
+    // Offline. The cache is still the best guess we have.
+  }
+}
+
+/**
  * Push entitlement to the server and take the re-issued token.
  *
  * Lives here rather than in `api.ts` because the response replaces the access

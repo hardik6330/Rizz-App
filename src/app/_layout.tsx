@@ -13,7 +13,7 @@ import {
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
-import { apiBase, installId } from '@/state/session';
+import { apiBase, installId, refreshCredits } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { palette } from '@/theme/tokens';
 
@@ -73,10 +73,14 @@ export default function RootLayout() {
    */
   useEffect(() => {
     if (!isSupported) return;
-    const sync = () => {
+    const sync = async () => {
       const consumed = consumeChatUsage();
       const store = useRizzStore.getState();
       for (let i = 0; i < consumed; i++) store.incrementAnalysis();
+      // The bubble charges the server directly, so a reply generated while the app
+      // was closed is invisible to MMKV. Pull the truth BEFORE deriving the
+      // snapshot below, or we push a stale balance back over an accurate one.
+      await refreshCredits();
       const { isPro, analysisCount } = useRizzStore.getState();
       const remaining = isPro ? 9999 : Math.max(0, FREE_ANALYSIS_LIMIT - analysisCount);
       // The install id, never a token: the bubble fires days after the app was
@@ -84,8 +88,10 @@ export default function RootLayout() {
       // key — nothing native can call Google any more.
       void installId().then((id) => configureChat(apiBase(), id, isPro, remaining));
     };
-    sync();
-    const sub = AppState.addEventListener('change', (s) => s === 'active' && sync());
+    void sync();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') void sync();
+    });
     return () => sub.remove();
   }, []);
 

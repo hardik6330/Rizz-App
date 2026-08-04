@@ -51,6 +51,8 @@ export interface Roast {
 export interface AnalysisResult {
   id: string;
   createdAt: number;
+  /** What the model actually read off the screenshot. Absent on mock seeds. */
+  read?: { lastMessage: string; lastFrom: 'them' | 'you'; thread: string };
   replies?: ReplyOption[];
   vibe?: VibeCheck;
   roast?: Roast;

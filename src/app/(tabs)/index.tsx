@@ -25,7 +25,7 @@ import { ANALYZE_STAGES } from '@/data/mockAnalysis';
 import { analyzeScreenshot, type EngineInput } from '@/services/engine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
-import { palette, spacing } from '@/theme/tokens';
+import { palette, radii, spacing } from '@/theme/tokens';
 import type { AnalysisResult, EngineMode, ReplyOption } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { shareText } from '@/utils/misc';
@@ -260,6 +260,17 @@ export default function LabScreen() {
               />
             </Animated.View>
 
+            {/* Proof it read the chat: the message these replies are answering. */}
+            {result.read != null && (
+              <Animated.View entering={FadeInDown.springify().damping(17)} style={styles.readCard}>
+                <Text style={styles.readLabel} maxFontSizeMultiplier={1.3}>
+                  {result.read.lastFrom === 'them' ? 'THEY SAID' : 'YOU SAID'}
+                </Text>
+                <Text style={styles.readQuote}>“{result.read.lastMessage}”</Text>
+                <Text style={styles.readThread}>{result.read.thread}</Text>
+              </Animated.View>
+            )}
+
             {mode === 'rizz' && result.replies != null && (
               <>
                 {result.replies.map((option, index) => (
@@ -354,6 +365,30 @@ const styles = StyleSheet.create({
   },
   resultSub: {
     fontSize: 12.5,
+    color: palette.textSecondary,
+  },
+  readCard: {
+    backgroundColor: palette.surfaceHigh,
+    borderRadius: radii.lg,
+    borderLeftWidth: 3,
+    borderLeftColor: palette.violet,
+    padding: spacing.lg,
+    gap: 6,
+  },
+  readLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: palette.violetBright,
+  },
+  readQuote: {
+    fontSize: 15,
+    lineHeight: 21,
+    color: palette.textPrimary,
+  },
+  readThread: {
+    fontSize: 12.5,
+    lineHeight: 17,
     color: palette.textSecondary,
   },
   privacyRow: {

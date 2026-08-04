@@ -10,6 +10,18 @@ import { LAB_MODE_SECTIONS, type EngineMode } from './prompts.ts';
  */
 
 const SECTION_SCHEMAS = {
+  // First in the object AND first in every mode's `required` list: Gemini emits
+  // properties in that order, so transcribing the last message happens before
+  // the replies are written, not after. That ordering IS the grounding.
+  read: {
+    type: 'OBJECT',
+    required: ['lastMessage', 'lastFrom', 'thread'],
+    properties: {
+      lastMessage: { type: 'STRING', description: 'verbatim, the last message in the screenshot' },
+      lastFrom: { type: 'STRING', enum: ['them', 'you'] },
+      thread: { type: 'STRING', description: 'one line: what the chat is about right now' },
+    },
+  },
   replies: {
     type: 'ARRAY',
     items: {

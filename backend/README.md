@@ -20,14 +20,30 @@ npm run dev
 
 ### TLS to a managed database
 
-Aiven / PlanetScale / DO sign their MySQL certs with a **per-project CA that Node does not
-trust**, so a correct config still fails with `HANDSHAKE_SSL_ERROR`. Download the CA from the
-provider console (Aiven: service → *CA certificate* → download), save it as `backend/ca.pem`
-(gitignored) and point `DATABASE_CA` at it.
+Managed MySQL signs with a **CA that Node does not trust**, so a correct config still fails on
+the handshake. Point `DATABASE_CA` at the PEM (`*.pem` is gitignored) and verification passes.
+Two flavours, and they fail differently:
 
-The tempting fix is `rejectUnauthorized: false`. Don't — every row on this connection is a
-credit balance or a purchase state, crossing the public internet to a managed host, and an
-unverified peer is a silent MITM. `src/db/client.ts` keeps verification on in both branches.
+- **Aiven / PlanetScale / DO** issue a per-project CA with a real hostname on the leaf.
+  `HANDSHAKE_SSL_ERROR` until you download it (Aiven: service → *CA certificate* → download).
+- **Railway** proxies MySQL's own auto-generated cert, so there is nothing to download —
+  `self-signed certificate in certificate chain`. Dump the issuing CA off the live handshake:
+  `openssl s_client -starttls mysql -connect <host>:<port> -showcerts`.
+
+Railway then fails a *second* time, and this one is not a misconfiguration: that cert's CN is
+`MySQL_Server_<v>_Auto_Generated_Server_Certificate`, which can never match `*.proxy.rlwy.net`,
+so the hostname check rejects a certificate that is otherwise exactly the one we pinned. Hence
+`checkServerIdentity` in `client.ts` — skipped **only** when a CA is pinned, because pinning is
+the stronger guarantee anyway (that CA's key is unique to the instance, so only that server can
+present a verifying chain). With no CA pinned, Node does the full public-CA + hostname check.
+
+The tempting fix for any of the above is `rejectUnauthorized: false`. Don't — every row on this
+connection is a credit balance or a purchase state, crossing the public internet to a managed
+host, and an unverified peer is a silent MITM. It stays true in every branch of `client.ts`.
+
+`npm run db:migrate` is currently broken — drizzle-kit's bundled esbuild rejects this repo's
+`target: ES2023`, and there is no `meta/_journal.json` because `0000_init.sql` is hand-written.
+Apply it directly (`mysql < src/db/migrations/0000_init.sql`).
 
 ```bash
 # smoke test
@@ -96,15 +112,21 @@ database surfaces as live 500s instead of the failed deploy that `src/index.ts` 
 
 Dashboard → New → Blueprint → pick this repo, paste the credentials when prompted. Long-lived
 Node process, so the `index.ts` preflight, the SIGTERM drain and the in-memory rate limiter all
-work as designed, and Singapore is the closest region to the Aiven service in Bangalore. Any
-container host does the same (Railway, Fly, a VPS).
+work as designed. Pick the region closest to the database — currently Railway, so match its
+region rather than assuming Singapore. Any container host does the same (Railway, Fly, a VPS).
 
 ### Env vars, both targets
 
-`GEMINI_API_KEY`, `DATABASE_URL`, `DATABASE_CA` (paste the PEM itself — `databaseCa()` takes a
-path or the certificate text), `JWT_SECRET` (`openssl rand -hex 32`), `AI_ENABLED=true`,
+`GEMINI_API_KEY`, `DATABASE_URL`, `DATABASE_CA`, `JWT_SECRET` (`openssl rand -hex 32`), `AI_ENABLED=true`,
 `NODE_ENV=production`. `REVENUECAT_SECRET_KEY` is optional; while it is unset the server takes
 the client's Pro claim on trust and says so at boot. Never set `PORT` on Vercel.
+
+**`DATABASE_CA` must be the certificate TEXT here, never a path.** `databaseCa()` accepts
+either — a value starting with `-----BEGIN` is used verbatim, anything else is `readFileSync`'d
+— and locally it is a path, so copying `./railway-ca.pem` into the dashboard looks right and
+is not. The PEM is gitignored, so no such file exists on the host: `readFileSync` throws
+`ENOENT` at module load, which takes down **every** route, not just the DB ones. Symptom is a
+500 on `GET /` and `/favicon.ico` too, and a client that silently serves mock seeds.
 
 **There is no cron to port.** `node-cron` is in `package.json` and unused: the daily Discover
 batch is generated lazily on the first `POST /v1/ai/feed` of the day and deduped by

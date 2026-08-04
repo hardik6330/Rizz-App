@@ -7,6 +7,7 @@ import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { useRizzStore } from '@/state/useRizzStore';
 import { palette, spacing } from '@/theme/tokens';
 import { CircleIconButton } from './CircleIconButton';
+import { HapticPressable } from './HapticPressable';
 import { LimitBadge, ProChip } from './LimitBadge';
 
 interface ScreenHeaderProps {
@@ -36,7 +37,17 @@ export function ScreenHeader({ icon, title, tint }: ScreenHeaderProps) {
       </View>
 
       <View style={styles.headerActions}>
-        {isPro ? <ProChip /> : <LimitBadge used={analysisCount} limit={FREE_ANALYSIS_LIMIT} />}
+        {isPro ? (
+          <ProChip />
+        ) : (
+          <HapticPressable
+            onPress={() => router.push('/paywall?source=manual')}
+            accessibilityRole="button"
+            accessibilityLabel={`${analysisCount}/${FREE_ANALYSIS_LIMIT} free analyses used. Go Pro`}
+          >
+            <LimitBadge used={analysisCount} limit={FREE_ANALYSIS_LIMIT} />
+          </HapticPressable>
+        )}
         <View>
           <CircleIconButton
             icon="bookmark-outline"
