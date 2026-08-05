@@ -341,6 +341,37 @@ a **rebuild**, never `eas update`. Setup steps live in
 troubleshooting table and the launch checklist in
 [docs/revenuecat.md](docs/revenuecat.md).
 
+## Terms and Privacy — `backend/src/routes/legal.ts`
+
+**Two dead links on the purchase screen is a rejection, not a nit.** App Store Review
+3.1.2 requires a working EULA and privacy link on any auto-renewing subscription, and Play
+requires a privacy policy URL on the listing. Both pointed at `rizzcoach.app`, which 404s,
+and nobody noticed for months because nobody taps their own legal links.
+
+They are served **by the API**, not a separate site: `vercel.json` rewrites every path to
+the Hono app, so `/terms` and `/privacy` are two routes and no new infrastructure. They are
+registered at the very top of `app.ts`, above every `use()`, so no auth or rate-limit
+middleware can end up in front of a page a store reviewer has to reach while logged out.
+
+**The URLs live in `src/constants.ts` and nowhere else** — `paywall.tsx` imports them.
+Unlike the RevenueCat key these are plain JS, so changing them **is** OTA-able. To move to
+`rizzcoach.app`, attach the domain to the same Vercel project and change those two lines;
+the routes do not move. Its DNS already points at Vercel — it just isn't claimed by a
+project, which is what produces `DEPLOYMENT_NOT_FOUND` rather than an honest 404.
+
+⚠️ **The content is a DRAFT with unfilled placeholders** — `[LEGAL ENTITY NAME]`,
+`[REGISTERED ADDRESS]`, `[JURISDICTION]`, `[CITY, COUNTRY]` — and `support@rizzcoach.app`
+does not yet receive mail, while both documents promise it as the route for deletion and
+data requests. Neither can ship as-is.
+
+**The privacy policy's strongest claims are enforced by `db/schema.ts`, not by prose.** It
+states plainly that screenshots, message text, bios and generated openers are never stored,
+which is true because there is nowhere to put them. Add such a column and the policy
+becomes a false statement to users and to two app stores — this is the sharpest reason the
+"NEVER add: images, transcripts, replies, reports, saved items" rule is not negotiable.
+The Android Accessibility Service is disclosed separately and specifically, which Play
+scrutinises hard; keep that section in step with what the service actually reads.
+
 ## Discover feed
 
 `dailyFeed` (AI, generated once/day) leads; `data/feed.ts` curated items back it up.
