@@ -1,4 +1,5 @@
 import { DarkTheme, Stack, ThemeProvider, router } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
@@ -20,6 +21,31 @@ import { palette } from '@/theme/tokens';
 export const unstable_settings = {
   anchor: '(tabs)',
 };
+
+/**
+ * Hold the splash until we know whether the account gate is needed.
+ *
+ * The plugin is configured in app.json but nothing ever called this, so the
+ * splash hid on the very first frame — which is why a signed-out launch showed
+ * the Lab tab, and only then slid the mandatory signup screen over the top. The
+ * user saw the app they are not allowed into yet, and a redirect that reads like
+ * a bug.
+ *
+ * The store is MMKV-backed and rehydrates SYNCHRONOUSLY, so `account` is already
+ * correct on the first render — there was never anything to wait for. The gap
+ * was entirely the 400ms timer that used to schedule the push.
+ *
+ * Module scope, not an effect: an effect runs after the first frame, which is
+ * the frame we are trying not to show. Rejection is ignored because it only
+ * means the splash is already gone.
+ */
+void SplashScreen.preventAutoHideAsync().catch(() => {});
+
+/** Not exported — expo-router treats unexpected route exports as a mistake. */
+function hideSplash(): void {
+  // Already-hidden rejects, and that is the success case here.
+  void SplashScreen.hideAsync().catch(() => {});
+}
 
 const RizzTheme: typeof DarkTheme = {
   ...DarkTheme,
@@ -132,9 +158,28 @@ export default function RootLayout() {
   /** Did the gate actually run this session? Gates the landing below. */
   const onboardedThisSession = useRef(false);
   useEffect(() => {
-    if (accountStepDone) return;
+    if (accountStepDone) {
+      // Nothing to gate — this IS the app, so show it.
+      hideSplash();
+      return;
+    }
     onboardedThisSession.current = true;
-    const t = setTimeout(() => router.push('/account?onboarding=1'), 400);
+    /*
+     * Immediately, and under the splash.
+     *
+     * This used to wait 400ms, which meant the tab bar and the Lab screen were
+     * on display for four hundred milliseconds before the signup screen slid
+     * over them — the "why did it redirect me?" flash. The splash now covers
+     * the push, and `account.tsx` lifts it once it has painted.
+     */
+    router.push('/account?onboarding=1');
+
+    /*
+     * Dead-man's switch. If that push ever fails, the splash would stay up for
+     * ever and the app would look bricked with nothing in the log. Better a
+     * flash than a black screen.
+     */
+    const t = setTimeout(hideSplash, 3000);
     return () => clearTimeout(t);
   }, [accountStepDone]);
 

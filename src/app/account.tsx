@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import * as SplashScreen from 'expo-splash-screen';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -57,6 +58,17 @@ export default function AccountScreen() {
    * pattern as `firstRun` in analyzer.tsx.
    */
   const [isOnboarding] = useState(() => onboarding === '1');
+
+  /**
+   * Lift the splash `_layout.tsx` is holding, now that this screen exists.
+   *
+   * Hiding it there instead would race the push and show the Lab tab for a
+   * frame — the exact flash the splash is there to cover. Waiting for the real
+   * gate to mount is the only version with no timing guess in it.
+   */
+  useEffect(() => {
+    if (isOnboarding) void SplashScreen.hideAsync().catch(() => {});
+  }, [isOnboarding]);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -181,7 +193,12 @@ export default function AccountScreen() {
     <View style={styles.root}>
       {/* Stops the iOS swipe-to-dismiss on the mandatory gate. Android back is
           handled by the BackHandler above; the two are separate mechanisms. */}
-      <Stack.Screen options={{ gestureEnabled: !isOnboarding }} />
+      {/* No slide-up as the launch gate: it is not "a sheet over the app", it is
+          where the app starts. Animating it in is what made it read as a
+          redirect. As a modal from Profile Scan it keeps the normal one. */}
+      <Stack.Screen
+        options={{ gestureEnabled: !isOnboarding, animation: isOnboarding ? 'none' : 'default' }}
+      />
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
