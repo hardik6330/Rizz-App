@@ -8,6 +8,10 @@ Expo Router app. Screens in `src/app/(tabs)/`, AI in `src/services/`, persisted 
 `src/state/`, design tokens in `src/theme/tokens.ts`, responsive rules in
 `src/theme/layout.ts`.
 
+**`docs/README.md` is the companion to this file** — what the app is, an annotated tree of
+every file, and the shipping/debugging reference. This file is the rules you must not break
+while editing; when the two disagree, this one wins.
+
 ## Gemini engines — read this before touching any `*Engine.ts`
 
 **The app no longer calls Gemini. `backend/` does.** `services/gemini.ts` was deleted: it
@@ -26,10 +30,10 @@ that would mean either `expo-crypto` (native, therefore a rebuild rather than an
 
 **One documented exception:** `modules/profile-capture/.../GeminiChatClient.kt`. The chat
 bubble generates a reply inside the accessibility service, where the RN/JS context may not
-exist, so it re-implements the request shape in Kotlin (**`thinkingLevel: "low"` included —
-same load-bearing fix**). It is **still calling Google directly**, so the Gemini key cannot be
-revoked until it is repointed at `POST /v1/ai/chat` — native, so that needs a `version` bump
-and a rebuild. Do not add a second exception.
+exist, so it cannot go through `services/api.ts` and makes its own HTTP call. It now posts to
+`POST /v1/ai/chat` — **there is no Gemini key and no prompt in that file any more**, and it
+authenticates with the install id rather than a token, because the bubble fires days after the
+app was last opened and a 24h JWT is dead by then. Do not add a second exception.
 
 Four engines sit on top of `callApi`: `engine.ts` (chat screenshot), `bioEngine.ts` (bio
 optimizer), `profileEngine.ts` (profile scan), `feedEngine.ts` (daily Discover lines). They
@@ -80,6 +84,17 @@ mock data so the app demos offline. When debugging "AI not working", check the c
 which **exits** rather than starting half-configured. Google issues both `AIza…` and `AQ.…`
 formats; both go in the `x-goog-api-key` header, never the URL.
 
+**A broken backend is indistinguishable from a broken app — check the server first.** The DB is
+Railway MySQL; TLS to it needs a pinned CA and `checkServerIdentity` skipped, and getting
+`DATABASE_CA` wrong crashes the function at module load, so *every* route 500s. Client-side that
+looks like four unrelated bugs: engines serve mock seeds, and the Android bubble toasts
+"RizzCoach isn't connected yet — open the app once" because `installId()` rejects, so
+`_layout.tsx`'s `void installId().then(configureChat)` never configures `ChatEntitlement` and
+`hasApi()` stays false. It self-heals on the next resume once the server answers — no rebuild.
+`curl -X POST $API/v1/auth/device -H 'content-type: application/json' -d '{"platform":"android"}'`
+before touching any client code; `/healthz` hits no database and stays green through all of it.
+Details and the exact TLS failure modes: `backend/README.md`.
+
 **Prompts are versioned by content hash**, not by a hand-bumped constant — `promptVersion()`
 in `gateway.ts` logs the first 8 hex of sha256(prompt) on every call, so
 `engine + prompt + outputTokens` attributes a quality or cost change to a specific edit. A
@@ -98,6 +113,81 @@ cache that every API response overwrites with the server's number, so reinstalli
 MMKV no longer grants three more analyses. Pro is verified against RevenueCat by
 `POST /v1/user/pro`, which re-issues the token — call it after a purchase and after a restore
 or a subscriber gets cut off at three analyses.
+
+**The bubble spends credits in a process the store cannot see, so `refreshCredits()` must run
+BEFORE `configureChat()`.** The accessibility service charges `/v1/ai/chat` itself and mirrors
+the server's balance into its own SharedPreferences snapshot. `_layout.tsx`'s resume hook then
+pushes a snapshot *down* — so if it derives that snapshot from MMKV without pulling
+`GET /v1/user/credits` first, it overwrites an accurate balance with a stale one and bubble
+replies look free forever. `consumeChatUsage()` is always 0 now by design; it is kept only so
+a future offline queue has somewhere to refill.
+
+**The Lab quotes the chat before it answers it.** `labSchema` puts a `read` object first in the
+schema and first in every mode's `required` list — last message verbatim, who sent it, the
+running thread. Gemini emits properties in schema order, so the model commits to what the
+conversation says before writing a reply; that ordering IS the grounding, and reordering the
+schema quietly removes it. The client renders it above the replies. Mock seeds carry no `read`,
+so the card's absence is a free tell that you are looking at canned data.
+
+## Accounts — `backend/src/routes/auth.ts` + `src/app/account.tsx`
+
+**Identity is two layers, and the order is the whole point.** `/v1/auth/device` still
+mints the anonymous install identity on first launch — no signup wall, because asking for
+an account before the first analysis destroys activation. `/v1/auth/signup` then **claims
+that row** (`UPDATE … WHERE id = ? AND email IS NULL`); it never INSERTs. Create a row
+there and you have handed out three more free analyses for the price of a form, which is
+the exact hole the account exists to close.
+
+**The reason accounts exist:** `install_id` lives in MMKV, MMKV dies with the app, so an
+uninstall used to mean a brand-new user row with a fresh `analysis_count = 0`. Logging in
+after a reinstall returns the original row. AGENTS.md previously claimed the server-side
+credit move had already fixed this — it had not, and that claim was wrong until now.
+
+**There is no password reset and no email verification. Both absences are load-bearing
+copy.** The signup screen's amber "Save your password" block and the sign-out
+confirmation are the only warning a user gets before an unrecoverable account. Do not
+soften either, and delete them *only* alongside a shipped `/auth/reset`.
+The corollary: **an email costs nothing to invent, so signup is NOT an anti-abuse
+control.** Reinstall farming is bounded by the IP-scoped grant cap and the global spend
+ceiling, not by this. Never describe it otherwise in a roadmap or a store listing.
+
+**`requireAuth` reads the row on every request, and that is why tokens last 30 days.**
+It re-reads `is_pro` and `banned_at` rather than trusting the JWT claims, so a ban or a
+cancelled subscription takes effect at the next request instead of at the next token
+refresh. That check IS the revocation mechanism — remove it and a 30-day token becomes a
+30-day window. If it ever shows up in a latency profile, cache it for seconds; do not
+delete it.
+
+**Login must not distinguish "no such email" from "wrong password".** One `Errors
+.invalidCredentials()` for both, and the handler hashes against `DUMMY_HASH` when the row
+is missing so the *timing* does not leak it either. With no reset flow, an account an
+attacker guesses into is gone for good. Signup may name a username clash (usernames are
+public); it must never confirm an email exists.
+
+**`lib/password.ts` is `node:crypto` scrypt and nothing else.** N=2^15 needs 32MB, which
+is exactly Node's default `maxmem` — so `MAXMEM` is set explicitly and every call passes
+it. Raise N without raising `MAXMEM` and every login 500s with
+`ERR_CRYPTO_INVALID_SCRYPT_PARAMS`. Parameters are stored inside the hash, so N can be
+raised later without invalidating existing rows. Guarded by `password.selfcheck.ts`,
+which also pins the NFKC normalisation — the same accented character composes differently
+on iOS and Android keyboards, and without it a password set on one platform fails on the
+other, with no reset to recover from.
+
+**`DELETE /v1/user/me` is not a feature.** App Store Review 5.1.1(v) requires in-app
+account deletion, and Play requires a deletion path. It is one statement only because the
+schema holds no images, transcripts or reports; if that ever changes, this route grows
+with it.
+
+**`email` and `username` are the ONLY PII in the schema, and that is now the rule** —
+`db/schema.ts` used to say "never any PII" and that line was traded deliberately in
+migration 0001. Never a third column. Never log either one: `log.info('auth.signup')`
+carries no fields on purpose, same rule as `logger.ts`.
+
+**The rate limits on `/v1/auth/login` and `/signup` are load-bearing, not hygiene.**
+They plus the 10-failure account lockout are the entire brute-force defence. They are
+in-process counters, so they are correct on exactly one instance — **do not deploy
+accounts to a serverless target without moving them to a shared store first**, or every
+warm lambda hands the attacker a fresh allowance.
 
 ## Analytics — `src/services/analytics.ts` + `RizzAnalytics.kt`
 
@@ -292,6 +382,14 @@ environment that holds the Gemini key. Omit it and you are not shipping the key.
 **An update only reaches builds whose runtimeVersion matches it.** Publishing succeeds
 regardless — to zero devices if nothing matching is installed. Build first, then update.
 
+**A channel with no branch mapped to it serves nothing, and says nothing.** Builds resolve
+updates through their *channel*; `eas update --branch X` publishes to a *branch*. If the two
+are not linked, every publish reports success and reaches zero devices — the same symptom as a
+runtimeVersion mismatch, from a different cause. `eas channel:view preview` printing "No
+branches are pointed to this channel" is the tell; `eas channel:edit preview --branch preview`
+is the fix, once, forever. And an update that *does* arrive applies on the **second** launch:
+Expo boots the cached bundle and downloads in the background.
+
 **Build keys come from the EAS environment, not `.env`.** `.env` is gitignored so it never
 reaches EAS. A build profile only loads them if it declares `"environment"` — `preview` and
 `production` do. Drop that field and the build still succeeds, with no Gemini key baked in:
@@ -306,8 +404,7 @@ change minted a fresh runtime version and orphaned every installed build, so eac
 on zero devices until a new APK was built and reinstalled. Three builds in one morning had
 three fingerprints and an update matched none of them.
 
-Under `appVersion` every build sharing `version` (`app.json`, currently `1.0.1` — bumped when
-rotation and tablet support were enabled) accepts the
+Under `appVersion` every build sharing `version` (`app.json`, currently `1.0.4`) accepts the
 same updates, so JS-only fixes actually reach installed apps. The cost is that the safety net
 is gone:
 
@@ -340,6 +437,7 @@ landed as 1.0.1 → 1.0.2 for exactly this reason.
 npx tsc --noEmit                                        # must pass
 node src/state/limits.selfcheck.ts                      # swipe-allowance + store-key rules
 node src/theme/contrast.selfcheck.ts                    # palette vs WCAG AA (reads tokens.ts as text)
+cd backend && node --import tsx src/lib/password.selfcheck.ts                  # scrypt round-trip, no env needed
 cd backend && node --env-file=.env --import tsx src/ai/gateway.selfcheck.ts   # live API (1 tiny call)
 cd backend && node --env-file=.env --import tsx src/vercel.selfcheck.ts       # serverless POST body
 cd backend && npx tsc --noEmit                          # server must pass too

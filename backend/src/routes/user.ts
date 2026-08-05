@@ -32,6 +32,28 @@ user.get('/credits', async (c) => {
   });
 });
 
+/**
+ * Delete the account and everything attached to it.
+ *
+ * Not optional and not a feature: App Store Review 5.1.1(v) requires in-app
+ * deletion for any app that lets a user create an account, and Play requires a
+ * deletion path too. Shipping signup without this is a rejection.
+ *
+ * One statement is the whole implementation because the schema holds no images,
+ * transcripts, reports or saved items — the user row IS the user's data. If that
+ * ever stops being true, this route is the thing that has to grow.
+ *
+ * Hard DELETE, not a soft flag: "we kept your email but marked it inactive" is
+ * not deletion, and the unique key on `email` would block them signing up again.
+ */
+user.delete('/me', async (c) => {
+  const { sub } = c.get('user');
+  await db.execute(sql`DELETE FROM users WHERE id = ${sub}`);
+  // Never the email. The event is the record; the identity is what we just erased.
+  log.info('user.deleted');
+  return c.json({ ok: true });
+});
+
 const ProBody = z.object({
   rc_app_user_id: z.string().min(1).max(128),
   /** Consulted ONLY in mock mode — see lib/revenuecat.ts. */

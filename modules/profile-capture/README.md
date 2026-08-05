@@ -48,7 +48,15 @@ cannot read `useOutOfCredits`. Rather than reimplement the freemium rule in a se
 (which is how the `limits.ts` bug happens again, with no self-check), the service stashes the
 capture in `CaptureStore` and launches the app. JS pulls it on resume and applies the rules it
 already owns. Native answers "what screen is this" and "here are the pixels" — nothing else.
-This is also what keeps v2 (chat analysis) cheap: same seam, new `ScreenKind`.
+
+**The inline chat reply is the one path that cannot do that**, because it never launches the
+app: `GeminiChatClient.kt` posts a transcript to `POST /v1/ai/chat` from inside the service.
+It still owns no rule. The server charges the credit and refunds a failure; `ChatEntitlement`
+holds a *snapshot* (`apiUrl`, `installId`, `isPro`, `freeRemaining`) so a tap can be gated
+instantly and offline, and overwrites it with the server's balance after every generation. JS
+pushes that snapshot down on launch and every resume — **after** calling `refreshCredits()`,
+or it pushes its own stale count over an accurate one. There is no Gemini key and no prompt in
+this module.
 
 **Capture only ever happens on a tap.** No pre-emptive capture, no capture-on-detect, no
 buffer. The tap is the consent event; anything else is spyware in behaviour regardless of
@@ -71,9 +79,8 @@ to justify at review. Keep it minimal.
 
 ## Play Store reality
 
-Read `docs/README.md` §6 before submitting. Short version: Play's
-Accessibility API policy limits the API to functionality serving users with disabilities, and
-this is not that. Meta's and Match Group's terms separately prohibit automated profile
+Play's Accessibility API policy limits the API to functionality serving users with
+disabilities, and this is not that. Meta's and Match Group's terms separately prohibit automated profile
 collection. Rejection risk is high and independent of code quality. `strings.xml`'s
 `rizz_accessibility_description` and `analyzer.tsx`'s disclosure are the compliance surface —
 if behaviour changes, change that copy first.

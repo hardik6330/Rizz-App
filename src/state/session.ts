@@ -27,6 +27,18 @@ export const isLiveApi = /^https?:\/\/.+/.test(API_URL);
 
 const INSTALL_KEY = 'rizz.installId';
 const TOKEN_KEY = 'rizz.accessToken';
+/**
+ * The signed-in username, or absent for an anonymous install.
+ *
+ * Cached rather than derived so the account row renders on the first frame
+ * without a round trip. The server's answer always wins — every auth response
+ * rewrites it, including to `null` on a fresh install.
+ *
+ * ponytail: MMKV, like the token. Move all three to expo-secure-store when
+ * something else already forces a native rebuild — MMKV is unencrypted and a
+ * 30-day token is worth more than a 24h one was.
+ */
+const USERNAME_KEY = 'rizz.username';
 
 export interface Credits {
   is_pro: boolean;
@@ -34,10 +46,28 @@ export interface Credits {
   credits_remaining: number | null;
 }
 
+interface SessionUser extends Credits {
+  /** null = anonymous install, no account attached yet. */
+  username: string | null;
+}
+
 interface AuthResponse {
   access_token: string;
-  install_id: string;
-  user: Credits;
+  /** Only `/v1/auth/device` echoes this; signup and login reuse the stored one. */
+  install_id?: string;
+  user: SessionUser;
+}
+
+/**
+ * Persist whatever a session endpoint just returned. One writer for all three of
+ * `/device`, `/signup` and `/login`, so a new endpoint cannot forget half of it.
+ */
+function persistSession(data: AuthResponse): void {
+  if (data.install_id) kv.set(INSTALL_KEY, data.install_id);
+  kv.set(TOKEN_KEY, data.access_token);
+  if (data.user.username) kv.set(USERNAME_KEY, data.user.username);
+  else kv.remove(USERNAME_KEY);
+  onCredits?.(data.user);
 }
 
 /** Deduped: a cold start fires several engines at once and must not race for tokens. */
@@ -58,9 +88,7 @@ async function authenticate(): Promise<string> {
   if (!res.ok) throw new Error(`auth failed (${res.status})`);
   const data = (await res.json()) as AuthResponse;
 
-  kv.set(INSTALL_KEY, data.install_id);
-  kv.set(TOKEN_KEY, data.access_token);
-  onCredits?.(data.user);
+  persistSession(data);
   return data.access_token;
 }
 
@@ -85,6 +113,104 @@ export async function accessToken(force = false): Promise<string> {
 
 export function apiUrl(path: string): string {
   return `${API_URL}${path}`;
+}
+
+// ---------------------------------------------------------------------------
+// Account — signup and login. No reset, no verification; see backend routes/auth.ts.
+// ---------------------------------------------------------------------------
+
+/** The signed-in username, or null for an anonymous install. Synchronous. */
+export function accountUsername(): string | null {
+  return kv.getString(USERNAME_KEY) ?? null;
+}
+
+/** `code` mirrors the server envelope so callers branch on it, never the message. */
+export class AuthError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
+async function postSession(path: string, body: unknown, token?: string): Promise<SessionUser> {
+  const res = await fetch(apiUrl(path), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
+  });
+
+  const data = (await res.json().catch(() => null)) as (AuthResponse & {
+    error?: { code: string; message: string };
+  }) | null;
+
+  if (!res.ok || !data?.access_token) {
+    throw new AuthError(
+      data?.error?.code ?? 'NETWORK',
+      // The server's copy is written for the user ("That username is taken"),
+      // so it is shown verbatim. It never quotes what was submitted.
+      data?.error?.message ?? 'Could not reach RizzCoach — check your connection',
+    );
+  }
+
+  persistSession(data);
+  return data.user;
+}
+
+/**
+ * Create an account on the install that is already signed in anonymously.
+ *
+ * The device token is sent deliberately: the server writes the account onto THAT
+ * row, so credits already spent stay spent. It is also what makes login after a
+ * reinstall return the original row instead of a fresh set of free analyses.
+ */
+export async function signUp(input: {
+  username: string;
+  email: string;
+  password: string;
+}): Promise<SessionUser> {
+  return postSession('/v1/auth/signup', input, await accessToken());
+}
+
+/** Email + password → the original user row, whatever install is asking. */
+export async function logIn(email: string, password: string): Promise<SessionUser> {
+  return postSession('/v1/auth/login', { email, password });
+}
+
+/**
+ * Forget the session on this device.
+ *
+ * Local only — there is no server-side session to end, and the install id is
+ * deliberately KEPT: it still points at the same user row, so a sign-out is not
+ * a way to farm three more free analyses.
+ */
+export function logOut(): void {
+  kv.remove(TOKEN_KEY);
+  kv.remove(USERNAME_KEY);
+}
+
+/**
+ * Delete the account and every row attached to it, permanently.
+ *
+ * Required by App Store Review 5.1.1(v) for any app that creates accounts. The
+ * install id goes too — the row it pointed at no longer exists, so keeping it
+ * would 401 every request until a reinstall.
+ */
+export async function deleteAccount(): Promise<void> {
+  const res = await fetch(apiUrl('/v1/user/me'), {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${await accessToken()}` },
+  });
+  if (!res.ok) throw new AuthError('DELETE_FAILED', 'Could not delete the account — try again');
+  kv.remove(TOKEN_KEY);
+  kv.remove(USERNAME_KEY);
+  kv.remove(INSTALL_KEY);
 }
 
 /** The persisted install id, minting one via `/v1/auth/device` if this is a cold install. */

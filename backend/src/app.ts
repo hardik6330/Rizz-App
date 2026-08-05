@@ -26,6 +26,21 @@ app.get('/healthz', (c) => c.json({ ok: true }));
  * never runs. It reads like it works and silently does nothing — which left the
  * one unauthenticated endpoint in the service with no limit at all.
  */
+/*
+ * The credential paths get their OWN, much tighter buckets, registered before
+ * the catch-all so they win.
+ *
+ * These are load-bearing, not hygiene: there is no password reset, so an
+ * attacker who brute-forces an account takes it permanently and the owner has
+ * no recovery. The per-account lockout in routes/auth.ts is the other half.
+ *
+ * ⚠ In-process buckets are correct for ONE instance. On a serverless target
+ * every warm lambda gets its own empty Map and this protection evaporates — see
+ * the note in middleware/rateLimit.ts. Do not ship accounts to Vercel without
+ * moving these to a shared store first.
+ */
+app.use('/v1/auth/login', rateLimit({ capacity: 8, refillPerSec: 0.05, by: 'ip' }));
+app.use('/v1/auth/signup', rateLimit({ capacity: 5, refillPerSec: 0.01, by: 'ip' }));
 app.use('/v1/auth/*', rateLimit({ capacity: 20, refillPerSec: 0.2, by: 'ip' }));
 app.route('/v1/auth', auth);
 

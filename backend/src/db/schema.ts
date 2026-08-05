@@ -4,10 +4,16 @@ import { bigint, char, date, index, int, json, mysqlEnum, mysqlTable, smallint, 
  * Three tables. See docs/README.md §5 for what is deliberately absent
  * and the condition that earns each deferred table.
  *
- * NEVER add: images, transcripts, replies, reports, saved items, or any PII.
+ * NEVER add: images, transcripts, replies, reports, or saved items.
+ *
+ * PII is now a NARROW, deliberate exception rather than a flat prohibition:
+ * `email` and `username` on `users`, and nothing else, added with accounts in
+ * migration 0001. That was a real trade — this schema held zero PII before it —
+ * so the rule is now "the two account columns, and never a third". Anything
+ * derived from what a user analysed still has nowhere to live here.
  */
 
-/** Anonymous. One row per install. The only genuinely unavoidable table. */
+/** One row per install; an account may later be attached to it. */
 export const users = mysqlTable(
   'users',
   {
@@ -16,6 +22,19 @@ export const users = mysqlTable(
     rcAppUserId: varchar('rc_app_user_id', { length: 128 }),
     platform: mysqlEnum('platform', ['ios', 'android']).notNull(),
     appVersion: varchar('app_version', { length: 24 }),
+
+    /*
+     * Account, attached by /v1/auth/signup. All nullable: an install that never
+     * signs up keeps working exactly as it did. Signup claims THIS row rather
+     * than creating one, which is what stops a reinstall buying three more free
+     * analyses. No verification and no reset in v1 — see routes/auth.ts.
+     */
+    username: varchar('username', { length: 32 }),
+    email: varchar('email', { length: 255 }),
+    /** scrypt$N$r$p$salt$key — see lib/password.ts. Never logged, never returned. */
+    passwordHash: varchar('password_hash', { length: 255 }),
+    failedLogins: smallint('failed_logins', { unsigned: true }).notNull().default(0),
+    lockedUntil: bigint('locked_until', { mode: 'number' }),
 
     isPro: tinyint('is_pro').notNull().default(0),
     entitlementExpiresAt: bigint('entitlement_expires_at', { mode: 'number' }),
@@ -32,6 +51,9 @@ export const users = mysqlTable(
   (t) => ({
     uqInstall: uniqueIndex('uq_users_install').on(t.installId),
     uqRc: uniqueIndex('uq_users_rc').on(t.rcAppUserId),
+    // MySQL allows many NULLs in a UNIQUE key, so anonymous rows do not collide.
+    uqEmail: uniqueIndex('uq_users_email').on(t.email),
+    uqUsername: uniqueIndex('uq_users_username').on(t.username),
   }),
 );
 

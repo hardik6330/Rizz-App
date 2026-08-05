@@ -28,7 +28,8 @@ GoogleService-Info.plist
 .vercel
 .env*
 
-# Claude Code — local agent config and session state. CLAUDE.md itself stays
-# tracked: it is one line that includes AGENTS.md, which is the shared rulebook.
+# Claude Code — local agent config and session state. The shared rulebook is
+# AGENTS.md, which every agent reads and which stays tracked.
 .claude/
 .mcp.json
+CLAUDE.md

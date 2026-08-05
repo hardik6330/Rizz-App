@@ -1,13 +1,15 @@
 # RizzCoach API
 
-Phase 1 of [docs/README.md](../docs/README.md): get the Gemini key off the
-device.
+The server that holds the Gemini key. Operational notes live here; the architecture is in
+[docs/README.md §5](../docs/README.md).
 
 ## Why this exists
 
-`EXPO_PUBLIC_GEMINI_API_KEY` is embedded in the JS bundle **and** pushed into Android
-SharedPreferences by `configureChat`. Anyone who unzips the APK has it, and there is no server-side
-quota — so the exposure is an open-ended bill, not a bounded one.
+`EXPO_PUBLIC_GEMINI_API_KEY` used to be embedded in the JS bundle **and** pushed into Android
+SharedPreferences by `configureChat`. Anyone who unzipped the APK had it, with no server-side
+quota behind it — an open-ended bill, not a bounded one. The key, every prompt, every response
+schema, credit enforcement and rate limiting now live here, and nothing on the device can
+reach Google.
 
 ## Run
 
@@ -132,10 +134,11 @@ is not. The PEM is gitignored, so no such file exists on the host: `readFileSync
 batch is generated lazily on the first `POST /v1/ai/feed` of the day and deduped by
 `INSERT IGNORE` on `daily_feed`'s primary key. Nothing needs scheduling on either platform.
 
-## Cutover
+## Cutover — done
 
-1. Deploy. Set `EXPO_PUBLIC_API_URL` in the EAS `preview` environment.
-2. Ship the client with the repointed `gemini.ts`.
-3. Remove `EXPO_PUBLIC_GEMINI_API_KEY` from EAS **and revoke it in Google Cloud.** A key that is
-   no longer called is still valid in every APK already shipped.
-4. Repoint `GeminiChatClient.kt` (native → needs a `version` bump and a rebuild).
+All four steps are complete: the API is deployed and `EXPO_PUBLIC_API_URL` is set in the EAS
+`preview` environment, `services/gemini.ts` is deleted, `EXPO_PUBLIC_GEMINI_API_KEY` is gone
+from EAS, and `GeminiChatClient.kt` posts to `/v1/ai/chat` instead of Google.
+
+The one thing to verify by hand: **the old key is revoked in Google Cloud.** A key that nothing
+calls any more is still valid inside every APK already shipped.

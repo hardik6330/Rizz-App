@@ -18,6 +18,7 @@ import { useToast } from '@/components/Toast';
 import { consumePendingCapture, isSupported, isWatching } from '@/../modules/profile-capture';
 import { BG } from '@/data/assets';
 import { PROFILE_LABELS, PROFILE_STAGES, analyzeProfile } from '@/services/profileEngine';
+import { accountUsername, isLiveApi } from '@/state/session';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
@@ -49,6 +50,8 @@ export default function ProfileScreen() {
   const [result, setResult] = useState<ProfileScanResult | null>(null);
   const [stage, setStage] = useState(0);
   const [watching, setWatching] = useState(false);
+  /** Signed-in username, or null. Re-read on focus — /account changes it. */
+  const [account, setAccount] = useState<string | null>(() => accountUsername());
   const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const labels = PROFILE_LABELS[mode];
@@ -195,10 +198,12 @@ export default function ProfileScreen() {
     return () => sub.remove();
   }, [takePendingCapture]);
 
-  // Reflect changes made on the analyzer screen without a full app resume.
+  // Reflect changes made on the analyzer and account screens without a full app
+  // resume — both are modals over this tab, so focus is the only signal we get.
   useFocusEffect(
     useCallback(() => {
       if (isSupported) setWatching(isWatching());
+      setAccount(accountUsername());
     }, []),
   );
 
@@ -382,6 +387,42 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
                 {!watching && <View style={styles.analyzerDot} />}
+                <Ionicons name="chevron-forward" size={15} color={palette.textTertiary} />
+              </HapticPressable>
+            )}
+
+            {/*
+              * Account row. Same shape as the analyzer row above it — this
+              * screen is the app's de-facto settings surface, and a second
+              * pattern for one row is not worth a tab.
+              *
+              * Hidden without an API: accounts are server-side, so in offline
+              * demo mode the row would open a screen that can only say no.
+              */}
+            {isLiveApi && (
+              <HapticPressable
+                onPress={() => {
+                  haptic.light();
+                  router.push(account != null ? '/account' : '/account?mode=signup');
+                }}
+                accessibilityLabel={account != null ? `Signed in as ${account}` : 'Create an account'}
+                style={styles.analyzerRow}
+              >
+                <Ionicons
+                  name={account != null ? 'person-circle' : 'person-circle-outline'}
+                  size={16}
+                  color={palette.mint}
+                />
+                <View style={styles.analyzerText}>
+                  <Text style={styles.analyzerTitle} numberOfLines={1}>
+                    {account != null ? `@${account}` : 'Save your credits'}
+                  </Text>
+                  <Text style={styles.analyzerSub}>
+                    {account != null
+                      ? 'Your credits and Pro follow this account to any phone.'
+                      : 'Credits live on this device. Create an account and they follow you to a new phone.'}
+                  </Text>
+                </View>
                 <Ionicons name="chevron-forward" size={15} color={palette.textTertiary} />
               </HapticPressable>
             )}

@@ -12,6 +12,12 @@ export class ApiError extends Error {
 
 export const Errors = {
   unauthorized: () => new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired token'),
+  /**
+   * Wrong password OR no such email — deliberately indistinguishable. Splitting
+   * these tells an attacker which half of the guess was right, and with no
+   * password reset a taken account is taken for good.
+   */
+  invalidCredentials: () => new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password'),
   outOfCredits: () => new ApiError(402, 'OUT_OF_CREDITS', 'No analyses left'),
   banned: () => new ApiError(403, 'BANNED', 'This install is blocked'),
   badRequest: (m: string) => new ApiError(400, 'BAD_REQUEST', m),
