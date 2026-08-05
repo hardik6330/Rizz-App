@@ -182,6 +182,12 @@ account deletion, and Play requires a deletion path. It is one statement only be
 schema holds no images, transcripts or reports; if that ever changes, this route grows
 with it.
 
+⚠️ **The Delete account BUTTON was removed from `account.tsx` by request; the route and
+`deleteAccount()` in `session.ts` are intact.** That is a known, deliberate 5.1.1(v)
+exposure, not an oversight — expect a rejection on submission until the button is restored
+or a web deletion page is linked from the listing. Do not "clean up" the unused
+`deleteAccount()` export; it is the other half of putting this back.
+
 **`email` and `username` are the ONLY PII in the schema, and that is now the rule** —
 `db/schema.ts` used to say "never any PII" and that line was traded deliberately in
 migration 0001. Never a third column. Never log either one: `log.info('auth.signup')`

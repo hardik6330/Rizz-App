@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleIconButton } from '@/components/CircleIconButton';
 import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
-import { AuthError, deleteAccount, isLiveApi, logIn, logOut, signUp } from '@/state/session';
+import { AuthError, isLiveApi, logIn, logOut, signUp } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
@@ -177,26 +177,6 @@ export default function AccountScreen() {
     );
   };
 
-  const confirmDelete = () => {
-    haptic.warning();
-    Alert.alert(
-      'Delete account?',
-      'This erases your account and credit balance permanently. It cannot be undone. An active Pro subscription can still be restored on the paywall.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            void deleteAccount()
-              .then(close)
-              .catch(() => toast.show('Could not delete the account — try again'));
-          },
-        },
-      ],
-    );
-  };
-
   return (
     <View style={styles.root}>
       {/* Stops the iOS swipe-to-dismiss on the mandatory gate. Android back is
@@ -231,7 +211,7 @@ export default function AccountScreen() {
         </View>
 
         {signedInAs != null ? (
-          <SignedIn username={signedInAs} onSignOut={confirmSignOut} onDelete={confirmDelete} />
+          <SignedIn username={signedInAs} onSignOut={confirmSignOut} />
         ) : !isLiveApi ? (
           <View style={styles.notice}>
             <Text style={styles.noticeText}>
@@ -391,15 +371,16 @@ export default function AccountScreen() {
   );
 }
 
-function SignedIn({
-  username,
-  onSignOut,
-  onDelete,
-}: {
-  username: string;
-  onSignOut: () => void;
-  onDelete: () => void;
-}) {
+/**
+ * ⚠️ There is no in-app delete here, by request.
+ *
+ * App Store Review 5.1.1(v) requires an app that lets a user CREATE an account
+ * to let them delete it from inside the app, and Play requires a deletion path
+ * too. `DELETE /v1/user/me` still exists and still works — only the button is
+ * gone — so restoring this is a few lines, not a feature. Expect a rejection on
+ * submission until it is back or a web deletion page is linked.
+ */
+function SignedIn({ username, onSignOut }: { username: string; onSignOut: () => void }) {
   return (
     <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.signedIn}>
       <View style={styles.avatar}>
@@ -416,11 +397,6 @@ function SignedIn({
       <HapticPressable onPress={onSignOut} accessibilityLabel="Sign out" style={styles.secondary}>
         <Ionicons name="log-out-outline" size={16} color={palette.textSecondary} />
         <Text style={styles.secondaryText}>Sign out</Text>
-      </HapticPressable>
-
-      <HapticPressable onPress={onDelete} accessibilityLabel="Delete account" style={styles.danger}>
-        <Ionicons name="trash-outline" size={16} color={palette.danger} />
-        <Text style={styles.dangerText}>Delete account</Text>
       </HapticPressable>
     </Animated.View>
   );
@@ -552,6 +528,4 @@ const styles = StyleSheet.create({
     borderColor: palette.hairlineStrong,
   },
   secondaryText: { fontSize: 14.5, fontWeight: '700', color: palette.textSecondary },
-  danger: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: spacing.md },
-  dangerText: { fontSize: 13.5, fontWeight: '700', color: palette.danger },
 });
