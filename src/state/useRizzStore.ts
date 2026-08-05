@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import type { FeedItem, ProfileScanResult, SavedItem } from '@/types';
 import { nextScanHistory, nextSwipeState, todayKey } from './limits';
-import { onCreditsChanged } from './session';
+import { onAccountChanged, onCreditsChanged } from './session';
 import { zustandStorage } from './storage';
 
 /**
@@ -42,14 +42,14 @@ interface RizzState {
    */
   hasOnboarded: boolean;
   /**
-   * Has the account step of first-run been shown? Set on dismissal whether or
-   * not they signed up — the same rule as `hasOnboarded`, for the same reason:
-   * a wall that reappears every launch is uninstalled, not converted.
+   * Signed-in username, or null. **The single owner of "am I signed in".**
    *
-   * Separate from `hasOnboarded` because the two steps are independent — the
-   * analyzer walkthrough is Android-only, the account step is not.
+   * Lives here rather than in `session.ts` because the launch sequence gates on
+   * it and has to re-render the moment it changes — a plain MMKV read cannot do
+   * that, so signing up left the app sitting on the auth wall. `session.ts`
+   * pushes every change through `onAccountChanged`.
    */
-  hasSeenAuth: boolean;
+  account: string | null;
 
   toggleSave: (item: Omit<SavedItem, 'savedAt'>) => void;
   removeSaved: (id: string) => void;
@@ -62,7 +62,6 @@ interface RizzState {
   setDailyFeed: (items: FeedItem[], date: string) => void;
   setFeedback: (id: string, value: 'up' | 'down') => void;
   setOnboarded: () => void;
-  setSeenAuth: () => void;
 }
 
 export const useRizzStore = create<RizzState>()(
@@ -78,7 +77,7 @@ export const useRizzStore = create<RizzState>()(
       dailyFeedDate: null,
       feedback: {},
       hasOnboarded: false,
-      hasSeenAuth: false,
+      account: null,
 
       toggleSave: (item) =>
         set((state) => {
@@ -122,12 +121,27 @@ export const useRizzStore = create<RizzState>()(
         set((state) => ({ feedback: { ...state.feedback, [id]: value } })),
 
       setOnboarded: () => set({ hasOnboarded: true }),
-
-      setSeenAuth: () => set({ hasSeenAuth: true }),
     }),
     {
       name: 'rizzcoach-store',
       storage: createJSONStorage(() => zustandStorage),
+      /*
+       * v1 — one-time purge of scan history written before the engines stopped
+       * substituting mock seeds for failed calls.
+       *
+       * Those reports look genuine and are indistinguishable from real ones on
+       * the row: a user who scanned their own profile during an outage has a
+       * "Maya · Bristol 26" entry — a stranger's name, a stranger's hobbies —
+       * saved as if the AI had read their screenshot. There is no field that
+       * marks a seed, so the only honest fix is to drop the list once. Everything
+       * else (vault, credits, Pro, feedback) is untouched.
+       */
+      version: 1,
+      migrate: (persisted, from) => {
+        const state = persisted as Partial<RizzState>;
+        if (from < 1) return { ...state, scanHistory: [] };
+        return state;
+      },
       partialize: (state) => ({
         savedItems: state.savedItems,
         scanHistory: state.scanHistory,
@@ -140,7 +154,7 @@ export const useRizzStore = create<RizzState>()(
         feedback: state.feedback,
         // Must persist, or the first-run walkthrough reappears on every launch.
         hasOnboarded: state.hasOnboarded,
-        hasSeenAuth: state.hasSeenAuth,
+        account: state.account,
       }),
     },
   ),
@@ -161,6 +175,11 @@ export const useRizzStore = create<RizzState>()(
  */
 onCreditsChanged(({ is_pro, analysis_count }) => {
   useRizzStore.setState({ isPro: is_pro, analysisCount: analysis_count });
+});
+
+/** Signup, login, sign-out and delete all land here. See `account` above. */
+onAccountChanged((account) => {
+  useRizzStore.setState({ account });
 });
 
 /** Reactive "is this line saved" selector. */

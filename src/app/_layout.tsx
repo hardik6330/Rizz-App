@@ -13,7 +13,7 @@ import {
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
-import { accountUsername, apiBase, installId, isLiveApi, refreshCredits } from '@/state/session';
+import { apiBase, installId, isLiveApi, refreshCredits } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { palette } from '@/theme/tokens';
 
@@ -96,28 +96,28 @@ export default function RootLayout() {
   }, []);
 
   /**
-   * First launch, step 1 of 2: the account.
+   * Step 1 of 2: the account. **Mandatory — there is no way past it.**
    *
-   * Shown before the analyzer walkthrough so the sequence reads as one
-   * onboarding rather than two unrelated modals. `/account` handles the rest —
-   * `onboarding=1` gives it a skip affordance and the welcome framing.
+   * Not "first launch": this runs on EVERY launch until an account exists. There
+   * is no skip, no ✕ and no back gesture out of `/account` while it is showing
+   * (see the onboarding branch in that file). Signing up or logging in is the
+   * only exit.
    *
-   * SKIPPABLE, deliberately. This lands before the user has seen a single
-   * result, and a wall there is the highest-drop-off screen an app can have.
-   * `hasSeenAuth` is set on dismissal whether or not they signed up, exactly
-   * like `hasOnboarded` — the account row on Profile Scan is the permanent
-   * entry point, so nothing is lost by letting them past.
-   *
-   * To make it MANDATORY: drop `|| hasSeenAuth` below and remove the skip in
-   * `account.tsx`. Measure activation before and after; the cost is usually
-   * larger than the reinstall farming it prevents.
+   * The trade, stated plainly because it is real: this screen lands before the
+   * user has seen a single result, so every install that will not hand over an
+   * email is lost here rather than at the paywall. What it buys is that an
+   * uninstall no longer resets the free-credit count — logging in returns the
+   * original user row. Watch install → first-analysis conversion; if it falls
+   * hard, the fix is to move this gate after the first free analysis rather than
+   * to soften it into a skippable prompt, which converts nobody and blocks
+   * nobody.
    *
    * Gated on `isLiveApi` — with no API configured there is no account to make,
-   * and the screen would only be able to say so.
+   * and a wall the user cannot possibly pass is a bricked app.
    */
-  const hasSeenAuth = useRizzStore((s) => s.hasSeenAuth);
-  const accountStepDone = !isLiveApi || hasSeenAuth || accountUsername() != null;
-  /** Did first-run actually run this session? Gates the landing below. */
+  const account = useRizzStore((s) => s.account);
+  const accountStepDone = !isLiveApi || account != null;
+  /** Did the gate actually run this session? Gates the landing below. */
   const onboardedThisSession = useRef(false);
   useEffect(() => {
     if (accountStepDone) return;

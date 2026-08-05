@@ -27,19 +27,6 @@ export const isLiveApi = /^https?:\/\/.+/.test(API_URL);
 
 const INSTALL_KEY = 'rizz.installId';
 const TOKEN_KEY = 'rizz.accessToken';
-/**
- * The signed-in username, or absent for an anonymous install.
- *
- * Cached rather than derived so the account row renders on the first frame
- * without a round trip. The server's answer always wins — every auth response
- * rewrites it, including to `null` on a fresh install.
- *
- * ponytail: MMKV, like the token. Move all three to expo-secure-store when
- * something else already forces a native rebuild — MMKV is unencrypted and a
- * 30-day token is worth more than a 24h one was.
- */
-const USERNAME_KEY = 'rizz.username';
-
 export interface Credits {
   is_pro: boolean;
   analysis_count: number;
@@ -65,9 +52,12 @@ interface AuthResponse {
 function persistSession(data: AuthResponse): void {
   if (data.install_id) kv.set(INSTALL_KEY, data.install_id);
   kv.set(TOKEN_KEY, data.access_token);
-  if (data.user.username) kv.set(USERNAME_KEY, data.user.username);
-  else kv.remove(USERNAME_KEY);
   onCredits?.(data.user);
+  // The STORE owns "am I signed in" — the launch sequence gates on it and has to
+  // re-render when it changes, which a bare MMKV read cannot do. Emitted rather
+  // than written directly so session.ts stays free of store imports (the store
+  // already imports this file; the back-edge would be a cycle).
+  onAccount?.(data.user.username ?? null);
 }
 
 /** Deduped: a cold start fires several engines at once and must not race for tokens. */
@@ -118,11 +108,6 @@ export function apiUrl(path: string): string {
 // ---------------------------------------------------------------------------
 // Account — signup and login. No reset, no verification; see backend routes/auth.ts.
 // ---------------------------------------------------------------------------
-
-/** The signed-in username, or null for an anonymous install. Synchronous. */
-export function accountUsername(): string | null {
-  return kv.getString(USERNAME_KEY) ?? null;
-}
 
 /** `code` mirrors the server envelope so callers branch on it, never the message. */
 export class AuthError extends Error {
@@ -192,7 +177,7 @@ export async function logIn(email: string, password: string): Promise<SessionUse
  */
 export function logOut(): void {
   kv.remove(TOKEN_KEY);
-  kv.remove(USERNAME_KEY);
+  onAccount?.(null);
 }
 
 /**
@@ -209,8 +194,8 @@ export async function deleteAccount(): Promise<void> {
   });
   if (!res.ok) throw new AuthError('DELETE_FAILED', 'Could not delete the account — try again');
   kv.remove(TOKEN_KEY);
-  kv.remove(USERNAME_KEY);
   kv.remove(INSTALL_KEY);
+  onAccount?.(null);
 }
 
 /** The persisted install id, minting one via `/v1/auth/device` if this is a cold install. */
@@ -289,6 +274,17 @@ export function onCreditsChanged(fn: (credits: Credits) => void): void {
 /** Called by `api.ts` on every successful response so the store tracks the truth. */
 export function reportCredits(credits: Credits): void {
   onCredits?.(credits);
+}
+
+/**
+ * Set once at startup by the store — same pattern and same reason as
+ * `onCreditsChanged`. Fires with the username on signup/login and with `null` on
+ * sign-out, delete, or a fresh anonymous device.
+ */
+let onAccount: ((username: string | null) => void) | undefined;
+
+export function onAccountChanged(fn: (username: string | null) => void): void {
+  onAccount = fn;
 }
 
 /**

@@ -1,22 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  BackHandler,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CircleIconButton } from '@/components/CircleIconButton';
 import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
-import {
-  accountUsername,
-  AuthError,
-  deleteAccount,
-  isLiveApi,
-  logIn,
-  logOut,
-  signUp,
-} from '@/state/session';
+import { AuthError, deleteAccount, isLiveApi, logIn, logOut, signUp } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
@@ -56,29 +57,38 @@ export default function AccountScreen() {
    * pattern as `firstRun` in analyzer.tsx.
    */
   const [isOnboarding] = useState(() => onboarding === '1');
-  const setSeenAuth = useRizzStore((s) => s.setSeenAuth);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Read once: it changes under us on success, and the form must not swap mid-submit. */
-  const [signedInAs, setSignedInAs] = useState<string | null>(() => accountUsername());
+  /** The store owns this — it re-renders the launch gate the instant it changes. */
+  const signedInAs = useRizzStore((s) => s.account);
 
   const isSignup = mode === 'signup';
 
   /**
-   * Every way out of this screen goes through here.
-   *
-   * Marks the onboarding step seen on DISMISSAL, not on success — skipping is a
-   * legitimate answer and re-asking on the next launch would make it a wall by
-   * attrition. The permanent entry point is the account row on Profile Scan.
+   * Leave. Only reachable when this is NOT the mandatory launch gate — from the
+   * account row on Profile Scan, or after signing out.
    */
-  const close = useCallback(() => {
-    if (isOnboarding) setSeenAuth();
-    router.back();
-  }, [isOnboarding, setSeenAuth]);
+  const close = useCallback(() => router.back(), []);
+
+  /*
+   * Swallow Android hardware back while the gate is up.
+   *
+   * `gestureEnabled: false` below stops the iOS swipe-to-dismiss, but Android
+   * back pops the modal regardless and would drop the user into the app with no
+   * account — which is the one state this gate exists to prevent. Same mechanism
+   * as useBackToIdle; returning true consumes the press.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      if (!isOnboarding) return;
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+      return () => sub.remove();
+    }, [isOnboarding]),
+  );
 
   const switchMode = (next: Mode) => {
     haptic.selection();
@@ -117,14 +127,13 @@ export default function AccountScreen() {
         : await logIn(email.trim(), password);
       haptic.success();
       setPassword('');
+      // `signUp`/`logIn` already pushed the username into the store, which flips
+      // the launch gate. Hand straight back rather than parking on the signed-in
+      // view — the analyzer step is waiting behind this modal.
       if (isOnboarding) {
-        // Don't park them on the signed-in view mid-onboarding — hand straight
-        // back to the launch sequence, which has the analyzer step waiting.
-        setSeenAuth();
         router.back();
         return;
       }
-      setSignedInAs(user.username);
       toast.show(isSignup ? 'Account created — your credits are safe now' : 'Welcome back');
     } catch (err) {
       haptic.warning();
@@ -133,7 +142,7 @@ export default function AccountScreen() {
     } finally {
       setBusy(false);
     }
-  }, [busy, email, isOnboarding, isSignup, password, setSeenAuth, toast, username]);
+  }, [busy, email, isOnboarding, isSignup, password, toast, username]);
 
   const confirmSignOut = () => {
     haptic.light();
@@ -149,7 +158,6 @@ export default function AccountScreen() {
           style: 'destructive',
           onPress: () => {
             logOut();
-            setSignedInAs(null);
             close();
           },
         },
@@ -169,10 +177,7 @@ export default function AccountScreen() {
           style: 'destructive',
           onPress: () => {
             void deleteAccount()
-              .then(() => {
-                setSignedInAs(null);
-                close();
-              })
+              .then(close)
               .catch(() => toast.show('Could not delete the account — try again'));
           },
         },
@@ -182,6 +187,9 @@ export default function AccountScreen() {
 
   return (
     <View style={styles.root}>
+      {/* Stops the iOS swipe-to-dismiss on the mandatory gate. Android back is
+          handled by the BackHandler above; the two are separate mechanisms. */}
+      <Stack.Screen options={{ gestureEnabled: !isOnboarding }} />
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
@@ -204,12 +212,10 @@ export default function AccountScreen() {
             <Ionicons name="person-circle-outline" size={20} color={palette.violet} />
             <Text style={styles.wordmarkText}>Account</Text>
           </View>
-          <CircleIconButton
-            icon="close"
-            size={38}
-            onPress={close}
-            accessibilityLabel={isOnboarding ? 'Skip for now' : 'Close'}
-          />
+          {/* No ✕ while this is the launch gate — there is nothing to close to. */}
+          {!isOnboarding && (
+            <CircleIconButton icon="close" size={38} onPress={close} accessibilityLabel="Close" />
+          )}
         </View>
 
         {signedInAs != null ? (
@@ -361,18 +367,6 @@ export default function AccountScreen() {
               )}
             </HapticPressable>
 
-            {isOnboarding && (
-              /*
-               * The skip. Deliberately present, deliberately plain — this screen
-               * lands before the user has seen a single result, and a wall there
-               * costs more activation than the reinstall farming it prevents.
-               * Remove it only alongside the `hasSeenAuth` check in _layout.tsx.
-               */
-              <HapticPressable onPress={close} accessibilityLabel="Skip for now" style={styles.skip}>
-                <Text style={styles.skipText}>Skip for now</Text>
-              </HapticPressable>
-            )}
-
             <Text style={styles.footnote}>
               We store your email and username, and nothing else about you. Screenshots and
               conversations are never saved.
@@ -509,8 +503,6 @@ const styles = StyleSheet.create({
   },
   ctaBusy: { opacity: 0.7 },
   ctaText: { fontSize: 15.5, fontWeight: '900', color: palette.ink },
-  skip: { alignItems: 'center', paddingVertical: spacing.md },
-  skipText: { fontSize: 13.5, fontWeight: '700', color: palette.textSecondary },
   footnote: { fontSize: 12, lineHeight: 17, textAlign: 'center', color: palette.textTertiary },
 
   notice: {
