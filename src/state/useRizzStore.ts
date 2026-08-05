@@ -41,6 +41,15 @@ interface RizzState {
    * launch is worse than letting them find it later in Profile Scan.
    */
   hasOnboarded: boolean;
+  /**
+   * Has the account step of first-run been shown? Set on dismissal whether or
+   * not they signed up — the same rule as `hasOnboarded`, for the same reason:
+   * a wall that reappears every launch is uninstalled, not converted.
+   *
+   * Separate from `hasOnboarded` because the two steps are independent — the
+   * analyzer walkthrough is Android-only, the account step is not.
+   */
+  hasSeenAuth: boolean;
 
   toggleSave: (item: Omit<SavedItem, 'savedAt'>) => void;
   removeSaved: (id: string) => void;
@@ -53,6 +62,7 @@ interface RizzState {
   setDailyFeed: (items: FeedItem[], date: string) => void;
   setFeedback: (id: string, value: 'up' | 'down') => void;
   setOnboarded: () => void;
+  setSeenAuth: () => void;
 }
 
 export const useRizzStore = create<RizzState>()(
@@ -68,6 +78,7 @@ export const useRizzStore = create<RizzState>()(
       dailyFeedDate: null,
       feedback: {},
       hasOnboarded: false,
+      hasSeenAuth: false,
 
       toggleSave: (item) =>
         set((state) => {
@@ -111,6 +122,8 @@ export const useRizzStore = create<RizzState>()(
         set((state) => ({ feedback: { ...state.feedback, [id]: value } })),
 
       setOnboarded: () => set({ hasOnboarded: true }),
+
+      setSeenAuth: () => set({ hasSeenAuth: true }),
     }),
     {
       name: 'rizzcoach-store',
@@ -127,6 +140,7 @@ export const useRizzStore = create<RizzState>()(
         feedback: state.feedback,
         // Must persist, or the first-run walkthrough reappears on every launch.
         hasOnboarded: state.hasOnboarded,
+        hasSeenAuth: state.hasSeenAuth,
       }),
     },
   ),

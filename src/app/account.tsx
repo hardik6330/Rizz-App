@@ -17,6 +17,7 @@ import {
   logOut,
   signUp,
 } from '@/state/session';
+import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
@@ -42,8 +43,20 @@ export default function AccountScreen() {
   const { gutter } = useLayout();
   const toast = useToast();
 
-  const { mode: initialMode } = useLocalSearchParams<{ mode?: Mode }>();
+  const { mode: initialMode, onboarding } = useLocalSearchParams<{
+    mode?: Mode;
+    onboarding?: string;
+  }>();
   const [mode, setMode] = useState<Mode>(initialMode === 'login' ? 'login' : 'signup');
+  /**
+   * Reached from the first-run sequence rather than the Profile Scan row.
+   *
+   * Read once: `setSeenAuth()` flips the store the moment this screen is
+   * dismissed, and the copy must not change under the user mid-signup. Same
+   * pattern as `firstRun` in analyzer.tsx.
+   */
+  const [isOnboarding] = useState(() => onboarding === '1');
+  const setSeenAuth = useRizzStore((s) => s.setSeenAuth);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -54,6 +67,18 @@ export default function AccountScreen() {
   const [signedInAs, setSignedInAs] = useState<string | null>(() => accountUsername());
 
   const isSignup = mode === 'signup';
+
+  /**
+   * Every way out of this screen goes through here.
+   *
+   * Marks the onboarding step seen on DISMISSAL, not on success — skipping is a
+   * legitimate answer and re-asking on the next launch would make it a wall by
+   * attrition. The permanent entry point is the account row on Profile Scan.
+   */
+  const close = useCallback(() => {
+    if (isOnboarding) setSeenAuth();
+    router.back();
+  }, [isOnboarding, setSeenAuth]);
 
   const switchMode = (next: Mode) => {
     haptic.selection();
@@ -91,8 +116,15 @@ export default function AccountScreen() {
         ? await signUp({ username: username.trim(), email: email.trim(), password })
         : await logIn(email.trim(), password);
       haptic.success();
-      setSignedInAs(user.username);
       setPassword('');
+      if (isOnboarding) {
+        // Don't park them on the signed-in view mid-onboarding — hand straight
+        // back to the launch sequence, which has the analyzer step waiting.
+        setSeenAuth();
+        router.back();
+        return;
+      }
+      setSignedInAs(user.username);
       toast.show(isSignup ? 'Account created — your credits are safe now' : 'Welcome back');
     } catch (err) {
       haptic.warning();
@@ -101,7 +133,7 @@ export default function AccountScreen() {
     } finally {
       setBusy(false);
     }
-  }, [busy, email, isSignup, password, toast, username]);
+  }, [busy, email, isOnboarding, isSignup, password, setSeenAuth, toast, username]);
 
   const confirmSignOut = () => {
     haptic.light();
@@ -118,7 +150,7 @@ export default function AccountScreen() {
           onPress: () => {
             logOut();
             setSignedInAs(null);
-            router.back();
+            close();
           },
         },
       ],
@@ -139,7 +171,7 @@ export default function AccountScreen() {
             void deleteAccount()
               .then(() => {
                 setSignedInAs(null);
-                router.back();
+                close();
               })
               .catch(() => toast.show('Could not delete the account — try again'));
           },
@@ -172,7 +204,12 @@ export default function AccountScreen() {
             <Ionicons name="person-circle-outline" size={20} color={palette.violet} />
             <Text style={styles.wordmarkText}>Account</Text>
           </View>
-          <CircleIconButton icon="close" size={38} onPress={() => router.back()} accessibilityLabel="Close" />
+          <CircleIconButton
+            icon="close"
+            size={38}
+            onPress={close}
+            accessibilityLabel={isOnboarding ? 'Skip for now' : 'Close'}
+          />
         </View>
 
         {signedInAs != null ? (
@@ -187,11 +224,17 @@ export default function AccountScreen() {
           <>
             <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.hero}>
               <Text style={styles.title} maxFontSizeMultiplier={1.25}>
-                {isSignup ? 'Keep your credits.\nWherever you install.' : 'Welcome back.'}
+                {!isSignup
+                  ? 'Welcome back.'
+                  : isOnboarding
+                    ? 'Welcome to RizzCoach.'
+                    : 'Keep your credits.\nWherever you install.'}
               </Text>
               <Text style={styles.body}>
                 {isSignup
-                  ? 'Your analyses live on this device today. An account moves them to you, so a new phone or a reinstall picks up where you left off.'
+                  ? isOnboarding
+                    ? 'Create an account so your free analyses, Pro status and saved lines belong to you — not to this one phone. Already have one? Log in.'
+                    : 'Your analyses live on this device today. An account moves them to you, so a new phone or a reinstall picks up where you left off.'
                   : 'Log in and your credits, Pro status and history come with you.'}
               </Text>
             </Animated.View>
@@ -317,6 +360,18 @@ export default function AccountScreen() {
                 </>
               )}
             </HapticPressable>
+
+            {isOnboarding && (
+              /*
+               * The skip. Deliberately present, deliberately plain — this screen
+               * lands before the user has seen a single result, and a wall there
+               * costs more activation than the reinstall farming it prevents.
+               * Remove it only alongside the `hasSeenAuth` check in _layout.tsx.
+               */
+              <HapticPressable onPress={close} accessibilityLabel="Skip for now" style={styles.skip}>
+                <Text style={styles.skipText}>Skip for now</Text>
+              </HapticPressable>
+            )}
 
             <Text style={styles.footnote}>
               We store your email and username, and nothing else about you. Screenshots and
@@ -454,6 +509,8 @@ const styles = StyleSheet.create({
   },
   ctaBusy: { opacity: 0.7 },
   ctaText: { fontSize: 15.5, fontWeight: '900', color: palette.ink },
+  skip: { alignItems: 'center', paddingVertical: spacing.md },
+  skipText: { fontSize: 13.5, fontWeight: '700', color: palette.textSecondary },
   footnote: { fontSize: 12, lineHeight: 17, textAlign: 'center', color: palette.textTertiary },
 
   notice: {

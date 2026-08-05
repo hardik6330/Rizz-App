@@ -27,19 +27,19 @@ export interface EngineInput {
 /**
  * @param temperature raise it on a reroll so "give me another" returns another.
  */
+/**
+ * Mock seeds are DEMO MODE ONLY. A live failure throws — see profileEngine.ts
+ * for why swallowing it was worse than an error message: the app showed canned
+ * replies for a screenshot it never read, and the only tell was the missing
+ * `read` card. `index.tsx` already catches and toasts.
+ */
 export async function analyzeScreenshot(
   input: EngineInput,
   mode: EngineMode = 'rizz',
   temperature?: number,
 ): Promise<AnalysisResult> {
-  if (isLiveApi) {
-    try {
-      return await analyzeViaApi(input, mode, temperature);
-    } catch (error) {
-      console.warn('[engine] live analysis failed — falling back to simulation', error);
-    }
-  }
-  return simulateAnalysis();
+  if (!isLiveApi) return simulateAnalysis();
+  return analyzeViaApi(input, mode, temperature);
 }
 
 // ---------------------------------------------------------------------------

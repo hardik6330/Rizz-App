@@ -18,15 +18,15 @@ export const BIO_STAGES = [
   'Polishing the hooks…',
 ];
 
+/**
+ * Mock seeds are DEMO MODE ONLY. A live failure throws — see profileEngine.ts.
+ * This one had no tell at all: three canned bios about hiking and coffee look
+ * exactly like three generated ones, whatever the user actually typed.
+ * `bio.tsx` already catches and toasts.
+ */
 export async function optimizeBio(input: BioInput): Promise<BioResult> {
-  if (isLiveApi) {
-    try {
-      return await optimizeViaApi(input);
-    } catch (error) {
-      console.warn('[bioEngine] live optimize failed — falling back to simulation', error);
-    }
-  }
-  return simulateBio();
+  if (!isLiveApi) return simulateBio();
+  return optimizeViaApi(input);
 }
 
 // ---------------------------------------------------------------------------

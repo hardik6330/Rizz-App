@@ -103,16 +103,23 @@ export const PROFILE_LABELS: Record<
   },
 };
 
+/**
+ * Mock seeds are DEMO MODE ONLY — they must never stand in for a failed call.
+ *
+ * This used to catch every failure and return a seed, so an outage was
+ * indistinguishable from a working app: a user scanned their own profile and got
+ * back a report about "Maya, Bristol 26" — a stranger's name, a stranger's
+ * pottery hobby — which `addScan` then wrote into their history as if it were
+ * real. They would send an opener about pottery to someone with no pottery.
+ *
+ * With a live API a failure now throws, and `profile.tsx` already has the catch
+ * that toasts and returns to the drop pad. The seeds stay for `!isLiveApi`,
+ * which is the case they were written for.
+ */
 export async function analyzeProfile(input: ProfileScanInput): Promise<ProfileScanResult> {
   const mode = input.mode ?? 'self';
-  if (isLiveApi) {
-    try {
-      return await analyzeViaApi(input, mode);
-    } catch (error) {
-      console.warn('[profileEngine] live scan failed — falling back to simulation', error);
-    }
-  }
-  return simulateScan(mode);
+  if (!isLiveApi) return simulateScan(mode);
+  return analyzeViaApi(input, mode);
 }
 
 // ---------------------------------------------------------------------------

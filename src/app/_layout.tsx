@@ -1,6 +1,6 @@
 import { DarkTheme, Stack, ThemeProvider, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -13,7 +13,7 @@ import {
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
-import { apiBase, installId, refreshCredits } from '@/state/session';
+import { accountUsername, apiBase, installId, isLiveApi, refreshCredits } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { palette } from '@/theme/tokens';
 
@@ -96,10 +96,45 @@ export default function RootLayout() {
   }, []);
 
   /**
-   * First launch: walk the user through enabling the analyzer. The feature is
-   * invisible until accessibility is granted, and accessibility has no permission
-   * prompt — it can only be reached by hand in Settings — so without this the
-   * headline feature is undiscoverable.
+   * First launch, step 1 of 2: the account.
+   *
+   * Shown before the analyzer walkthrough so the sequence reads as one
+   * onboarding rather than two unrelated modals. `/account` handles the rest —
+   * `onboarding=1` gives it a skip affordance and the welcome framing.
+   *
+   * SKIPPABLE, deliberately. This lands before the user has seen a single
+   * result, and a wall there is the highest-drop-off screen an app can have.
+   * `hasSeenAuth` is set on dismissal whether or not they signed up, exactly
+   * like `hasOnboarded` — the account row on Profile Scan is the permanent
+   * entry point, so nothing is lost by letting them past.
+   *
+   * To make it MANDATORY: drop `|| hasSeenAuth` below and remove the skip in
+   * `account.tsx`. Measure activation before and after; the cost is usually
+   * larger than the reinstall farming it prevents.
+   *
+   * Gated on `isLiveApi` — with no API configured there is no account to make,
+   * and the screen would only be able to say so.
+   */
+  const hasSeenAuth = useRizzStore((s) => s.hasSeenAuth);
+  const accountStepDone = !isLiveApi || hasSeenAuth || accountUsername() != null;
+  /** Did first-run actually run this session? Gates the landing below. */
+  const onboardedThisSession = useRef(false);
+  useEffect(() => {
+    if (accountStepDone) return;
+    onboardedThisSession.current = true;
+    const t = setTimeout(() => router.push('/account?onboarding=1'), 400);
+    return () => clearTimeout(t);
+  }, [accountStepDone]);
+
+  /**
+   * First launch, step 2 of 2: walk the user through enabling the analyzer. The
+   * feature is invisible until accessibility is granted, and accessibility has no
+   * permission prompt — it can only be reached by hand in Settings — so without
+   * this the headline feature is undiscoverable.
+   *
+   * Waits on `accountStepDone` so the two modals queue instead of racing: both
+   * effects run on the same mount, and pushing analyzer while account is
+   * animating in leaves the user on whichever won.
    *
    * Shown once. `hasOnboarded` is set on dismissal whether or not they granted
    * anything: nagging every launch is worse than letting them find it in Profile
@@ -107,10 +142,32 @@ export default function RootLayout() {
    */
   const hasOnboarded = useRizzStore((s) => s.hasOnboarded);
   useEffect(() => {
-    if (!isSupported || hasOnboarded) return;
+    if (!isSupported || hasOnboarded || !accountStepDone) return;
+    onboardedThisSession.current = true;
     const t = setTimeout(() => router.push('/analyzer'), 400);
     return () => clearTimeout(t);
-  }, [hasOnboarded]);
+  }, [hasOnboarded, accountStepDone]);
+
+  /**
+   * Land on Profile Scan when first-run finishes, not on the Lab.
+   *
+   * `unstable_settings.anchor` puts the app on the Lab tab, which is right for
+   * every later launch. But onboarding just finished explaining the ✨ analyzer,
+   * and the analyzer's permanent home — along with the account row and the scan
+   * history — is Profile Scan. Dropping the user on a different tab makes the
+   * walkthrough they just read look like it was about something else.
+   *
+   * Only after BOTH steps resolve, and only in a session that actually showed
+   * one: the ref keeps a normal launch on the Lab.
+   */
+  useEffect(() => {
+    if (!onboardedThisSession.current) return;
+    if (!accountStepDone) return;
+    // On iOS/web there is no analyzer step, so the account step is the whole run.
+    if (isSupported && !hasOnboarded) return;
+    onboardedThisSession.current = false;
+    router.navigate('/profile');
+  }, [accountStepDone, hasOnboarded]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
