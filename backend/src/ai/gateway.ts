@@ -66,6 +66,14 @@ export interface Usage {
   promptTokens?: number;
   outputTokens?: number;
   thoughtTokens?: number;
+  /**
+   * Gemini's own total — NOT `prompt + output`.
+   *
+   * Thinking tokens are billed and are not included in `candidatesTokenCount`,
+   * so summing the two under-reports every call on a thinking model. Take the
+   * number the API bills against.
+   */
+  totalTokens?: number;
   latencyMs: number;
 }
 
@@ -76,6 +84,7 @@ interface GeminiResponse {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
     thoughtsTokenCount?: number;
+    totalTokenCount?: number;
   };
   error?: { message?: string };
 }
@@ -167,6 +176,7 @@ export async function generate<T>(opts: GenerateOptions): Promise<{ data: T; usa
     promptTokens: data.usageMetadata?.promptTokenCount,
     outputTokens: data.usageMetadata?.candidatesTokenCount,
     thoughtTokens: data.usageMetadata?.thoughtsTokenCount,
+    totalTokens: data.usageMetadata?.totalTokenCount,
     latencyMs,
   };
 

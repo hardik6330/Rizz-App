@@ -101,8 +101,15 @@ Details and the exact TLS failure modes: `backend/README.md`.
 
 **Prompts are versioned by content hash**, not by a hand-bumped constant — `promptVersion()`
 in `gateway.ts` logs the first 8 hex of sha256(prompt) on every call, so
-`engine + prompt + outputTokens` attributes a quality or cost change to a specific edit. A
+`engine + prompt + totalTokens` attributes a quality or cost change to a specific edit. A
 declared version is wrong the first time someone tweaks a prompt without bumping it.
+
+**Cost lives in `totalTokens`, not `promptTokens + outputTokens`.** `gemini.ok` logs
+`model`, `promptTokens`, `outputTokens`, `thoughtTokens`, `totalTokens` and `latencyMs` on
+every call. Thinking tokens are billed but are NOT part of `candidatesTokenCount`, so
+summing the two under-reports every call on a thinking model — take Gemini's own
+`totalTokenCount`, which is what `totalTokens` carries. `thoughtTokens` is the one to watch
+when a parse fails: truncation and "thinking ate the budget" look identical otherwise.
 
 **Adding an engine:** it is now a two-sided change. Server: a system prompt in
 `backend/src/ai/prompts.ts`, a `responseSchema` (uppercase OpenAPI types) in `schemas.ts`, and
@@ -146,6 +153,26 @@ the exact hole the account exists to close.
 uninstall used to mean a brand-new user row with a fresh `analysis_count = 0`. Logging in
 after a reinstall returns the original row. AGENTS.md previously claimed the server-side
 credit move had already fixed this — it had not, and that claim was wrong until now.
+
+**The account gate is mandatory, and it renders UNDER the splash — that ordering is the
+feature.** `_layout.tsx` calls `SplashScreen.preventAutoHideAsync()` at *module scope*
+(an effect runs after the first frame, which is the frame being hidden), pushes
+`/account?onboarding=1` immediately, and `account.tsx` calls `hideAsync()` once it has
+mounted. The gate presents with `animation: 'none'` because it is where the app starts,
+not a sheet over it.
+
+This replaced a 400ms `setTimeout`, which showed the Lab tab for four hundred
+milliseconds and then slid signup over the top — it read as a bug, and users asked why
+the app "redirected" them. There was never anything to wait for: the store is MMKV-backed
+and rehydrates synchronously, so `account` is already correct on the first render. **Do
+not reintroduce a delay here, and do not move the `hideAsync()` into `_layout.tsx`** —
+hiding it there races the push and shows the tab bar for a frame, which is the whole
+problem. The 3s timer in that effect is a dead-man's switch only: if the push ever fails,
+a flash beats a splash that never lifts.
+
+While the gate is showing there is no ✕, no swipe-back (`gestureEnabled: false`), and
+Android back **exits the app** rather than being swallowed. Gated on `isLiveApi` — with no
+API there is no account to make, and a wall nobody can pass is a bricked app.
 
 **There is no password reset and no email verification. Both absences are load-bearing
 copy.** The signup screen's amber "Save your password" block and the sign-out
@@ -303,6 +330,17 @@ selfcheck. Always reply 200 once the signature passes: anything else buys five r
 `REVENUECAT_SECRET_KEY` and `REVENUECAT_WEBHOOK_SECRET` are **required in production** —
 `env.ts` exits without them.
 
+**The client half is still stubbed and that is the current state of play.**
+`EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY` is `goog_mock_key`, so `isLiveRevenueCatKey()` is
+false and `initPurchases()` returns early: no Play sheet, `purchasePlan()` fakes a success
+after 1.4s. The server now refuses that claim (it holds a real `sk_` key), so a mock
+"purchase" logs `rc.sync isPro:false verified:true` and `is_pro` stays 0 — the two halves
+disagreeing correctly, not a bug. `EXPO_PUBLIC_*` is inlined at build time, so the fix is
+a **rebuild**, never `eas update`. Setup steps live in
+[docs/revenuecat-keys.md](docs/revenuecat-keys.md); the whole architecture, the
+troubleshooting table and the launch checklist in
+[docs/revenuecat.md](docs/revenuecat.md).
+
 ## Discover feed
 
 `dailyFeed` (AI, generated once/day) leads; `data/feed.ts` curated items back it up.
@@ -440,8 +478,14 @@ reaches EAS. A build profile only loads them if it declares `"environment"` — 
 `production` do. Drop that field and the build still succeeds, with no Gemini key baked in:
 `EXPO_PUBLIC_API_URL` is missing, `isLiveApi` is false and every engine silently serves mock
 data. `eas env:list
---environment preview` before blaming the model. `EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY` is
-intentionally absent, so preview builds hand out Pro free — set it before production.
+--environment preview` before blaming the model.
+
+⚠️ **`EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY` is a stub (`goog_mock_key`), so preview builds
+hand out Pro free.** Set it before production — and note that this one is **not
+OTA-able**: `EXPO_PUBLIC_*` is inlined into the bundle at build time, so an installed
+build compiled with the stub stays in mock mode however many updates you push at it. It
+needs `eas build`. Same trap as any other `EXPO_PUBLIC_*` change, and the most expensive
+one to discover late.
 
 **`runtimeVersion` is `appVersion` — and that is now YOUR responsibility to police.**
 It was `fingerprint`, which is safer and was unusable in practice: every native or dependency
