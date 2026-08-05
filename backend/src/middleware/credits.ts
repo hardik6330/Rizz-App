@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 
 import { db } from '../db/client.ts';
+import { proNow } from '../lib/entitlement.ts';
 import { Errors } from '../lib/errors.ts';
 import { DAILY_CALL_CAP, FREE_ANALYSIS_LIMIT, todayKey } from '../lib/limits.ts';
 import { log } from '../lib/logger.ts';
@@ -28,7 +29,7 @@ export async function chargeCredit(userId: string): Promise<void> {
            updated_at       = ${now}
      WHERE id = ${userId}
        AND banned_at IS NULL
-       AND (is_pro = 1 OR analysis_count < ${FREE_ANALYSIS_LIMIT})
+       AND (${proNow()} OR analysis_count < ${FREE_ANALYSIS_LIMIT})
        AND (daily_call_date <> ${today} OR daily_call_count < ${DAILY_CALL_CAP})
   `);
 
@@ -63,7 +64,7 @@ export async function creditsFor(userId: string): Promise<{
   remaining: number;
 }> {
   const rows = await db.execute(sql`
-    SELECT is_pro, analysis_count FROM users WHERE id = ${userId} LIMIT 1
+    SELECT ${proNow()} AS is_pro, analysis_count FROM users WHERE id = ${userId} LIMIT 1
   `);
   const row = (rows as unknown as [Array<{ is_pro: number; analysis_count: number }>])[0]?.[0];
   const isPro = row?.is_pro === 1;

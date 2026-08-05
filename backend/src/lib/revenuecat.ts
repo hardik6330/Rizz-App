@@ -1,3 +1,6 @@
+import { sql } from 'drizzle-orm';
+
+import { db } from '../db/client.ts';
 import { env } from '../env.ts';
 import { log } from './logger.ts';
 
@@ -9,10 +12,13 @@ import { log } from './logger.ts';
  * "server-side credits" mean nothing — anyone who unpacks the APK can send
  * `is_pro: true` forever.
  *
- * A webhook (blueprint Phase 3) is the eventual shape: it is push, so a
- * cancellation lands immediately instead of at the next call. This is the pull
- * version — one request, no public endpoint to secure, no signature to verify,
- * and it is enough while entitlement is only read on login and resume.
+ * There are now TWO callers — the app after a purchase or restore, and the
+ * webhook after a renewal, cancellation or refund — and they both go through
+ * `syncEntitlementFor` below rather than doing their own UPDATE. That is what
+ * makes the race between them harmless: whichever lands second re-asks
+ * RevenueCat and writes the same answer. Webhook payloads are a TRIGGER, never
+ * a source of truth; RevenueCat delivers at-least-once and does not guarantee
+ * ordering, so replaying event bodies into state would eventually invert it.
  */
 export interface Entitlement {
   isPro: boolean;
@@ -62,4 +68,45 @@ export async function checkEntitlement(
   // A null expires_date is a lifetime/non-expiring entitlement, not an expired one.
   const expiresAt = pro.expires_date ? Date.parse(pro.expires_date) : null;
   return { isPro: expiresAt === null || expiresAt > Date.now(), expiresAt, verified: true };
+}
+
+/**
+ * Ask RevenueCat, then write the answer onto the user row. The ONE writer.
+ *
+ * Returns the entitlement so callers can re-sign a token from it.
+ */
+export async function syncEntitlementFor(
+  userId: string,
+  rcAppUserId: string,
+  claimedPro = false,
+): Promise<Entitlement> {
+  const result = await checkEntitlement(rcAppUserId, claimedPro);
+
+  /*
+   * Detach the id from any OTHER row first.
+   *
+   * `uq_users_rc` is UNIQUE, and before the app called `Purchases.logIn()` the
+   * id was an anonymous `$RCAnonymousID:` that changed on every reinstall — so a
+   * user who reinstalled and restored hit ER_DUP_ENTRY against their own
+   * abandoned row and got a 500 on the one flow that was meant to give them
+   * their subscription back. The id is now `users.id`, which cannot collide, but
+   * this stays for every row written before that.
+   */
+  await db.execute(sql`
+    UPDATE users SET rc_app_user_id = NULL
+     WHERE rc_app_user_id = ${rcAppUserId} AND id <> ${userId}
+  `);
+
+  await db.execute(sql`
+    UPDATE users
+       SET rc_app_user_id         = ${rcAppUserId},
+           is_pro                 = ${result.isPro ? 1 : 0},
+           entitlement_expires_at = ${result.expiresAt},
+           updated_at             = ${Date.now()}
+     WHERE id = ${userId}
+  `);
+
+  // Never the rc id or the email — it is an account identifier like any other.
+  log.info('rc.sync', { isPro: result.isPro, verified: result.verified });
+  return result;
 }

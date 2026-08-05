@@ -55,8 +55,10 @@ services:
       # is not a credential, so unlike everything above it belongs in git. Set
       # it here only to override that (a different provider, or a rotated CA).
       #
-      # Optional. While REVENUECAT_SECRET_KEY is unset the server takes the
-      # client's Pro claim on trust — index.ts logs `revenueCat: MOCK` to say so.
+      # BOTH are REQUIRED — env.ts refuses to boot in production without them.
+      # Without the secret key the server takes the client's Pro claim on trust;
+      # without the webhook secret /v1/webhooks/revenuecat 503s and no
+      # cancellation, refund or failed renewal ever reaches us.
       - key: REVENUECAT_SECRET_KEY
         sync: false
       - key: REVENUECAT_WEBHOOK_SECRET

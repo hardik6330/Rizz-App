@@ -50,7 +50,24 @@ const Env = z.object({
 
   /** Point at Cloudflare AI Gateway to get retries + cost logging for free. */
   GEMINI_BASE_URL: z.string().url().default('https://generativelanguage.googleapis.com/v1beta'),
-});
+})
+  /*
+   * Mock entitlement is a development convenience and a production hole.
+   *
+   * Without REVENUECAT_SECRET_KEY the server believes `claimed_pro` — so anyone
+   * who unpacks the APK has a free subscription for ever, and the log line that
+   * says so scrolls past on a server nobody is watching. Without
+   * REVENUECAT_WEBHOOK_SECRET the webhook 503s and cancellations never land.
+   *
+   * Failing to boot is the point: a subscription business that silently gives
+   * itself away is worse than one that is down.
+   */
+  .superRefine((v, ctx) => {
+    if (v.NODE_ENV !== 'production') return;
+    for (const key of ['REVENUECAT_SECRET_KEY', 'REVENUECAT_WEBHOOK_SECRET'] as const) {
+      if (!v[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'required in production' });
+    }
+  });
 
 const parsed = Env.safeParse(process.env);
 if (!parsed.success) {

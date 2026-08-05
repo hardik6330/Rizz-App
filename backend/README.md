@@ -132,8 +132,14 @@ region rather than assuming Singapore. Any container host does the same (Railway
 ### Env vars, both targets
 
 `GEMINI_API_KEY`, `DATABASE_URL`, `JWT_SECRET` (`openssl rand -hex 32`), `AI_ENABLED=true`,
-`NODE_ENV=production`. `REVENUECAT_SECRET_KEY` is optional; while it is unset the server takes
-the client's Pro claim on trust and says so at boot. Never set `PORT` on Vercel.
+`NODE_ENV=production`. `REVENUECAT_SECRET_KEY` (`sk_…`) and `REVENUECAT_WEBHOOK_SECRET` are
+**required in production** — `env.ts` exits rather than start without them, because unset means
+the server believes the client's Pro claim and no cancellation ever arrives. Never set `PORT`
+on Vercel.
+
+Point RevenueCat's webhook at `https://<host>/v1/webhooks/revenuecat`. HMAC signing is
+preferred; the static `Authorization` header works too. Both are verified by
+`lib/rcSignature.ts` — it is the ONLY authentication on that route, since RevenueCat has no JWT.
 
 **Do not set `DATABASE_CA` unless you are overriding the bundled CA** — and if you do, it must
 be the certificate TEXT, never a path. `databaseCa()` accepts either (a value starting with

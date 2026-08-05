@@ -3,7 +3,7 @@ import type { CustomerInfo, PurchasesPackage } from 'react-native-purchases';
 
 import { PRO_ENTITLEMENT_ID } from '@/constants';
 import { isLiveRevenueCatKey } from '@/state/limits';
-import { installId, isLiveApi, syncPro } from '@/state/session';
+import { installId, isLiveApi, syncPro, userId } from '@/state/session';
 import { setProProperty, track } from './analytics';
 import { useRizzStore } from '@/state/useRizzStore';
 import { wait } from '@/utils/misc';
@@ -40,10 +40,23 @@ export interface Plan {
   badge?: string;
 }
 
+/**
+ * Two plans, and deliberately only two.
+ *
+ * A third choice does not add a third buyer, it splits the two: the weekly is
+ * the low-commitment entry and the annual is the one the business runs on, and
+ * every extra card between them is a reason to close the sheet and think about
+ * it. Lifetime is gone for a harder reason — every analysis costs us a Gemini
+ * call, so a one-off payment is a subscription with the revenue truncated and
+ * the cost left running.
+ *
+ * These are the MOCK shapes. Live builds render whatever RevenueCat's `current`
+ * offering returns (`fetchPlans`), so changing a price is a dashboard edit, not
+ * a release — keep these in step anyway or the preview build sells a fiction.
+ */
 export const MOCK_PLANS: Plan[] = [
   { id: 'weekly', title: 'Weekly', price: '$6.99', period: '/ week', sub: 'Commitment issues? Respect.' },
-  { id: 'annual', title: 'Annual', price: '$39.99', period: '/ year', sub: 'Works out to $0.77 a week', badge: 'BEST VALUE' },
-  { id: 'lifetime', title: 'Lifetime', price: '$79.99', period: 'once', sub: 'One payment. Infinite aura.' },
+  { id: 'annual', title: 'Annual', price: '$79.99', period: '/ year', sub: 'Works out to $1.53 a week', badge: 'BEST VALUE' },
 ];
 
 type PurchasesModule = typeof import('react-native-purchases').default;
@@ -87,10 +100,13 @@ async function applyPro(isPro: boolean): Promise<void> {
 
   try {
     const Purchases = getPurchases();
-    // Mock mode has no RevenueCat identity, but rc_app_user_id is UNIQUE — a
-    // shared literal would collide across devices, so key it on the install.
+    // Mock mode has no RevenueCat identity. `users.id` is the right stand-in —
+    // it is what a live build reports too, once `identify()` has run — and it
+    // cannot collide with another row on the UNIQUE `rc_app_user_id`.
     const appUserId =
-      Purchases && configured ? await Purchases.getAppUserID() : `mock:${await installId()}`;
+      Purchases && configured
+        ? await Purchases.getAppUserID()
+        : (userId() ?? `mock:${await installId()}`);
     await syncPro(appUserId, isPro);
   } catch (error) {
     console.warn('[purchases] entitlement sync failed — retrying next launch', error);
@@ -103,13 +119,50 @@ export async function initPurchases(): Promise<void> {
   if (!Purchases || !isLiveKey) return; // mock mode
 
   try {
+    // Once, and early. Identity is attached afterwards with `logIn()` rather
+    // than passed here, because on a cold install the user id does not exist
+    // yet — `/v1/auth/device` is still in flight.
     Purchases.configure({ apiKey: RC_KEY });
     configured = true;
     Purchases.addCustomerInfoUpdateListener(syncEntitlement);
+    await identify();
     syncEntitlement(await Purchases.getCustomerInfo());
   } catch (error) {
     console.warn('[purchases] configure failed — staying in mock mode', error);
     configured = false;
+  }
+}
+
+/**
+ * Tell RevenueCat who this is. Call whenever the signed-in account changes.
+ *
+ * Without it `configure()` leaves the SDK on an anonymous `$RCAnonymousID:`
+ * that is cached on the device and dies with the install — so a subscriber who
+ * reinstalls has no way to get their subscription back, which is both a refund
+ * and a one-star review. `logIn()` ALIASES the anonymous id to `users.id`, so a
+ * purchase made before signup is carried over rather than stranded.
+ *
+ * Idempotent: it compares first, because `logIn()` on the id we already hold is
+ * a pointless network call on every launch.
+ */
+export async function identify(): Promise<void> {
+  const Purchases = getPurchases();
+  if (!Purchases || !configured) return;
+
+  const id = userId();
+  try {
+    if (!id) {
+      // Signed out. Back to anonymous, so the next person to log in on this
+      // device does not inherit the last one's entitlement.
+      await Purchases.logOut();
+      return;
+    }
+    if ((await Purchases.getAppUserID()) === id) return;
+    const { customerInfo } = await Purchases.logIn(id);
+    syncEntitlement(customerInfo);
+  } catch (error) {
+    // Already anonymous is the common `logOut` throw, and is not a problem.
+    console.warn('[purchases] identify failed', error);
   }
 }
 

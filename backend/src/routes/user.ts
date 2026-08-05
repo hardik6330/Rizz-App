@@ -7,7 +7,7 @@ import { Errors } from '../lib/errors.ts';
 import { signAccess } from '../lib/jwt.ts';
 import { FREE_ANALYSIS_LIMIT } from '../lib/limits.ts';
 import { log } from '../lib/logger.ts';
-import { checkEntitlement } from '../lib/revenuecat.ts';
+import { syncEntitlementFor } from '../lib/revenuecat.ts';
 import { creditsFor } from '../middleware/credits.ts';
 
 export const user = new Hono();
@@ -76,21 +76,8 @@ user.post('/pro', async (c) => {
   const body = ProBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) throw Errors.badRequest('rc_app_user_id is required');
 
-  const { isPro, expiresAt, verified } = await checkEntitlement(
-    body.data.rc_app_user_id,
-    body.data.claimed_pro,
-  );
-
-  await db.execute(sql`
-    UPDATE users
-       SET rc_app_user_id         = ${body.data.rc_app_user_id},
-           is_pro                 = ${isPro ? 1 : 0},
-           entitlement_expires_at = ${expiresAt},
-           updated_at             = ${Date.now()}
-     WHERE id = ${sub}
-  `);
-
-  log.info('user.pro', { isPro, verified });
+  // Same writer the webhook uses, so the two can race without disagreeing.
+  const { isPro } = await syncEntitlementFor(sub, body.data.rc_app_user_id, body.data.claimed_pro);
 
   // Re-sign: the old token keeps asserting the old entitlement until it expires.
   const { token, expiresIn } = await signAccess({ sub, pro: isPro });

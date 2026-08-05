@@ -75,17 +75,29 @@ export default function AccountScreen() {
   const close = useCallback(() => router.back(), []);
 
   /*
-   * Swallow Android hardware back while the gate is up.
+   * Android hardware back EXITS the app while the gate is up.
    *
-   * `gestureEnabled: false` below stops the iOS swipe-to-dismiss, but Android
-   * back pops the modal regardless and would drop the user into the app with no
-   * account — which is the one state this gate exists to prevent. Same mechanism
-   * as useBackToIdle; returning true consumes the press.
+   * The default pop would drop the user into the app with no account — the one
+   * state this gate exists to prevent — so it cannot be left alone. Swallowing
+   * it outright is worse though: a screen where the phone's back button does
+   * nothing at all reads as a frozen app, and it is the single most common
+   * one-star review for a login wall.
+   *
+   * So back behaves the way it does on any root screen: it leaves. The gate is
+   * still not bypassable — reopening lands straight back here — but the user is
+   * never trapped. `exitApp()` is Android-only; iOS has no hardware back, and
+   * the swipe-to-dismiss is stopped by `gestureEnabled: false` below.
+   *
+   * Returning true after exitApp() stops the navigator also popping the modal in
+   * the frame before the process goes away.
    */
   useFocusEffect(
     useCallback(() => {
       if (!isOnboarding) return;
-      const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        BackHandler.exitApp();
+        return true;
+      });
       return () => sub.remove();
     }, [isOnboarding]),
   );

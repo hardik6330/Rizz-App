@@ -11,7 +11,7 @@ import {
   isSupported,
 } from '@/../modules/profile-capture';
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
-import { initPurchases } from '@/services/purchases';
+import { identify, initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
 import { apiBase, installId, isLiveApi, refreshCredits } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
@@ -117,6 +117,18 @@ export default function RootLayout() {
    */
   const account = useRizzStore((s) => s.account);
   const accountStepDone = !isLiveApi || account != null;
+
+  /*
+   * Keep RevenueCat's identity pointed at the signed-in account.
+   *
+   * One effect covers signup, login and sign-out, because all three are the same
+   * store write. Doing it at the two call sites in `account.tsx` instead is how
+   * one of them eventually forgets, and a forgotten `logIn` is a subscriber who
+   * cannot restore after a reinstall.
+   */
+  useEffect(() => {
+    void identify();
+  }, [account]);
   /** Did the gate actually run this session? Gates the landing below. */
   const onboardedThisSession = useRef(false);
   useEffect(() => {

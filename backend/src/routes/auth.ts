@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { db } from '../db/client.ts';
+import { proNow } from '../lib/entitlement.ts';
 import { ApiError, Errors } from '../lib/errors.ts';
 import { signAccess } from '../lib/jwt.ts';
 import { FREE_ANALYSIS_LIMIT } from '../lib/limits.ts';
@@ -61,7 +62,7 @@ interface UserRow {
 /** One row by primary key, or undefined. */
 async function userById(id: string): Promise<UserRow | undefined> {
   const rows = await db.execute(sql`
-    SELECT id, is_pro, analysis_count, banned_at, username FROM users WHERE id = ${id} LIMIT 1
+    SELECT id, ${proNow()} AS is_pro, analysis_count, banned_at, username FROM users WHERE id = ${id} LIMIT 1
   `);
   return (rows as unknown as [UserRow[]])[0]?.[0];
 }
@@ -82,6 +83,15 @@ async function sessionFor(user: UserRow, installId?: string) {
     expires_in: expiresIn,
     ...(installId ? { install_id: installId } : {}),
     user: {
+      /*
+       * The client passes this to `Purchases.logIn()` so RevenueCat's App User
+       * ID IS our user id. Without it the SDK invents an anonymous
+       * `$RCAnonymousID:` that dies with the install, and a subscriber who
+       * reinstalls cannot restore. Safe to expose: it is an opaque UUID the
+       * bearer already holds a token for, and every request is authorised by
+       * that token, never by this.
+       */
+      id: user.id,
       // null = anonymous install. The client gates its account UI on this.
       username: user.username,
       is_pro: isPro,
@@ -110,7 +120,7 @@ auth.post('/device', async (c) => {
   `);
 
   const rows = await db.execute(sql`
-    SELECT id, is_pro, analysis_count, banned_at, username FROM users WHERE install_id = ${install_id} LIMIT 1
+    SELECT id, ${proNow()} AS is_pro, analysis_count, banned_at, username FROM users WHERE install_id = ${install_id} LIMIT 1
   `);
   const user = (rows as unknown as [UserRow[]])[0]?.[0];
   if (!user) throw Errors.badRequest('could not create device');
@@ -241,7 +251,8 @@ auth.post('/login', async (c) => {
   const now = Date.now();
 
   const rows = await db.execute(sql`
-    SELECT id, password_hash, failed_logins, locked_until, banned_at, is_pro, analysis_count, username
+    SELECT id, password_hash, failed_logins, locked_until, banned_at,
+           ${proNow()} AS is_pro, analysis_count, username
       FROM users WHERE email = ${email} LIMIT 1
   `);
   const row = (rows as unknown as [LoginRow[]])[0]?.[0];

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import type { MiddlewareHandler } from 'hono';
 
 import { db } from '../db/client.ts';
+import { proNow } from '../lib/entitlement.ts';
 import { Errors } from '../lib/errors.ts';
 import { verifyAccess, type Claims } from '../lib/jwt.ts';
 
@@ -44,7 +45,7 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
   }
 
   const rows = await db.execute(sql`
-    SELECT is_pro, banned_at FROM users WHERE id = ${claims.sub} LIMIT 1
+    SELECT ${proNow()} AS is_pro, banned_at FROM users WHERE id = ${claims.sub} LIMIT 1
   `);
   const row = (rows as unknown as [Array<{ is_pro: number; banned_at: number | null }>])[0]?.[0];
 

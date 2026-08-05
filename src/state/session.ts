@@ -27,6 +27,8 @@ export const isLiveApi = /^https?:\/\/.+/.test(API_URL);
 
 const INSTALL_KEY = 'rizz.installId';
 const TOKEN_KEY = 'rizz.accessToken';
+/** The server's `users.id`. Persisted only so RevenueCat can be told who this is. */
+const USER_KEY = 'rizz.userId';
 export interface Credits {
   is_pro: boolean;
   analysis_count: number;
@@ -34,6 +36,8 @@ export interface Credits {
 }
 
 interface SessionUser extends Credits {
+  /** The server's `users.id` — becomes the RevenueCat App User ID. See `userId()`. */
+  id: string;
   /** null = anonymous install, no account attached yet. */
   username: string | null;
 }
@@ -52,6 +56,7 @@ interface AuthResponse {
 function persistSession(data: AuthResponse): void {
   if (data.install_id) kv.set(INSTALL_KEY, data.install_id);
   kv.set(TOKEN_KEY, data.access_token);
+  if (data.user.id) kv.set(USER_KEY, data.user.id);
   onCredits?.(data.user);
   // The STORE owns "am I signed in" — the launch sequence gates on it and has to
   // re-render when it changes, which a bare MMKV read cannot do. Emitted rather
@@ -177,6 +182,10 @@ export async function logIn(email: string, password: string): Promise<SessionUse
  */
 export function logOut(): void {
   kv.remove(TOKEN_KEY);
+  // Dropped so `identify()` puts RevenueCat back to anonymous rather than leaving
+  // the previous account's App User ID on a device someone else may now log into.
+  // The next `/device` call re-mints it, unchanged, for the same install.
+  kv.remove(USER_KEY);
   onAccount?.(null);
 }
 
@@ -195,7 +204,24 @@ export async function deleteAccount(): Promise<void> {
   if (!res.ok) throw new AuthError('DELETE_FAILED', 'Could not delete the account — try again');
   kv.remove(TOKEN_KEY);
   kv.remove(INSTALL_KEY);
+  kv.remove(USER_KEY);
   onAccount?.(null);
+}
+
+/**
+ * The server's `users.id` for this session, or undefined before the first auth.
+ *
+ * This is what `Purchases.logIn()` is given, so RevenueCat's App User ID is our
+ * user id rather than the anonymous `$RCAnonymousID:` the SDK invents. That id
+ * is cached on the device and dies with the install — which made restoring a
+ * subscription after a reinstall impossible, and collided with `uq_users_rc` on
+ * the way. Logging in returns the same `users.id`, so the entitlement comes back
+ * with it.
+ *
+ * Synchronous on purpose: the caller is a `useEffect` that must not await.
+ */
+export function userId(): string | undefined {
+  return kv.getString(USER_KEY);
 }
 
 /** The persisted install id, minting one via `/v1/auth/device` if this is a cold install. */

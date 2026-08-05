@@ -262,6 +262,41 @@ silently drops that platform into mock mode, where `purchasePlan()` grants Pro f
 after a fake 1.4s sheet. Failure is silent and in the user's favour — check the key first
 when "the paywall does nothing".
 
+## Subscriptions — RevenueCat
+
+**Two plans, weekly and annual. Do not add a third, and never add lifetime** — every
+analysis costs a Gemini call, so a one-off payment is a subscription with the revenue
+truncated and the cost left running. Live builds render RevenueCat's `current` offering, so
+a price change is a dashboard edit; `MOCK_PLANS` in `services/purchases.ts` only backs
+preview builds and must be kept in step.
+
+**The RevenueCat App User ID IS `users.id`.** `configure()` runs once at launch with no id;
+`identify()` then calls `logIn(users.id)`, driven by one effect in `_layout.tsx` keyed on the
+store's `account`. Never call `logIn` from a screen — a forgotten call site is a subscriber
+who reinstalls and cannot restore, because the SDK's default `$RCAnonymousID:` is cached on
+the device and dies with the install. That is also what used to collide with `uq_users_rc`
+and 500 the restore.
+
+**Entitlement is `proNow()`, never `is_pro = 1`.** `lib/entitlement.ts` is the one fragment;
+every read site (`chargeCredit`, `creditsFor`, `requireAuth`, both `sessionFor` queries)
+uses it. `is_pro` alone ignores `entitlement_expires_at`, which is how a cancelled
+subscriber keeps unlimited AI at our cost, for ever, invisible in every dashboard.
+
+**One writer: `syncEntitlementFor()`.** Both `/v1/user/pro` (client, after a purchase or
+restore) and `/v1/webhooks/revenuecat` (RevenueCat, after a renewal or cancellation) go
+through it, so the race between them is harmless — whoever lands second re-asks RevenueCat
+and writes the same answer. **Webhook payloads are a trigger, never a source of truth:**
+delivery is at-least-once and ordering is not guaranteed, so `rc_events.event_id` is the
+idempotency key and the entitlement always comes from `GET /subscribers`.
+
+The webhook is authenticated by signature ONLY — RevenueCat has no JWT — so it must stay
+outside every `requireAuth` prefix in `app.ts`. `lib/rcSignature.ts` owns that; it has a
+selfcheck. Always reply 200 once the signature passes: anything else buys five retries
+(5/10/20/40/80 min) and then RevenueCat gives up.
+
+`REVENUECAT_SECRET_KEY` and `REVENUECAT_WEBHOOK_SECRET` are **required in production** —
+`env.ts` exits without them.
+
 ## Discover feed
 
 `dailyFeed` (AI, generated once/day) leads; `data/feed.ts` curated items back it up.
@@ -442,6 +477,7 @@ npx tsc --noEmit                                        # must pass
 node src/state/limits.selfcheck.ts                      # swipe-allowance + store-key rules
 node src/theme/contrast.selfcheck.ts                    # palette vs WCAG AA (reads tokens.ts as text)
 cd backend && node --import tsx src/lib/password.selfcheck.ts                  # scrypt round-trip, no env needed
+cd backend && node --import tsx src/lib/rcSignature.selfcheck.ts               # webhook HMAC + replay window, no env needed
 cd backend && node --env-file=.env --import tsx src/ai/gateway.selfcheck.ts   # live API (1 tiny call)
 cd backend && node --env-file=.env --import tsx src/vercel.selfcheck.ts       # serverless POST body
 cd backend && npx tsc --noEmit                          # server must pass too

@@ -9,6 +9,7 @@ import { ai } from './routes/ai.ts';
 import { auth } from './routes/auth.ts';
 import { config } from './routes/config.ts';
 import { user } from './routes/user.ts';
+import { webhooks } from './routes/webhooks.ts';
 
 // Refuse to boot if the them-mode safety rails have gone missing. See prompts.ts.
 assertSafetyRails();
@@ -45,6 +46,15 @@ app.use('/v1/auth/*', rateLimit({ capacity: 20, refillPerSec: 0.2, by: 'ip' }));
 app.route('/v1/auth', auth);
 
 app.route('/v1/config', config);
+
+/*
+ * Webhooks are authenticated by SIGNATURE, not by JWT — RevenueCat has no token
+ * — so this must stay outside every `requireAuth` prefix. Rate limited by IP all
+ * the same: the signature check is cheap but the endpoint is public, and a burst
+ * of forged POSTs should cost an attacker something.
+ */
+app.use('/v1/webhooks/*', rateLimit({ capacity: 60, refillPerSec: 1, by: 'ip' }));
+app.route('/v1/webhooks', webhooks);
 
 app.use('/v1/ai/*', requireAuth, rateLimit({ capacity: 10, refillPerSec: 0.17, by: 'user' }));
 app.route('/v1/ai', ai);

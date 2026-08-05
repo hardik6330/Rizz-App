@@ -174,7 +174,7 @@ export default function PaywallScreen() {
         {/* Plans */}
         <View style={styles.plans}>
           {plans.length === 0
-            ? [0, 1, 2].map((index) => <PlanSkeleton key={index} index={index} />)
+            ? [0, 1].map((index) => <PlanSkeleton key={index} index={index} />)
             : plans.map((plan) => (
                 <PlanCard
                   key={plan.id}
@@ -219,7 +219,14 @@ export default function PaywallScreen() {
             {!busy && !done && <Shimmer />}
           </LinearGradient>
         </HapticPressable>
-        <Text style={styles.ctaSub}>Cancel anytime · Secured by the App Store</Text>
+        {/*
+          Auto-renewal has to be disclosed ON the purchase screen — App Store
+          Review 3.1.2 and Play's subscription policy both require it, and it is
+          one of the more common rejections for an app that otherwise passes.
+        */}
+        <Text style={styles.ctaSub}>
+          Auto-renews until cancelled · Cancel anytime in your store settings
+        </Text>
 
         {/* Legal */}
         <View style={styles.legalRow}>
