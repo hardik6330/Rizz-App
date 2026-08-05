@@ -8,6 +8,7 @@ import { rateLimit } from './middleware/rateLimit.ts';
 import { ai } from './routes/ai.ts';
 import { auth } from './routes/auth.ts';
 import { config } from './routes/config.ts';
+import { legal } from './routes/legal.ts';
 import { user } from './routes/user.ts';
 import { webhooks } from './routes/webhooks.ts';
 
@@ -18,6 +19,13 @@ export const app = new Hono();
 
 app.get('/', (c) => c.text('Server is running!'));
 app.get('/healthz', (c) => c.json({ ok: true }));
+
+/*
+ * Public, unauthenticated, and required to ship: the paywall links to both, and
+ * a 404 there is an App Store rejection. Registered at the top so no auth or
+ * rate-limit middleware can ever end up in front of them.
+ */
+app.route('/', legal);
 
 /*
  * Middleware must be registered on `app` BEFORE the matching `route()`.
