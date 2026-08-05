@@ -37,8 +37,8 @@ services:
         value: "22"
       - key: NODE_ENV
         value: production
-      - key: AI_ENABLED
-        value: "true"
+      # AI_ENABLED is deliberately absent — env.ts defaults it to true. Add it
+      # set to "false" to kill every /ai/* route; clients degrade to mock seeds.
       # Render sets PORT itself; env.ts coerces it. Do not hardcode 8787 here.
       #
       # Everything below is a credential: `sync: false` means Render prompts for
@@ -50,11 +50,11 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
-      # Aiven signs with a per-project CA that is not in Node's trust store.
-      # There is no file to point at here, so paste the PEM itself, newlines and
-      # all — databaseCa() in db/client.ts accepts either form.
-      - key: DATABASE_CA
-        sync: false
+      # DATABASE_CA is deliberately absent. The CA that signs the database's
+      # certificate is bundled in backend/src/db/railway-ca.ts — a certificate
+      # is not a credential, so unlike everything above it belongs in git. Set
+      # it here only to override that (a different provider, or a rotated CA).
+      #
       # Optional. While REVENUECAT_SECRET_KEY is unset the server takes the
       # client's Pro claim on trust — index.ts logs `revenueCat: MOCK` to say so.
       - key: REVENUECAT_SECRET_KEY

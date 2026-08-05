@@ -22,9 +22,21 @@ npm run dev
 
 ### TLS to a managed database
 
-Managed MySQL signs with a **CA that Node does not trust**, so a correct config still fails on
-the handshake. Point `DATABASE_CA` at the PEM (`*.pem` is gitignored) and verification passes.
-Two flavours, and they fail differently:
+**Nothing to configure.** The CA that signs Railway's MySQL certificate is bundled in
+`src/db/railway-ca.ts`, so verification works out of the box on every target.
+
+A certificate is not a credential — it carries a *public* key, so publishing it lets anyone
+**verify** the database and nobody **connect** to it. That is why it lives in git while the
+password in `DATABASE_URL` never can. It also removed the single most expensive
+misconfiguration in this service: `db/client.ts` is evaluated at import, so a wrong
+`DATABASE_CA` used to crash the function before it served anything.
+
+`DATABASE_CA` still exists as an **optional override**, for two cases only: pointing at a
+different provider, or replacing a rotated Railway CA without a deploy. It takes either the
+PEM text or a path to it.
+
+Managed MySQL signs with a **CA that Node does not trust**, so without a pinned CA a correct
+config still fails on the handshake. Two flavours, and they fail differently:
 
 - **Aiven / PlanetScale / DO** issue a per-project CA with a real hostname on the leaf.
   `HANDSHAKE_SSL_ERROR` until you download it (Aiven: service → *CA certificate* → download).
@@ -119,16 +131,17 @@ region rather than assuming Singapore. Any container host does the same (Railway
 
 ### Env vars, both targets
 
-`GEMINI_API_KEY`, `DATABASE_URL`, `DATABASE_CA`, `JWT_SECRET` (`openssl rand -hex 32`), `AI_ENABLED=true`,
+`GEMINI_API_KEY`, `DATABASE_URL`, `JWT_SECRET` (`openssl rand -hex 32`), `AI_ENABLED=true`,
 `NODE_ENV=production`. `REVENUECAT_SECRET_KEY` is optional; while it is unset the server takes
 the client's Pro claim on trust and says so at boot. Never set `PORT` on Vercel.
 
-**`DATABASE_CA` must be the certificate TEXT here, never a path.** `databaseCa()` accepts
-either — a value starting with `-----BEGIN` is used verbatim, anything else is `readFileSync`'d
-— and locally it is a path, so copying `./railway-ca.pem` into the dashboard looks right and
-is not. The PEM is gitignored, so no such file exists on the host: `readFileSync` throws
-`ENOENT` at module load, which takes down **every** route, not just the DB ones. Symptom is a
-500 on `GET /` and `/favicon.ico` too, and a client that silently serves mock seeds.
+**Do not set `DATABASE_CA` unless you are overriding the bundled CA** — and if you do, it must
+be the certificate TEXT, never a path. `databaseCa()` accepts either (a value starting with
+`-----BEGIN` is used verbatim, anything else is `readFileSync`'d), so copying `./railway-ca.pem`
+into a dashboard looks right and is not: `*.pem` is gitignored, no such file exists on the host,
+and `readFileSync` throws `ENOENT` at module load — which takes down **every** route, not just
+the DB ones. Symptom is a 500 on `GET /` and `/favicon.ico` too, and a client that silently
+serves mock seeds. Leaving it unset cannot fail this way, which is the point.
 
 **There is no cron to port.** `node-cron` is in `package.json` and unused: the daily Discover
 batch is generated lazily on the first `POST /v1/ai/feed` of the day and deduped by

@@ -356,7 +356,9 @@ header, never the URL — a key in a URL lands in access logs.
 ### 5.4 The two deployment traps
 
 **TLS to Railway MySQL needs a pinned CA and `checkServerIdentity` skipped.** Getting
-`DATABASE_CA` wrong crashes the function at module load, so *every* route 500s. Client-side that
+the CA bundled in `backend/src/db/railway-ca.ts` (a certificate is not a credential, so it lives
+in git; `DATABASE_CA` is only an optional override now). Anything that throws at module load
+takes down *every* route, not just the DB ones. Client-side that
 looks like four unrelated bugs: engines serve mock seeds, and the Android bubble toasts
 "RizzCoach isn't connected yet" because `installId()` rejects, so `_layout.tsx` never configures
 `ChatEntitlement`. It self-heals on the next resume once the server answers. `/healthz` hits no
@@ -609,7 +611,7 @@ The failure modes that have actually cost time, and what they look like from the
 |---|---|---|
 | "The AI ignores my screenshot" / canned results | any live failure — the engine fell back to mocks | console warn `[engine] live analysis failed`; then `curl` the API |
 | Every engine goes canned at once | the model alias rolled and the thinking key 400s | `gateway.selfcheck.ts` |
-| All four tools broken + the bubble toasts "not connected yet" | the backend is down or `DATABASE_CA` is wrong — one bug, four symptoms | `POST /v1/auth/device` (not `/healthz`, which needs no DB) |
+| All four tools broken + the bubble toasts "not connected yet" | the backend is down, or something threw at module load — one bug, four symptoms | `POST /v1/auth/device` (not `/healthz`, which needs no DB) |
 | Every POST times out at 60s, GETs fine | the Vercel adapter drained the request body | `vercel.selfcheck.ts` |
 | The OTA changed nothing | no branch mapped to the channel, or a runtimeVersion mismatch, or you only launched once | `eas channel:view <channel>` |
 | The build has no AI at all | the profile didn't declare `"environment"`, so no `EXPO_PUBLIC_API_URL` | `eas env:list --environment preview` |

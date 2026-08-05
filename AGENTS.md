@@ -85,8 +85,12 @@ which **exits** rather than starting half-configured. Google issues both `AIza�
 formats; both go in the `x-goog-api-key` header, never the URL.
 
 **A broken backend is indistinguishable from a broken app — check the server first.** The DB is
-Railway MySQL; TLS to it needs a pinned CA and `checkServerIdentity` skipped, and getting
-`DATABASE_CA` wrong crashes the function at module load, so *every* route 500s. Client-side that
+Railway MySQL; TLS to it needs a pinned CA and `checkServerIdentity` skipped. That CA is now
+**bundled in `backend/src/db/railway-ca.ts`, not an env var** — a certificate carries a public
+key, so it belongs in git while `DATABASE_URL` never can, and a required `DATABASE_CA` was the
+service's most expensive misconfiguration: `db/client.ts` is evaluated at import, so a wrong
+value crashed the function at module load and *every* route 500'd. `DATABASE_CA` survives only
+as an optional override. Anything that does break at module load looks the same. Client-side that
 looks like four unrelated bugs: engines serve mock seeds, and the Android bubble toasts
 "RizzCoach isn't connected yet — open the app once" because `installId()` rejects, so
 `_layout.tsx`'s `void installId().then(configureChat)` never configures `ChatEntitlement` and

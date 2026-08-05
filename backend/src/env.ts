@@ -26,12 +26,17 @@ const Env = z.object({
   DATABASE_URL: z.string().url(),
 
   /**
-   * Path to a PEM CA bundle for the database connection.
+   * OPTIONAL override for the database CA — the PEM itself, or a path to it.
    *
-   * Managed MySQL (Aiven, PlanetScale, DO) signs with a per-project CA that is
-   * not in Node's trust store, so verification fails without this. Unset means
-   * "verify against system CAs" — correct for a local MySQL over a socket, and
-   * the right failure mode everywhere else: TLS is never silently skipped.
+   * Unset is the normal case: `db/railway-ca.ts` bundles the CA that signs
+   * Railway's MySQL certificate, so TLS verifies with no configuration at all.
+   * A certificate is not a credential (it carries a public key), which is why it
+   * can live in git while `DATABASE_URL` cannot.
+   *
+   * Set it only to point at a different provider, or to replace a rotated
+   * Railway CA without shipping a deploy. Never to disable verification — every
+   * row on this connection is a credit balance, a purchase state or a password
+   * hash, and the traffic crosses the public internet.
    */
   DATABASE_CA: z.string().optional(),
   PORT: z.coerce.number().default(8787),
