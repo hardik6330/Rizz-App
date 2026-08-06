@@ -27,6 +27,14 @@ export const isLiveApi = /^https?:\/\/.+/.test(API_URL);
 
 const INSTALL_KEY = 'rizz.installId';
 const TOKEN_KEY = 'rizz.accessToken';
+/**
+ * The user signed out and has not signed back in.
+ *
+ * Persisted, not in-memory: the whole failure mode is a re-auth that happens
+ * after a resume, and a launch is a resume. Cleared by `/login` and `/signup`,
+ * which are the only two things that may establish an account session.
+ */
+const SIGNED_OUT_KEY = 'rizz.signedOut';
 /** The server's `users.id`. Persisted only so RevenueCat can be told who this is. */
 const USER_KEY = 'rizz.userId';
 export interface Credits {
@@ -53,16 +61,35 @@ interface AuthResponse {
  * Persist whatever a session endpoint just returned. One writer for all three of
  * `/device`, `/signup` and `/login`, so a new endpoint cannot forget half of it.
  */
-function persistSession(data: AuthResponse): void {
+function persistSession(data: AuthResponse, establishesAccount = false): void {
   if (data.install_id) kv.set(INSTALL_KEY, data.install_id);
   kv.set(TOKEN_KEY, data.access_token);
   if (data.user.id) kv.set(USER_KEY, data.user.id);
   onCredits?.(data.user);
-  // The STORE owns "am I signed in" — the launch sequence gates on it and has to
-  // re-render when it changes, which a bare MMKV read cannot do. Emitted rather
-  // than written directly so session.ts stays free of store imports (the store
-  // already imports this file; the back-edge would be a cycle).
-  onAccount?.(data.user.username ?? null);
+  /*
+   * Only a SUCCESSFUL /login or /signup lifts the flag, and only here — clearing
+   * it at the call site would clear it on a wrong password too, which is the one
+   * moment the gate has to hold.
+   */
+  if (establishesAccount) kv.remove(SIGNED_OUT_KEY);
+  /*
+   * The STORE owns "am I signed in" — the launch sequence gates on it and has to
+   * re-render when it changes, which a bare MMKV read cannot do. Emitted rather
+   * than written directly so session.ts stays free of store imports (the store
+   * already imports this file; the back-edge would be a cycle).
+   *
+   * `signedOut` is what makes signing out MEAN anything.
+   *
+   * `logOut` keeps the install id on purpose — it addresses the user's row, and
+   * dropping it would hand out three fresh free analyses per sign-out. But signup
+   * CLAIMS the install's row, so that id resolves to the account: the next
+   * `/device` re-auth came back with a username attached and quietly signed the
+   * user straight back in, on the first resume, with no password. A device
+   * session is not an account session, and only `/login` and `/signup` may
+   * establish the second one.
+   */
+  const account = kv.getString(SIGNED_OUT_KEY) ? null : data.user.username ?? null;
+  onAccount?.(account);
 }
 
 /** Deduped: a cold start fires several engines at once and must not race for tokens. */
@@ -149,7 +176,9 @@ async function postSession(path: string, body: unknown, token?: string): Promise
     );
   }
 
-  persistSession(data);
+  // `true`: postSession is only ever /signup and /login — the two endpoints that
+  // are allowed to establish an account session. /device is not one of them.
+  persistSession(data, true);
   return data.user;
 }
 
@@ -225,6 +254,13 @@ export function logOut(): void {
   // the previous account's App User ID on a device someone else may now log into.
   // The next `/device` call re-mints it, unchanged, for the same install.
   kv.remove(USER_KEY);
+  /*
+   * The install id STAYS (see above) — and because signup claimed the install's
+   * row, that id resolves to this account. Without this flag the next `/device`
+   * re-auth came back with the username attached and signed the user straight
+   * back in on the first resume. See persistSession.
+   */
+  kv.set(SIGNED_OUT_KEY, '1');
   onAccount?.(null);
 }
 
@@ -244,6 +280,10 @@ export async function deleteAccount(): Promise<void> {
   kv.remove(TOKEN_KEY);
   kv.remove(INSTALL_KEY);
   kv.remove(USER_KEY);
+  // Not "signed out" — there is nothing left to sign back into. The next
+  // `/device` mints a genuinely fresh anonymous install, and leaving the flag set
+  // would make that new install look permanently logged out of nothing.
+  kv.remove(SIGNED_OUT_KEY);
   onAccount?.(null);
 }
 

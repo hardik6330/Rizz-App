@@ -60,7 +60,9 @@ export default function AccountScreen() {
    * dismissible modal in the frame before the tabs mount. Same pattern as
    * `firstRun` in analyzer.tsx.
    */
-  const [isOnboarding] = useState(() => isLiveApi && useRizzStore.getState().account == null);
+  const [isOnboarding, setIsOnboarding] = useState(
+    () => isLiveApi && useRizzStore.getState().account == null,
+  );
 
   /**
    * Lift the splash `_layout.tsx` is holding, now that this screen has rendered.
@@ -190,9 +192,30 @@ export default function AccountScreen() {
   };
   const doSignOut = () => {
     setConfirmingSignOut(false);
+    /*
+     * No navigation. `logOut()` clears the store's account, which un-guards
+     * `Stack.Protected` in _layout.tsx and removes `(tabs)` — this screen IS
+     * where the router lands, and it is already here.
+     *
+     * It used to call `close()`. That popped to a tab tree being torn down in the
+     * same commit, so the user saw the app flash past on the way to a gate the
+     * router then had to fall back to. The effect below re-arms the gate chrome.
+     */
     logOut();
-    close();
   };
+
+  /**
+   * Sign-out re-arms the mandatory gate.
+   *
+   * `isOnboarding` is frozen at mount so the copy cannot change under someone
+   * mid-signup — but sign-out is exactly the case where it MUST change. Opened
+   * from the Profile Scan row it froze `false`, so after signing out the screen
+   * kept a ✕ that closes to nothing and let Android back walk into an app with no
+   * account. One-way on purpose: false → true only, never back.
+   */
+  useEffect(() => {
+    if (isLiveApi && signedInAs == null) setIsOnboarding(true);
+  }, [signedInAs]);
 
   return (
     <View style={styles.root}>

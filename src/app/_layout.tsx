@@ -273,7 +273,15 @@ export default function RootLayout() {
           */}
           <Stack.Screen
             name="account"
-            options={accountStepDone ? { presentation: 'modal' } : { animation: 'none' }}
+            options={
+              accountStepDone
+                ? { presentation: 'modal' }
+                // gestureEnabled off while it is the gate: signing out from the
+                // modal leaves this screen presented as one, and an iOS
+                // swipe-to-dismiss would drop the user out of the only route that
+                // exists. Android's hardware back is handled in account.tsx.
+                : { animation: 'none', gestureEnabled: false }
+            }
           />
           <Stack.Protected guard={accountStepDone}>
             <Stack.Screen name="(tabs)" />
