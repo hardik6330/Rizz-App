@@ -44,6 +44,17 @@ class OverlayController(private val context: Context) {
   private var closeZone: View? = null
   var onCloseListener: (() -> Unit)? = null
 
+  /**
+   * The window manager refused us — overlay permission revoked mid-session, or an
+   * OEM declining the window type.
+   *
+   * This used to be a `Log.w` and nothing else, which meant the feature died in
+   * complete silence: the user had granted accessibility, the app's toggle still
+   * read ON, and the bubble simply never appeared again with nothing anywhere to
+   * explain it. The service turns this into something the user can act on.
+   */
+  var onShowFailed: ((Exception) -> Unit)? = null
+
   val isShowing: Boolean get() = bubble != null || toneMenu != null || closeZone != null
 
   private fun dp(value: Float): Int = TypedValue.applyDimension(
@@ -111,8 +122,9 @@ class OverlayController(private val context: Context) {
       params = lp
     } catch (e: Exception) {
       // Overlay permission revoked mid-session, or an OEM refusing the window.
-      // Never crash the host app over a bubble.
+      // Never crash the host app over a bubble — but never swallow it either.
       android.util.Log.w(TAG, "overlay add failed", e)
+      onShowFailed?.invoke(e)
     }
   }
 
@@ -145,6 +157,33 @@ class OverlayController(private val context: Context) {
     }
     scanAnim = anim
     anim.start()
+  }
+
+  /**
+   * Pull the bubble back on screen after a rotation.
+   *
+   * `lp.x/y` are absolute pixels chosen against the metrics that were current when
+   * the bubble was added, and FLAG_LAYOUT_NO_LIMITS means the window manager will
+   * happily honour a position that is now off the edge — so rotating a phone with
+   * the bubble on the right of a landscape screen left it entirely outside a
+   * portrait one, with no way to get it back short of killing the service.
+   *
+   * The transient windows go rather than move: the tone menu's position is derived
+   * from the bubble's, and the close zone only exists mid-drag, which a rotation
+   * has already interrupted.
+   */
+  fun clampToScreen() {
+    hideToneMenu()
+    hideCloseZone()
+    val view = bubble ?: return
+    val lp = params ?: return
+    val metrics = context.resources.displayMetrics
+    // Width can read 0 before the first layout pass; fall back to the fixed 56dp.
+    val w = if (view.width > 0) view.width else dp(56f)
+    val h = if (view.height > 0) view.height else dp(56f)
+    lp.x = lp.x.coerceIn(0, (metrics.widthPixels - w).coerceAtLeast(0))
+    lp.y = lp.y.coerceIn(0, (metrics.heightPixels - h).coerceAtLeast(0))
+    runCatching { windowManager.updateViewLayout(view, lp) }
   }
 
   fun hide() {

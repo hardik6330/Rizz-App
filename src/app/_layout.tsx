@@ -6,6 +6,7 @@ import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import {
+  addCaptureListener,
   configureChat,
   consumeChatUsage,
   hasPendingCapture,
@@ -61,6 +62,32 @@ const RizzTheme: typeof DarkTheme = {
 };
 
 export default function RootLayout() {
+  /**
+   * Step 1 of 2: the account. **Mandatory — there is no way past it.**
+   *
+   * Not "first launch": this runs on EVERY launch until an account exists. There
+   * is no skip, no ✕ and no back gesture out of `/account` while it is showing
+   * (see the onboarding branch in that file). Signing up or logging in is the
+   * only exit.
+   *
+   * The trade, stated plainly because it is real: this screen lands before the
+   * user has seen a single result, so every install that will not hand over an
+   * email is lost here rather than at the paywall. What it buys is that an
+   * uninstall no longer resets the free-credit count — logging in returns the
+   * original user row. Watch install → first-analysis conversion; if it falls
+   * hard, the fix is to move this gate after the first free analysis rather than
+   * to soften it into a skippable prompt, which converts nobody and blocks
+   * nobody.
+   *
+   * Gated on `isLiveApi` — with no API configured there is no account to make,
+   * and a wall the user cannot possibly pass is a bricked app.
+   *
+   * Declared FIRST because the capture router below reads it: while the gate is
+   * up there is no `/profile` route to send a capture to.
+   */
+  const account = useRizzStore((s) => s.account);
+  const accountStepDone = !isLiveApi || account != null;
+
   useEffect(() => {
     // Fire-and-forget boot work: RevenueCat + push today's opener to the widget.
     void initPurchases();
@@ -80,12 +107,29 @@ export default function RootLayout() {
   useEffect(() => {
     if (!isSupported) return;
     const route = () => {
-      if (hasPendingCapture()) router.navigate('/profile');
+      /*
+       * `accountStepDone` is load-bearing, not a nicety.
+       *
+       * While the gate is up, `(tabs)` is not declared at all, so `/profile` is
+       * not a route and this navigate is a silent no-op. Re-running when the gate
+       * clears is what delivers a capture taken by a signed-out user: they tap ✨,
+       * land on signup, create an account, and the screenshot they already took is
+       * waiting rather than lost. `hasPendingCapture` no longer consumes, so it
+       * survives every attempt that finds no route to go to.
+       */
+      if (accountStepDone && hasPendingCapture()) router.navigate('/profile');
     };
     route();
     const sub = AppState.addEventListener('change', (s) => s === 'active' && route());
-    return () => sub.remove();
-  }, []);
+    // Fires when a capture lands while we are already running — the case AppState
+    // cannot see, because bringing an already-foreground task forward is not a
+    // state change. See modules/profile-capture addCaptureListener.
+    const capture = addCaptureListener(route);
+    return () => {
+      sub.remove();
+      capture();
+    };
+  }, [accountStepDone]);
 
   /**
    * Keep the native chat bubble's entitlement snapshot in sync with JS.
@@ -121,29 +165,6 @@ export default function RootLayout() {
     });
     return () => sub.remove();
   }, []);
-
-  /**
-   * Step 1 of 2: the account. **Mandatory — there is no way past it.**
-   *
-   * Not "first launch": this runs on EVERY launch until an account exists. There
-   * is no skip, no ✕ and no back gesture out of `/account` while it is showing
-   * (see the onboarding branch in that file). Signing up or logging in is the
-   * only exit.
-   *
-   * The trade, stated plainly because it is real: this screen lands before the
-   * user has seen a single result, so every install that will not hand over an
-   * email is lost here rather than at the paywall. What it buys is that an
-   * uninstall no longer resets the free-credit count — logging in returns the
-   * original user row. Watch install → first-analysis conversion; if it falls
-   * hard, the fix is to move this gate after the first free analysis rather than
-   * to soften it into a skippable prompt, which converts nobody and blocks
-   * nobody.
-   *
-   * Gated on `isLiveApi` — with no API configured there is no account to make,
-   * and a wall the user cannot possibly pass is a bricked app.
-   */
-  const account = useRizzStore((s) => s.account);
-  const accountStepDone = !isLiveApi || account != null;
 
   /*
    * Keep RevenueCat's identity pointed at the signed-in account.

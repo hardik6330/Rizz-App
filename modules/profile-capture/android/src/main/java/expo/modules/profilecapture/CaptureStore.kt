@@ -39,6 +39,18 @@ object CaptureStore {
     pending = capture
   }
 
+  /**
+   * Is one waiting? Does NOT clear it.
+   *
+   * The root layout has to ask this before the Profile Scan tab exists, and it
+   * used to ask by calling `consume()` and parking the result in a JS module
+   * variable. That made "peek" destructive on the native side: the capture only
+   * survived because a JS `let` happened to hold it, so a bundle reload, a JS
+   * crash or an OTA update dropped a screenshot the user had already taken. The
+   * store is the one place it lives now, until somebody actually uses it.
+   */
+  fun peek(): Capture? = pending
+
   /** Take the pending capture, clearing it. Returns null when there is none. */
   @Synchronized
   fun consume(): Capture? {

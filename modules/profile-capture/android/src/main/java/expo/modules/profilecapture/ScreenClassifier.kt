@@ -111,6 +111,21 @@ object ScreenClassifier {
   /** A count like "1,234" / "12.3K" / "1.2m" — the follower/post row. */
   private val COUNT = Regex("^\\d[\\d.,]*[kmKM]?$")
 
+  /**
+   * The same row when the app renders count and label in ONE node: "1,234 posts",
+   * or "1,234\nposts".
+   *
+   * Instagram does exactly this, and it broke the strongest structural signal the
+   * classifier had. `COUNT.matches("1,234\nposts")` is false and
+   * `hasText("posts")` is exact-equality, so a modern profile scored 0 for the
+   * three-count row — leaving a private account (no visible grid) at exactly 0.75,
+   * on the threshold, one id drift away from the bubble silently never appearing.
+   */
+  private val COUNT_LABEL = Regex(
+    "^\\d[\\d.,]*[kmKM]?\\s+(posts?|followers?|following)$",
+    RegexOption.IGNORE_CASE,
+  )
+
   /** Tinder/Bumble/Hinge name line, e.g. "Maya, 26". */
   private val NAME_AGE = Regex("^\\S.*,\\s*\\d{2}$")
 
@@ -120,6 +135,26 @@ object ScreenClassifier {
    * with an edit control either.
    */
   private val OWN_PROFILE_MARKERS = listOf("edit profile", "share profile", "edit_profile")
+
+  /**
+   * Per-app view ids that only appear on the user's OWN profile.
+   *
+   * The text markers above are English and exact-match, so a German user's own
+   * profile read as somebody else's — and the two want opposite reports. The model
+   * is then asked to write openers *about the user themselves*, which it correctly
+   * refuses to do, and the app looks broken. View ids are not localised, so these
+   * carry the detection everywhere the copy does not.
+   *
+   * Instagram was already covered by `edit_profile`; the dating apps had nothing
+   * at all, so their own-profile tab always classified as 'them'.
+   */
+  private val OWN_PROFILE_IDS = mapOf(
+    INSTAGRAM to arrayOf("edit_profile", "profile_action_bar", "self_profile"),
+    TINDER to arrayOf("my_profile", "profile_tab", "edit_profile"),
+    BUMBLE to arrayOf("my_profile", "profile_edit", "own_profile"),
+    HINGE to arrayOf("self_profile", "my_profile", "profile_edit"),
+    FACEBOOK to arrayOf("dating_self_profile", "edit_dating_profile"),
+  )
 
   /**
    * View-id fragments that name a conversation surface across the supported apps.
@@ -132,6 +167,25 @@ object ScreenClassifier {
 
   /** Composer placeholder text, a soft confirm on top of the id + editable field. */
   private val CHAT_TEXT_HINTS = listOf("message", "type a message", "send a message")
+
+  /**
+   * Screens that are NEVER an open conversation, whatever else they score.
+   *
+   * Every profile scorer below opens with a veto; `chatScore` had none, and that
+   * asymmetry was a real hole. A story is vetoed as a profile and then scored as a
+   * chat: its reply box is editable (+0.35), its placeholder says "Send message"
+   * (+0.15) and Instagram's story composer id contains `message_composer` (+0.50)
+   * — a full 1.0, so the bubble appeared over exactly the screen the veto list
+   * exists to keep it off. The DM INBOX did the same thing: an id containing
+   * "messages" plus the inbox search field cleared the threshold, putting the
+   * bubble over a list of other people's conversation previews.
+   *
+   * A list of chats is not a chat. A story is not a chat.
+   */
+  private val CHAT_VETO_IDS = arrayOf(
+    "clips_viewer", "reel_viewer", "reel_feed", "story_viewer", "stories_tray",
+    "inbox", "thread_list", "matches_list", "match_list",
+  )
 
   /**
    * Composer placeholders in the general messengers. These carry the load there,
@@ -188,7 +242,9 @@ object ScreenClassifier {
     }
 
     val own = s.texts.any { t -> OWN_PROFILE_MARKERS.any { t == it } } ||
-      s.viewIds.any { id -> OWN_PROFILE_MARKERS.any { id.contains(it) } }
+      s.viewIds.any { id -> OWN_PROFILE_MARKERS.any { id.contains(it) } } ||
+      // Not localised, unlike the copy above — see OWN_PROFILE_IDS.
+      (OWN_PROFILE_IDS[s.packageName]?.let { s.viewIds.hasId(*it) } ?: false)
     val isProfile = profile >= THRESHOLD
     return Classification(
       isProfile,
@@ -208,6 +264,8 @@ object ScreenClassifier {
    * of scope.
    */
   private fun chatScore(s: ScreenSignals): Double {
+    // Veto first, exactly like every profile scorer. See CHAT_VETO_IDS.
+    if (s.viewIds.hasId(*CHAT_VETO_IDS)) return 0.0
     if (s.packageName == FACEBOOK && !s.viewIds.hasId("dating") && !s.texts.hasText("dating")) {
       return 0.0
     }
@@ -216,7 +274,17 @@ object ScreenClassifier {
     if (s.viewIds.hasId(*CHAT_ID_MARKERS)) score += 0.50
     // Stands in for "the keyboard is right here" — the moment a reply is useful.
     if (s.hasEditable) score += 0.35
-    if (s.texts.any { t -> CHAT_TEXT_HINTS.any { t.startsWith(it) || t.contains(it) } }) score += 0.15
+    /*
+     * Length-bounded, the same way messengerChatScore already bounds its own.
+     *
+     * This was a bare `contains("message")`, which matches "Send message",
+     * "3 new messages", "Message requests" and any inbox preview containing the
+     * word — so it fired on half of Instagram. A composer placeholder is a couple
+     * of words; anything longer is prose about messages, not a place to type one.
+     */
+    if (s.texts.any { t ->
+        t.length <= MAX_PLACEHOLDER_LEN && CHAT_TEXT_HINTS.any { t == it || t.startsWith(it) }
+      }) score += 0.15
     return score
   }
 
@@ -244,6 +312,19 @@ object ScreenClassifier {
     return if (placeholder || threadId) 0.85 else 0.0
   }
 
+  /**
+   * Is the posts/followers/following row on screen, in either rendering?
+   *
+   * Newlines are collapsed first: `collect()` trims each node but keeps the
+   * internal newline in "1,234\nposts", which is how the composite form arrives.
+   */
+  private fun countRow(texts: List<String>): Boolean {
+    val bare = texts.count { COUNT.matches(it) } >= 3 &&
+      texts.hasText("followers", "following", "posts")
+    val composite = texts.count { COUNT_LABEL.matches(it.replace('\n', ' ').trim()) } >= 2
+    return bare || composite
+  }
+
   private fun List<String>.hasId(vararg fragments: String) =
     any { id -> fragments.any { id.contains(it) } }
 
@@ -259,10 +340,10 @@ object ScreenClassifier {
     var score = 0.0
     if (s.viewIds.hasId("profile_header", "row_profile_header")) score += 0.30
     // The three-count row (posts / followers / following) is the strongest
-    // structural tell that survives most redesigns.
-    if (s.texts.count { COUNT.matches(it) } >= 3 &&
-      s.texts.hasText("followers", "following", "posts")
-    ) score += 0.25
+    // structural tell that survives most redesigns. Accepted in either shape —
+    // three bare numbers beside their labels, or two composite "1,234 posts"
+    // nodes. Two, not three, because a private account hides the post count.
+    if (countRow(s.texts)) score += 0.25
     if (s.texts.hasText("follow", "following", "message", "edit profile")) score += 0.20
     if (s.viewIds.hasId("username", "profile_name")) score += 0.15
     if (s.viewIds.hasId("profile_tab", "highlights_tray")) score += 0.10
@@ -293,10 +374,19 @@ object ScreenClassifier {
     var score = 0.0
     if (s.viewIds.hasId("profile", "subject_card")) score += 0.30
     if (s.texts.any { NAME_AGE.matches(it) }) score += 0.20
-    // Hinge profiles are prompt-driven; the prompt headings are distinctive.
-    if (s.texts.hasText("my simple pleasures", "a shower thought i recently had", "dating me is like")) {
-      score += 0.30
-    }
+    /*
+     * Structure, not prompt copy.
+     *
+     * This used to award 0.30 for three hardcoded English prompt headings ("my
+     * simple pleasures", …). Hinge rotates its prompt library continuously and
+     * localises it, so that bonus decayed to zero over weeks and vanished
+     * instantly outside en-US — leaving a real Hinge profile at 0.50, below the
+     * 0.75 threshold, with the bubble simply never appearing. What does not rotate
+     * is the shape of the screen: every prompt card carries a like/comment
+     * control, and the vitals row is always there.
+     */
+    if (s.viewIds.hasId("prompt", "like_button", "vitals", "basics")) score += 0.25
+    if (s.texts.hasText("send like", "add a comment")) score += 0.10
     return score
   }
 

@@ -12,4 +12,5 @@ string rizz_chat_no_key
 string rizz_chat_out_of_credits
 string rizz_chat_reading
 string rizz_chat_unreadable
+string rizz_overlay_denied
 xml rizz_accessibility_config

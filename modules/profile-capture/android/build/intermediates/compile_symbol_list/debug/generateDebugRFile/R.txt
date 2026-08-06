@@ -10,4 +10,5 @@ int string rizz_chat_no_key 0x0
 int string rizz_chat_out_of_credits 0x0
 int string rizz_chat_reading 0x0
 int string rizz_chat_unreadable 0x0
+int string rizz_overlay_denied 0x0
 int xml rizz_accessibility_config 0x0

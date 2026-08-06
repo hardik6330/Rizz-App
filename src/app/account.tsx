@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleIconButton } from '@/components/CircleIconButton';
 import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
-import { AuthError, deleteAccount, isLiveApi, logIn, logOut, signUp } from '@/state/session';
+import { AuthError, isLiveApi, logIn, logOut, signUp } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing, type as typography } from '@/theme/tokens';
@@ -175,74 +175,24 @@ export default function AccountScreen() {
   }, [busy, email, isOnboarding, isSignup, password, toast, username]);
 
   /**
-   * The two destructive actions, in the app's own dark sheet rather than
-   * `Alert.alert`.
+   * Confirm sign-out in the app's own dark sheet, not `Alert.alert`.
    *
    * The native dialog renders in the platform's light-ish grey with ALL-CAPS
    * buttons, so the one screen where the user is about to do something they
-   * cannot undo is the one screen that stops looking like this app.
-   *
-   * One dialog driven by `confirming`, not two nearly-identical ones: the second
-   * copy is where the ✕ stops working, or the busy state is forgotten on the
-   * path that actually makes a network call. Still local rather than a shared
-   * `<Confirm>` — these are the only two callers in the app.
+   * cannot undo is the one screen that stops looking like this app. Nothing else
+   * in the app raises an Alert, so this stays a local component rather than a
+   * shared `<Confirm>` nobody else would call.
    */
-  const [confirming, setConfirming] = useState<'signout' | 'delete' | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
+  const confirmSignOut = () => {
+    haptic.light();
+    setConfirmingSignOut(true);
+  };
   const doSignOut = () => {
-    setConfirming(null);
+    setConfirmingSignOut(false);
     logOut();
     close();
   };
-
-  /**
-   * Irreversible, and required to ship.
-   *
-   * App Store Review 5.1.1(v) requires in-app deletion for any app that lets a
-   * user create an account, and Play requires a deletion path too. Signup is
-   * mandatory here, so every install creates one — shipping without this is not
-   * a risk, it is a rejection.
-   *
-   * The server does the whole job in one statement because the schema holds no
-   * images, transcripts or saved items; the user row IS the user's data.
-   */
-  const doDelete = async () => {
-    if (deleting) return;
-    setDeleting(true);
-    try {
-      await deleteAccount();
-      haptic.success();
-      setConfirming(null);
-      close();
-    } catch (err) {
-      haptic.warning();
-      setConfirming(null);
-      // Surfaced on the screen behind, not swallowed — a delete that silently
-      // did nothing is how somebody submits a data request instead.
-      setError(err instanceof AuthError ? err.message : 'Could not delete the account — try again');
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  /** Copy and behaviour for whichever confirmation is open. */
-  const dialog =
-    confirming === 'delete'
-      ? {
-          title: 'Delete account?',
-          // Names every consequence. "This cannot be undone" on its own does not
-          // tell somebody that their subscription is not what is being cancelled.
-          body: 'This erases your account, your credits and your Pro status permanently. It cannot be undone, and it does not cancel a subscription — do that in the App Store or Play Store.',
-          cta: 'Delete',
-          onConfirm: doDelete,
-        }
-      : {
-          title: 'Sign out?',
-          body: "You'll need your email and password to get back in. There's no password reset yet.",
-          cta: 'Sign out',
-          onConfirm: doSignOut,
-        };
 
   return (
     <View style={styles.root}>
@@ -275,17 +225,7 @@ export default function AccountScreen() {
         </View>
 
         {signedInAs != null ? (
-          <SignedIn
-            username={signedInAs}
-            onSignOut={() => {
-              haptic.light();
-              setConfirming('signout');
-            }}
-            onDelete={() => {
-              haptic.warning();
-              setConfirming('delete');
-            }}
-          />
+          <SignedIn username={signedInAs} onSignOut={confirmSignOut} />
         ) : !isLiveApi ? (
           <View style={styles.notice}>
             <Text style={styles.noticeText}>
@@ -444,43 +384,40 @@ export default function AccountScreen() {
       {/* Dismissible by the scrim and by Android back — a confirm the hardware
           back button ignores is the one people hit twice and sign out anyway. */}
       <Modal
-        visible={confirming != null}
+        visible={confirmingSignOut}
         transparent
         animationType="fade"
         statusBarTranslucent
-        // Not dismissible mid-delete: the request is already in flight and the
-        // account may be gone by the time the sheet closes.
-        onRequestClose={() => !deleting && setConfirming(null)}
+        onRequestClose={() => setConfirmingSignOut(false)}
       >
         <Pressable
           style={styles.scrim}
           accessibilityLabel="Dismiss"
-          onPress={() => !deleting && setConfirming(null)}
+          onPress={() => setConfirmingSignOut(false)}
         >
           {/* Swallows taps so a press inside the card does not dismiss it. */}
           <Pressable style={styles.dialog} onPress={() => {}}>
-            <Text style={styles.dialogTitle}>{dialog.title}</Text>
-            <Text style={styles.dialogBody}>{dialog.body}</Text>
+            <Text style={styles.dialogTitle}>Sign out?</Text>
+            <Text style={styles.dialogBody}>
+              {/* Load-bearing: with no reset flow, signing out without knowing the
+                  password is how an account is lost for good. */}
+              You&rsquo;ll need your email and password to get back in. There&rsquo;s no password
+              reset yet.
+            </Text>
             <View style={styles.dialogActions}>
               <HapticPressable
-                onPress={() => setConfirming(null)}
-                disabled={deleting}
+                onPress={() => setConfirmingSignOut(false)}
                 accessibilityLabel="Cancel"
-                style={[styles.dialogGhost, deleting && styles.dialogDisabled]}
+                style={styles.dialogGhost}
               >
                 <Text style={styles.dialogGhostText}>Cancel</Text>
               </HapticPressable>
               <HapticPressable
-                onPress={dialog.onConfirm}
-                disabled={deleting}
-                accessibilityLabel={`Confirm ${dialog.cta}`}
+                onPress={doSignOut}
+                accessibilityLabel="Confirm sign out"
                 style={styles.dialogDanger}
               >
-                {deleting ? (
-                  <ActivityIndicator color={palette.danger} size="small" />
-                ) : (
-                  <Text style={styles.dialogDangerText}>{dialog.cta}</Text>
-                )}
+                <Text style={styles.dialogDangerText}>Sign out</Text>
               </HapticPressable>
             </View>
           </Pressable>
@@ -492,27 +429,21 @@ export default function AccountScreen() {
 }
 
 /**
- * ⚠️ The delete row is REQUIRED. Do not remove it again.
+ * ⚠️ There is no in-app delete here, by request. This is a KNOWN store risk.
  *
  * App Store Review 5.1.1(v) requires an app that lets a user CREATE an account
  * to let them delete it from inside the app, and Play requires a deletion path
  * too. Signup is mandatory in this product, so every install creates an account
- * — which makes its absence a certain rejection rather than a risk. It was
- * pulled once and `DELETE /v1/user/me` sat here working with no caller.
+ * — which makes this a certain rejection rather than a risk, unless a web
+ * deletion page is linked from somewhere the reviewer can find it.
  *
- * Styled quieter than Sign out, not louder: it is the rarer action and the
- * unrecoverable one, so it should take deliberation to reach, not attract the
- * thumb. The confirmation is where the weight belongs.
+ * The server side is intact and has no caller: `DELETE /v1/user/me` in
+ * routes/user.ts, and `deleteAccount()` in state/session.ts. Restoring the
+ * button is a row here plus a branch in the confirm dialog above — a few lines,
+ * not a feature. Removed twice now; if it comes back a third time, link the web
+ * page instead so this stops being a decision.
  */
-function SignedIn({
-  username,
-  onSignOut,
-  onDelete,
-}: {
-  username: string;
-  onSignOut: () => void;
-  onDelete: () => void;
-}) {
+function SignedIn({ username, onSignOut }: { username: string; onSignOut: () => void }) {
   return (
     <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.signedIn}>
       <View style={styles.avatar}>
@@ -529,15 +460,6 @@ function SignedIn({
       <HapticPressable onPress={onSignOut} accessibilityLabel="Sign out" style={styles.secondary}>
         <Ionicons name="log-out-outline" size={16} color={palette.textSecondary} />
         <Text style={styles.secondaryText}>Sign out</Text>
-      </HapticPressable>
-
-      <HapticPressable
-        onPress={onDelete}
-        accessibilityLabel="Delete account"
-        accessibilityHint="Permanently erases your account, credits and Pro status"
-        style={styles.destructive}
-      >
-        <Text style={styles.destructiveText}>Delete account</Text>
       </HapticPressable>
     </Animated.View>
   );
@@ -704,17 +626,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
   },
   dialogGhostText: { fontSize: 14.5, fontWeight: '700', color: palette.textSecondary },
-  dialogDisabled: { opacity: 0.4 },
-
-  // Text only, no fill and no border. Reachable, but it does not compete with
-  // Sign out for the thumb — the confirmation carries the weight, not this.
-  destructive: {
-    alignSelf: 'center',
-    marginTop: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-  },
-  destructiveText: { fontSize: 13.5, fontWeight: '600', color: palette.danger },
   dialogDanger: {
     paddingVertical: 11,
     paddingHorizontal: spacing.lg,

@@ -1,15 +1,19 @@
 package expo.modules.profilecapture
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PersistableBundle
 import android.util.Base64
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -37,6 +41,7 @@ class RizzAccessibilityService : AccessibilityService() {
   private var overlay: OverlayController? = null
   private var lastSignature: String? = null
   private var lastClassifiedAt = 0L
+  private var lastOverlayWarnAt = 0L
 
   /**
    * Guards against a second tap while a capture is in flight. MUST be @Volatile:
@@ -73,6 +78,22 @@ class RizzAccessibilityService : AccessibilityService() {
         lastSignature = null
         toast(getString(R.string.rizz_bubble_disabled))
       }
+      /*
+       * Overlay refused. Tell the user once, then stop trying.
+       *
+       * Throttled because the refusal repeats on every classified event — without
+       * the guard, revoking the permission would fire a toast every 400ms over
+       * whatever app they are using. `isWatching()` already reports false to the
+       * app's own UI in this state; this is the in-context half, for the user who
+       * is looking at Instagram wondering where the bubble went.
+       */
+      onShowFailed = {
+        val now = System.currentTimeMillis()
+        if (now - lastOverlayWarnAt > OVERLAY_WARN_INTERVAL_MS) {
+          lastOverlayWarnAt = now
+          toast(getString(R.string.rizz_overlay_denied))
+        }
+      }
     }
     // Restore the kill switch across process death. When the user swipes the app
     // out of recents, this whole process (and the static ENABLED) dies; the system
@@ -82,18 +103,113 @@ class RizzAccessibilityService : AccessibilityService() {
     RUNNING = true
     RizzAnalytics.serviceConnected(this)
     Log.i(TAG, "service connected (enabled=$ENABLED)")
+
+    /*
+     * Re-evaluate the CURRENT window, rather than waiting for an event.
+     *
+     * This is the fix for "the bubble disappears when I close the app". Swiping
+     * RizzCoach out of recents kills this process — the service lives in it — and
+     * the system rebinds us in a fresh one. ENABLED is restored above, but the
+     * bubble was only ever created from an accessibility event, and a user sitting
+     * still on a profile generates none: the window has not changed, so no
+     * WINDOW_STATE_CHANGED, and the content is static, so no CONTENT_CHANGED. The
+     * bubble stayed gone until they happened to scroll.
+     *
+     * Delayed because rootInActiveWindow is routinely null for the first few
+     * hundred milliseconds after a bind — asking immediately just returns nothing.
+     */
+    main.postDelayed({ reclassifyCurrentWindow("connect") }, RECONNECT_SETTLE_MS)
+
+    /*
+     * The other moment we are looking at a screen we were never told about: the
+     * user unlocks the phone onto whatever was last open. No event fires for a
+     * window that was already there.
+     */
+    runCatching {
+      val filter = IntentFilter().apply {
+        addAction(Intent.ACTION_USER_PRESENT)
+        addAction(Intent.ACTION_SCREEN_OFF)
+      }
+      // Both are protected system broadcasts, so API 34's export rule technically
+      // exempts them — but the exemption is easy to lose track of and a
+      // SecurityException here would take the whole service down. Be explicit.
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+      } else {
+        registerReceiver(screenReceiver, filter)
+      }
+    }.onFailure { Log.w(TAG, "receiver register failed", it) }
+  }
+
+  /**
+   * Unlock → re-check the current screen. Screen off → drop the bubble, so it is
+   * never sitting on the lock screen waiting to be tapped by someone else.
+   */
+  private val screenReceiver = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      when (intent?.action) {
+        Intent.ACTION_USER_PRESENT -> reclassifyCurrentWindow("unlock")
+        Intent.ACTION_SCREEN_OFF -> hideBubble()
+      }
+    }
   }
 
   override fun onDestroy() {
     RUNNING = false
-    main.post { overlay?.hide() }
+    /*
+     * Synchronous, and BEFORE the field is cleared.
+     *
+     * This used to be `main.post { overlay?.hide() }` followed immediately by
+     * `overlay = null`. onDestroy already runs on the main thread, so the post was
+     * scheduled for after the current message — by which time the field was null
+     * and `?.hide()` was a no-op. removeView() was never called, so a service
+     * stopped without the process dying (the user switching it off in Settings)
+     * left an orphan bubble on screen wired to a destroyed service.
+     */
+    overlay?.hide()
     overlay = null
+    runCatching { unregisterReceiver(screenReceiver) }
     chatExecutor.shutdownNow()
     super.onDestroy()
   }
 
+  /**
+   * The body of [onAccessibilityEvent] without the event — for the moments we have
+   * to ask rather than be told. Safe to call from any of them; it is the same
+   * decision, made against `rootInActiveWindow` instead of an event.
+   */
+  private fun reclassifyCurrentWindow(reason: String) {
+    if (!ENABLED) return
+    val root = rootInActiveWindow ?: return
+    val pkg = root.packageName?.toString() ?: return
+    if (pkg !in ScreenClassifier.SUPPORTED) {
+      hideBubble()
+      return
+    }
+    val signals = try {
+      collect(root, pkg)
+    } catch (e: Exception) {
+      Log.w(TAG, "tree walk failed ($reason)", e)
+      return
+    }
+    val result = ScreenClassifier.classify(signals)
+    Log.i(TAG, "reclassify($reason) → ${result.kind}")
+    if (result.kind != ScreenKind.NONE) showBubble(pkg, signals, result) else hideBubble()
+  }
+
   override fun onInterrupt() {
     main.post { overlay?.hide() }
+  }
+
+  /**
+   * Rotation. The bubble's position is absolute pixels against the old metrics, so
+   * without this it can end up entirely off the new screen — see clampToScreen.
+   */
+  override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+    super.onConfigurationChanged(newConfig)
+    // Delayed: displayMetrics still report the OLD orientation for a frame or two
+    // after this fires, so clamping immediately clamps against the wrong screen.
+    main.postDelayed({ overlay?.clampToScreen() }, ROTATION_SETTLE_MS)
   }
 
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -185,6 +301,9 @@ class RizzAccessibilityService : AccessibilityService() {
     // After the signature guard, so a scroll that re-fires content-changed on the
     // same screen does not inflate the impression count.
     RizzAnalytics.bubbleShown(this, result.kind)
+    // Restart the leave-detection poll alongside the bubble it guards.
+    main.removeCallbacks(presenceCheck)
+    main.postDelayed(presenceCheck, PRESENCE_POLL_MS)
     main.post {
       overlay?.show(label) {
         RizzAnalytics.bubbleTapped(this, result.kind)
@@ -202,7 +321,36 @@ class RizzAccessibilityService : AccessibilityService() {
   private fun hideBubble() {
     if (overlay?.isShowing != true) return
     lastSignature = null
+    main.removeCallbacks(presenceCheck)
     main.post { overlay?.hide() }
+  }
+
+  /**
+   * Poll the foreground package while the bubble is up, and drop it the moment the
+   * user leaves a supported app.
+   *
+   * `packageNames` in the accessibility config is an allowlist, so leaving
+   * Instagram for the launcher delivers NO event at all — the `pkg !in SUPPORTED`
+   * branch in onAccessibilityEvent can essentially never run. The bubble simply
+   * stayed, floating over the home screen and over unrelated apps, which reads as
+   * "this thing is watching everything I do" even though the service is genuinely
+   * blind outside the allowlist.
+   *
+   * Widening `packageNames` would fix the detection and wreck both the battery
+   * story and the Play-review story. Polling only while the bubble is visible
+   * costs nothing when it is not, which is almost always.
+   */
+  private val presenceCheck = object : Runnable {
+    override fun run() {
+      if (overlay?.isShowing != true) return
+      val pkg = rootInActiveWindow?.packageName?.toString()
+      if (pkg != null && pkg !in ScreenClassifier.SUPPORTED) {
+        Log.i(TAG, "left supported app ($pkg) — hiding")
+        hideBubble()
+        return
+      }
+      main.postDelayed(this, PRESENCE_POLL_MS)
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -279,6 +427,10 @@ class RizzAccessibilityService : AccessibilityService() {
               )
             )
             Log.i(TAG, "captured ${base64.length} b64 chars — launching app")
+            // Push BEFORE the launch: if JS is already alive the event is the only
+            // signal it gets, because bringing an already-foreground task forward
+            // fires no AppState change for the pull to hang off.
+            ProfileCaptureModule.notifyCapture()
             launchApp()
           } catch (e: Exception) {
             Log.w(TAG, "capture failed", e)
@@ -318,7 +470,23 @@ class RizzAccessibilityService : AccessibilityService() {
 
   private fun launchApp() {
     val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+      /*
+       * REORDER_TO_FRONT alongside SINGLE_TOP.
+       *
+       * SINGLE_TOP alone only reuses the activity when it is already at the top of
+       * its task. If the app is open on a modal — the paywall, the account gate —
+       * the task came forward but the launch was otherwise inert, and since JS was
+       * already 'active' the resume pull never ran either. The tap did nothing at
+       * all. The event above is what actually delivers the capture now; this flag
+       * makes sure the user is at least looking at our app when it arrives.
+       */
+      addFlags(
+        Intent.FLAG_ACTIVITY_NEW_TASK or
+          Intent.FLAG_ACTIVITY_SINGLE_TOP or
+          Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+      )
+      // Kept for a native reader that does not exist yet — nothing consumes this.
+      // The capture is delivered by CaptureStore + the onCapture event, never here.
       putExtra(EXTRA_FROM_CAPTURE, true)
     }
     if (intent == null) {
@@ -530,7 +698,23 @@ class RizzAccessibilityService : AccessibilityService() {
 
   private fun copyToClipboard(text: String) {
     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("RizzCoach reply", text))
+    val clip = ClipData.newPlainText("RizzCoach reply", text)
+    /*
+     * Marked sensitive so Android 13+ does not render the reply in its clipboard
+     * preview toast.
+     *
+     * That preview draws over whatever app the user is in — including, by
+     * definition here, a conversation somebody else may be looking at over their
+     * shoulder. It is also the one place a line derived from a private thread
+     * would appear in system UI. Our own "copied" toast is the confirmation; the
+     * content itself does not need repeating.
+     */
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      clip.description.extras = PersistableBundle().apply {
+        putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+      }
+    }
+    clipboard.setPrimaryClip(clip)
   }
 
   private fun toast(message: String) {
@@ -540,6 +724,25 @@ class RizzAccessibilityService : AccessibilityService() {
   companion object {
     private const val TAG = "RizzA11y"
     private const val DEBOUNCE_MS = 400L
+
+    /**
+     * Grace before asking `rootInActiveWindow` after a bind or an unlock. It is
+     * routinely null immediately after either, and a null read is indistinguishable
+     * from "nothing to show" — so asking too early silently does nothing.
+     */
+    private const val RECONNECT_SETTLE_MS = 400L
+
+    /** displayMetrics lag the rotation by a frame or two. See onConfigurationChanged. */
+    private const val ROTATION_SETTLE_MS = 250L
+
+    /**
+     * How often to check we are still in a supported app WHILE the bubble is up.
+     * Runs only for as long as the bubble exists — see [presenceCheck].
+     */
+    private const val PRESENCE_POLL_MS = 1500L
+
+    /** Don't toast the overlay refusal more than this often. */
+    private const val OVERLAY_WARN_INTERVAL_MS = 60_000L
     private const val MAX_NODES = 400
     private const val MAX_DEPTH = 25
     private const val MAX_EDGE = 1280

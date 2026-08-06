@@ -17,6 +17,12 @@
     bubble simply never returns and the feature looks broken.
   -->
   <string name="rizz_bubble_disabled">Bubble turned off — re-enable it in RizzCoach</string>
+  <!--
+    The window manager refused the overlay. Names the permission, because "Display
+    over other apps" is what the user has to go and find, and says where — this
+    fires while they are inside somebody else's app, not ours.
+  -->
+  <string name="rizz_overlay_denied">RizzCoach needs \"Display over other apps\" — turn it on in the app</string>
 
   <!-- Inline chat-reply toasts. Kept short — they flash over another app. -->
   <string name="rizz_chat_reading">Reading the chat…</string>

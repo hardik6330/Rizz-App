@@ -12,4 +12,5 @@
     <string name="rizz_chat_out_of_credits">Out of free replies — open RizzCoach to unlock</string>
     <string name="rizz_chat_reading">Reading the chat…</string>
     <string name="rizz_chat_unreadable">Couldn\'t read the conversation</string>
+    <string name="rizz_overlay_denied">RizzCoach needs \"Display over other apps\" — turn it on in the app</string>
 </resources>

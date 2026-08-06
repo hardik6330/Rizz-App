@@ -24,7 +24,12 @@ interface NativeCapture {
   isOwnProfile: boolean;
 }
 
-declare class ProfileCaptureNativeModule extends NativeModule {
+type CaptureEvents = {
+  /** A capture landed while JS was alive. Payload-free: pull with `consumePendingCapture`. */
+  onCapture: () => void;
+};
+
+declare class ProfileCaptureNativeModule extends NativeModule<CaptureEvents> {
   isAccessibilityEnabled(): boolean;
   canDrawOverlays(): boolean;
   isWatching(): boolean;
@@ -32,6 +37,8 @@ declare class ProfileCaptureNativeModule extends NativeModule {
   setEnabled(enabled: boolean): boolean;
   openAccessibilitySettings(): void;
   openOverlaySettings(): void;
+  diagnose(): Diagnosis;
+  hasPendingCapture(): boolean;
   consumePendingCapture(): NativeCapture | null;
   clearPendingCapture(): void;
   configureChat(apiUrl: string, installId: string, isPro: boolean, freeRemaining: number): void;
@@ -74,21 +81,43 @@ export function isEnabled(): boolean {
   return native?.isEnabled() ?? false;
 }
 
+/** The four bits behind `isWatching`, separately. See `serviceKilled` below. */
+export interface Diagnosis {
+  /** Granted in Settings → Accessibility. */
+  accessibility: boolean;
+  /** Allowed to draw over other apps. */
+  overlay: boolean;
+  /** The in-app kill switch. */
+  enabled: boolean;
+  /** The system currently has our service bound. */
+  running: boolean;
+}
+
+export function diagnose(): Diagnosis {
+  return (
+    native?.diagnose() ?? { accessibility: false, overlay: false, enabled: false, running: false }
+  );
+}
+
+/**
+ * Granted in Settings, but no service bound — the OS killed us and did not
+ * rebind.
+ *
+ * This is what MIUI, ColorOS and FuntouchOS do when the app is swiped out of
+ * recents, and it is the single most common way this feature dies in the field.
+ * It is NOT recoverable from inside the app: only toggling the service off and on
+ * in Settings brings it back, so it needs its own copy rather than the generic
+ * "turn the analyzer on" prompt, which points at a switch that is already on.
+ */
+export function serviceKilled(): boolean {
+  const d = diagnose();
+  return d.accessibility && d.enabled && !d.running;
+}
+
 /** The in-app kill switch. Returns the resulting state. */
 export function setEnabled(enabled: boolean): boolean {
   return native?.setEnabled(enabled) ?? false;
 }
-
-/**
- * JS-side holder for a capture that has been pulled off the native store but not
- * yet handed to a screen.
- *
- * The native read is destructive (it clears CaptureStore), and the root layout
- * has to ask "is one waiting?" BEFORE the Profile Scan tab exists — the app lands
- * on the Lab tab, so without this the root's peek would consume the capture and
- * the screen that actually renders it would find nothing.
- */
-let cached: ProfileCapture | null = null;
 
 function readNative(): ProfileCapture | null {
   const capture = native?.consumePendingCapture();
@@ -105,26 +134,48 @@ function readNative(): ProfileCapture | null {
   };
 }
 
-/** Is a capture waiting? Non-destructive — safe to call from the root layout. */
+/**
+ * Is a capture waiting? Genuinely non-destructive — it stays in the native store.
+ *
+ * This used to consume the capture and park it in a JS module variable, which
+ * made every caller a taker whether it wanted to be or not. The root layout asks
+ * this before the Profile Scan tab exists, so the capture spent that window
+ * living in a `let` — and a bundle reload, a JS crash or an OTA update threw away
+ * a screenshot the user had already taken and could not get back without walking
+ * to the other app and tapping again. One owner: the native store, until a screen
+ * actually takes it.
+ */
 export function hasPendingCapture(): boolean {
-  if (!cached) cached = readNative();
-  return cached != null;
+  return native?.hasPendingCapture() ?? false;
 }
 
 /**
- * Take the capture the bubble produced, clearing it. Call on mount and on resume.
+ * Take the capture the bubble produced, clearing it. Call on mount, on resume and
+ * on focus.
  *
- * Pull rather than push: the service runs when the React context may not exist,
- * so there is often nothing to push an event to.
+ * Pull rather than push was the original design, because the service runs when
+ * the React context may not exist. That is still true and still the primary path
+ * — `addCaptureListener` below is the second half, for the case where JS IS alive
+ * and therefore never gets a resume to hang the pull off.
  */
 export function consumePendingCapture(): ProfileCapture | null {
-  const capture = cached ?? readNative();
-  cached = null;
-  return capture;
+  return readNative();
 }
 
 export function clearPendingCapture(): void {
   native?.clearPendingCapture();
+}
+
+/**
+ * Fires when a capture lands while this JS context is running.
+ *
+ * Covers the one case the resume pull cannot: the app is already foreground on a
+ * modal, the service brings the task forward, and AppState never leaves 'active'
+ * — so nothing tells JS to look. Returns an unsubscribe, or a no-op off Android.
+ */
+export function addCaptureListener(onCapture: () => void): () => void {
+  const sub = native?.addListener('onCapture', onCapture);
+  return () => sub?.remove();
 }
 
 // ---------------------------------------------------------------------------

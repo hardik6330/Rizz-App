@@ -202,6 +202,133 @@ class ScreenClassifierTest {
   }
 
   @Test
+  fun `the count row is recognised when count and label share one node`() {
+    // Instagram renders "1,234\nposts" as a single node, which defeated both the
+    // COUNT regex and the exact-match label check — so the strongest structural
+    // signal scored zero on a modern profile.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("profile_header"),
+        texts = listOf("142\nposts", "1,234 followers", "384 following", "follow"),
+      )
+    )
+    assertTrue("composite count nodes still score the row", r.isProfile)
+  }
+
+  @Test
+  fun `a private profile with no post count still clears the threshold`() {
+    // Two composite nodes, not three: a private account hides the grid and its
+    // count. This case used to land exactly ON 0.75, one id drift from silence.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("profile_header", "username"),
+        texts = listOf("1,234 followers", "384 following", "follow"),
+      )
+    )
+    assertTrue(r.isProfile)
+  }
+
+  @Test
+  fun `hinge is detected structurally, without any prompt copy`() {
+    // The old scorer needed one of three hardcoded English prompt headings. Hinge
+    // rotates its prompt library and localises it, so that bonus decayed to zero
+    // and Hinge stopped being detected at all outside en-US.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.HINGE,
+        ids = listOf("subject_card", "prompt_container", "like_button"),
+        texts = listOf("maya, 26"),
+      )
+    )
+    assertTrue("structure, not copy", r.isProfile)
+    assertEquals(ScreenKind.PROFILE, r.kind)
+  }
+
+  @Test
+  fun `a tinder own-profile tab is recognised without english copy`() {
+    // No "edit profile" string anywhere — a localised build has none. The dating
+    // apps previously had no own-profile ids at all, so this always read as
+    // someone else's profile and the model was asked to write openers about the
+    // user themselves.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.TINDER,
+        ids = listOf("my_profile_container", "profile_name_age", "user_profile"),
+        texts = listOf("maya, 26"),
+      )
+    )
+    assertTrue(r.isProfile)
+    assertTrue("own profile → 'self' mode, not 'them'", r.isOwnProfile)
+  }
+
+  @Test
+  fun `an instagram story is never a chat, however repliable it looks`() {
+    /*
+     * The regression this locks. Every profile scorer vetoed `story_viewer`, but
+     * chatScore had no veto at all — so a story scored a full 1.0 as a chat: the
+     * reply box is editable (0.35), its placeholder is "Send message" (0.15), and
+     * the composer id contains `message_composer` (0.50). The bubble appeared over
+     * exactly the screen the veto list exists to keep it off.
+     */
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("story_viewer_container", "message_composer_edit_text"),
+        texts = listOf("send message"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.NONE, r.kind)
+  }
+
+  @Test
+  fun `an instagram dm inbox with a search field is never a chat`() {
+    // Same shape, different screen: an inbox carries chat ids AND an editable
+    // search box, which cleared the threshold and put the bubble over a list of
+    // other people's conversation previews.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("direct_inbox_recycler", "search_edit_text"),
+        texts = listOf("search"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.NONE, r.kind)
+  }
+
+  @Test
+  fun `a reel with its comment sheet open is never a chat`() {
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("clips_viewer_view_pager", "message_composer_edit_text"),
+        texts = listOf("message"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.NONE, r.kind)
+  }
+
+  @Test
+  fun `a sentence containing the word message is not a composer placeholder`() {
+    // The text hint was a bare contains("message"), which matched "Send message",
+    // "3 new messages" and any preview row mentioning one. Length-bounded now, the
+    // same way the messenger scorer already bounded its own.
+    val r = ScreenClassifier.classify(
+      signals(
+        ScreenClassifier.INSTAGRAM,
+        ids = listOf("feed_recycler"),
+        texts = listOf("tap here to message maya about the concert"),
+        hasEditable = true,
+      )
+    )
+    assertEquals(ScreenKind.NONE, r.kind)
+  }
+
+  @Test
   fun `plain facebook messenger is out of scope for chat`() {
     val r = ScreenClassifier.classify(
       signals(

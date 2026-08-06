@@ -34,6 +34,21 @@ class ProfileCaptureModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ProfileCapture")
 
+    /**
+     * Fired when the service stashes a capture AND a React context exists.
+     *
+     * The pull-on-resume path cannot cover every case: `launchApp()` uses
+     * SINGLE_TOP, so when the app is already foreground — sitting on the paywall,
+     * or the account gate — bringing the task forward changes nothing about
+     * AppState, no 'active' fires, and the pull never runs. The user taps ✨ and
+     * watches the app do nothing. This is the push half; the pull stays for the
+     * cold-start case, where there is no listener to fire at.
+     */
+    Events(EVENT_CAPTURE)
+
+    OnCreate { instance = this@ProfileCaptureModule }
+    OnDestroy { instance = null }
+
     /** Has the user enabled our service in Settings → Accessibility? */
     Function("isAccessibilityEnabled") { isAccessibilityEnabled(context) }
 
@@ -61,6 +76,28 @@ class ProfileCaptureModule : Module() {
 
     Function("isEnabled") { RizzAccessibilityService.ENABLED }
 
+    /**
+     * The four bits behind `isWatching`, separately — so the app can tell WHY it
+     * is not watching.
+     *
+     * `isWatching()` collapses them into one boolean, which cannot distinguish
+     * "the user turned it off" from "the OS killed our process and never rebound
+     * the service". The second is what MIUI, ColorOS and FuntouchOS do on swipe
+     * away, and it is unrecoverable without the user going back into Settings —
+     * so it needs different copy, not the same generic prompt.
+     *
+     * `accessibility && !running` is the killed case: granted in Settings, but no
+     * bound service to show for it.
+     */
+    Function("diagnose") {
+      mapOf(
+        "accessibility" to isAccessibilityEnabled(context),
+        "overlay" to Settings.canDrawOverlays(context),
+        "enabled" to RizzAccessibilityService.ENABLED,
+        "running" to RizzAccessibilityService.RUNNING,
+      )
+    }
+
     Function("openAccessibilitySettings") {
       context.startActivity(
         Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -76,6 +113,9 @@ class ProfileCaptureModule : Module() {
         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       )
     }
+
+    /** Is a capture waiting? Non-destructive — the store keeps it. */
+    Function("hasPendingCapture") { CaptureStore.peek() != null }
 
     /** Take the pending capture, clearing it. Null when there is none. */
     Function("consumePendingCapture") {
@@ -112,6 +152,27 @@ class ProfileCaptureModule : Module() {
      * correct across all tools.
      */
     Function("consumeChatUsage") { ChatEntitlement.consumePending(context) }
+  }
+
+  companion object {
+    const val EVENT_CAPTURE = "onCapture"
+
+    /**
+     * The live module, or null when no React context exists.
+     *
+     * The service runs with or without JS, so it cannot hold a reference to
+     * something that may not be there. Set in OnCreate, cleared in OnDestroy;
+     * `notifyCapture` is a no-op whenever JS is absent, which is the normal case
+     * on a cold capture and is exactly why the pull path still exists.
+     */
+    @Volatile
+    private var instance: ProfileCaptureModule? = null
+
+    /** Tell JS a capture landed. Safe from any thread, and safe when JS is dead. */
+    fun notifyCapture() {
+      val module = instance ?: return
+      runCatching { module.sendEvent(EVENT_CAPTURE, mapOf<String, Any>()) }
+    }
   }
 
   private fun isAccessibilityEnabled(ctx: Context): Boolean {

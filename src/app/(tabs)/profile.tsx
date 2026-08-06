@@ -15,7 +15,14 @@ import { ProUpsellCard } from '@/components/ProUpsellCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { StagedLoader } from '@/components/StagedLoader';
 import { useToast } from '@/components/Toast';
-import { consumePendingCapture, isSupported, isWatching } from '@/../modules/profile-capture';
+import {
+  addCaptureListener,
+  consumePendingCapture,
+  hasPendingCapture,
+  isSupported,
+  isWatching,
+  serviceKilled,
+} from '@/../modules/profile-capture';
 import { BG } from '@/data/assets';
 import { PROFILE_LABELS, PROFILE_STAGES, analyzeProfile } from '@/services/profileEngine';
 import { isLiveApi } from '@/state/session';
@@ -50,6 +57,15 @@ export default function ProfileScreen() {
   const [result, setResult] = useState<ProfileScanResult | null>(null);
   const [stage, setStage] = useState(0);
   const [watching, setWatching] = useState(false);
+  /**
+   * Granted in Settings, but the service is not bound — the OS killed it.
+   *
+   * Tracked separately from `watching` because the two need different copy and
+   * different actions: `!watching` is usually "you have not turned it on yet",
+   * which the analyzer screen can fix. This one cannot be fixed from inside the
+   * app at all. Re-read on the same beats as `watching`.
+   */
+  const [killed, setKilled] = useState(false);
   const account = useRizzStore((state) => state.account);
   const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -168,14 +184,32 @@ export default function ProfileScreen() {
    */
   const takePendingCapture = useCallback(() => {
     if (!isSupported) return;
-    const capture = consumePendingCapture();
-    if (!capture) return;
+
+    /*
+     * Peek, then gate, THEN take.
+     *
+     * This used to consume first and check `outOfCredits` second — so a capture
+     * that hit the paywall was already destroyed by the time the paywall opened.
+     * `outOfCredits` reads MMKV, which is an optimistic cache: it is stale for a
+     * Pro user on a fresh install, and for anyone whose balance changed since the
+     * last resume. Dismissing the paywall then left Profile Scan empty with the
+     * screenshot gone for good — the user's only recovery was to walk back to the
+     * other app and tap ✨ again.
+     *
+     * Left pending, it is still there when they come back, which is what the
+     * focus pull below is for.
+     */
+    if (!hasPendingCapture()) return;
 
     if (outOfCredits) {
       haptic.warning();
       router.push('/paywall?source=out_of_credits');
       return;
     }
+
+    const capture = consumePendingCapture();
+    if (!capture) return;
+
     const shot = capture.images[0];
     // Mode comes from the capture: your own profile gets coached, someone else's
     // gets openers. Never assume 'them' — the bubble shows on both.
@@ -190,20 +224,37 @@ export default function ProfileScreen() {
     const onActive = () => {
       takePendingCapture();
       // Permissions are toggled in Settings, outside our process — re-read on resume.
-      if (isSupported) setWatching(isWatching());
+      if (isSupported) {
+        setWatching(isWatching());
+        setKilled(serviceKilled());
+      }
     };
     onActive();
     const sub = AppState.addEventListener('change', (s) => s === 'active' && onActive());
-    return () => sub.remove();
+    // The push half. A capture that arrives while this context is already running
+    // produces no AppState change, so the resume listener above never fires.
+    const capture = addCaptureListener(takePendingCapture);
+    return () => {
+      sub.remove();
+      capture();
+    };
   }, [takePendingCapture]);
 
   // Reflect changes made on the analyzer screen without a full app resume — it
   // is a modal over this tab, so focus is the only signal we get. The account is
   // store state and re-renders on its own.
+  //
+  // Also the recovery path for a capture parked by the credit gate: dismissing
+  // the paywall is a focus change and nothing else, so without this a capture the
+  // gate deliberately left pending would sit there unnoticed.
   useFocusEffect(
     useCallback(() => {
-      if (isSupported) setWatching(isWatching());
-    }, []),
+      if (isSupported) {
+        setWatching(isWatching());
+        setKilled(serviceKilled());
+      }
+      takePendingCapture();
+    }, [takePendingCapture]),
   );
 
   /**
@@ -374,18 +425,34 @@ export default function ProfileScreen() {
                 accessibilityLabel="Analyzer settings"
                 style={styles.analyzerRow}
               >
-                <Ionicons name={watching ? 'sparkles' : 'sparkles-outline'} size={16} color={palette.violet} />
+                <Ionicons
+                  name={killed ? 'warning' : watching ? 'sparkles' : 'sparkles-outline'}
+                  size={16}
+                  color={killed ? palette.gold : palette.violet}
+                />
                 <View style={styles.analyzerText}>
                   <Text style={styles.analyzerTitle}>
-                    {watching ? 'Analyzing profiles' : 'Read profiles'}
+                    {killed ? 'Analyzer was stopped' : watching ? 'Analyzing profiles' : 'Read profiles'}
                   </Text>
                   <Text style={styles.analyzerSub}>
-                    {watching
-                      ? 'Open a profile in Instagram, Tinder, Bumble or Hinge — or any chat in WhatsApp, Snapchat & Telegram — and tap ✨.'
-                      : 'Turn on to get an ✨ button in Instagram, Tinder, Bumble, Hinge, WhatsApp, Snapchat & Telegram.'}
+                    {/*
+                      * Three states, not two.
+                      *
+                      * `killed` is granted-in-Settings-but-not-running: the OS
+                      * ended our process and never rebound the service, which is
+                      * what MIUI/ColorOS/FuntouchOS do on swipe-away. The generic
+                      * "turn it on" copy is actively wrong there — it points at a
+                      * switch that is already on, and nothing in the app can fix
+                      * it. Only Settings can.
+                      */}
+                    {killed
+                      ? 'Your phone stopped it in the background. Tap here, then switch RizzCoach off and on again in Accessibility.'
+                      : watching
+                        ? 'Open a profile in Instagram, Tinder, Bumble or Hinge — or any chat in WhatsApp, Snapchat & Telegram — and tap ✨.'
+                        : 'Turn on to get an ✨ button in Instagram, Tinder, Bumble, Hinge, WhatsApp, Snapchat & Telegram.'}
                   </Text>
                 </View>
-                {!watching && <View style={styles.analyzerDot} />}
+                {(!watching || killed) && <View style={styles.analyzerDot} />}
                 <Ionicons name="chevron-forward" size={15} color={palette.textTertiary} />
               </HapticPressable>
             )}
@@ -397,10 +464,13 @@ export default function ProfileScreen() {
               * here is gone: an account is now mandatory at launch, so a
               * signed-out user cannot reach this screen and the branch was dead.
               *
-              * The row itself stays, and is not optional — it is the only route
-              * to sign out and to delete the account, and App Store Review
-              * 5.1.1(v) requires in-app deletion for any app that creates
-              * accounts. Removing it is a rejection.
+              * The row itself stays — it is the only route to sign out.
+              *
+              * It is NO LONGER a route to account deletion: that button was
+              * removed from account.tsx by request. App Store Review 5.1.1(v)
+              * requires in-app deletion for any app that creates accounts, and
+              * signup is mandatory here, so a reviewer has nowhere to find one.
+              * See the note on SignedIn in account.tsx.
               */}
             {isLiveApi && account != null && (
               <HapticPressable

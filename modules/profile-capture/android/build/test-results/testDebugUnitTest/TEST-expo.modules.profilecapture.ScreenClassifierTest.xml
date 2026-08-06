@@ -1,19 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="expo.modules.profilecapture.ScreenClassifierTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-07-17T11:20:59.881Z" hostname="nexcess-HP-EliteDesk-800-G4-SFF" time="0.029">
+<testsuite name="expo.modules.profilecapture.ScreenClassifierTest" tests="34" skipped="0" failures="0" errors="0" timestamp="2026-08-06T07:35:05.901Z" hostname="nexcess-HP-EliteDesk-800-G4-SFF" time="0.039">
   <properties/>
-  <testcase name="ordinary facebook is out of scope - only dating is supported" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.023"/>
-  <testcase name="someone else's instagram profile is not flagged as your own" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
-  <testcase name="instagram DMs never trigger" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.001"/>
+  <testcase name="a sentence containing the word message is not a composer placeholder" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.028"/>
+  <testcase name="ordinary facebook is out of scope - only dating is supported" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="plain facebook messenger is out of scope for chat" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="the count row is recognised when count and label share one node" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="someone else's instagram profile is not flagged as your own" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.001"/>
+  <testcase name="a snapchat chat is recognised by its send-a-chat placeholder" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="an instagram dm inbox with a search field is never a chat" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="a tinder own-profile tab is recognised without english copy" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="the whatsapp inbox search field is not an open thread" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="instagram DMs never trigger" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="a profile is never mistaken for a chat" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="a private profile with no post count still clears the threshold" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="a tinder profile card is detected" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
-  <testcase name="unsupported apps are never profiles" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
-  <testcase name="weak evidence stays below the threshold" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.001"/>
-  <testcase name="your own instagram profile is flagged as your own" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="unsupported apps are never profiles" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.001"/>
+  <testcase name="an open tinder chat with a composer is a chat" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="an inbox list without a composer is not a chat" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.001"/>
+  <testcase name="a reel with its comment sheet open is never a chat" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="weak evidence stays below the threshold" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="a messenger can never produce a profile capture" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="an open whatsapp thread offers a reply" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="your own instagram profile is flagged as your own" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.001"/>
   <testcase name="confidence never exceeds one" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="instagram stories never trigger" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="a full instagram profile is detected" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="a whatsapp thread still offers a reply once the placeholder is gone" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="hinge is detected structurally, without any prompt copy" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.001"/>
+  <testcase name="a messenger screen with no composer at all stays silent" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="instagram reels never trigger, even with profile chrome present" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="a telegram thread is recognised by its composer placeholder" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="an open instagram dm with a composer is a chat, never a profile" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="an inbox preview that merely starts with message is not a composer" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="tinder chat never triggers" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <testcase name="an empty screen is not a profile" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
+  <testcase name="an instagram story is never a chat, however repliable it looks" classname="expo.modules.profilecapture.ScreenClassifierTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

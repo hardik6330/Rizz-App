@@ -108,9 +108,18 @@ object GeminiChatClient {
       conn = (URL(url).openConnection() as HttpURLConnection).apply {
         requestMethod = "POST"
         connectTimeout = 10_000
-        // A Gemini call behind the API takes 3-15s; the old 20s was sized for a
-        // direct call and is still the right order of magnitude with one hop.
-        readTimeout = 30_000
+        /*
+         * MUST stay above the server's own abort, which is 45s
+         * (`AbortSignal.timeout(45_000)` in backend/src/ai/gateway.ts).
+         *
+         * At 30s the client gave up FIRST: the server was still generating, went on
+         * to charge and then refund a credit, and the user saw "couldn't reach the
+         * coach" for a request that was about to succeed. Whoever times out first
+         * decides what the user sees, and it should be the side that knows whether
+         * the work actually failed. Raise this if the gateway's abort is ever
+         * raised, never the other way round.
+         */
+        readTimeout = 60_000
         doOutput = true
         setRequestProperty("Content-Type", "application/json")
         if (token != null) setRequestProperty("Authorization", "Bearer $token")

@@ -41,7 +41,7 @@
 <tr>
 <td>
 <div class="infoBox">
-<div class="counter">13</div>
+<div class="counter">34</div>
 <p>tests</p>
 </div>
 </td>
@@ -59,7 +59,7 @@
 </td>
 <td>
 <div class="infoBox duration">
-<div class="counter">0.030s</div>
+<div class="counter">0.039s</div>
 <p>duration</p>
 </div>
 </td>
@@ -98,8 +98,98 @@
 <td class="success">100%</td>
 </tr>
 <tr>
+<td class="success">a messenger can never produce a profile capture</td>
+<td class="path" hidden="">a messenger can never produce a profile capture</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">a messenger screen with no composer at all stays silent</td>
+<td class="path" hidden="">a messenger screen with no composer at all stays silent</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">a private profile with no post count still clears the threshold</td>
+<td class="path" hidden="">a private profile with no post count still clears the threshold</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">a profile is never mistaken for a chat</td>
+<td class="path" hidden="">a profile is never mistaken for a chat</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">a reel with its comment sheet open is never a chat</td>
+<td class="path" hidden="">a reel with its comment sheet open is never a chat</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">a sentence containing the word message is not a composer placeholder</td>
+<td class="path" hidden="">a sentence containing the word message is not a composer placeholder</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0.028s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">a snapchat chat is recognised by its send-a-chat placeholder</td>
+<td class="path" hidden="">a snapchat chat is recognised by its send-a-chat placeholder</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">a telegram thread is recognised by its composer placeholder</td>
+<td class="path" hidden="">a telegram thread is recognised by its composer placeholder</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">a tinder own-profile tab is recognised without english copy</td>
+<td class="path" hidden="">a tinder own-profile tab is recognised without english copy</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
 <td class="success">a tinder profile card is detected</td>
 <td class="path" hidden="">a tinder profile card is detected</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">a whatsapp thread still offers a reply once the placeholder is gone</td>
+<td class="path" hidden="">a whatsapp thread still offers a reply once the placeholder is gone</td>
 <td>1</td>
 <td>0</td>
 <td>0</td>
@@ -116,6 +206,69 @@
 <td class="success">100%</td>
 </tr>
 <tr>
+<td class="success">an inbox list without a composer is not a chat</td>
+<td class="path" hidden="">an inbox list without a composer is not a chat</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0.001s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">an inbox preview that merely starts with message is not a composer</td>
+<td class="path" hidden="">an inbox preview that merely starts with message is not a composer</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">an instagram dm inbox with a search field is never a chat</td>
+<td class="path" hidden="">an instagram dm inbox with a search field is never a chat</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">an instagram story is never a chat, however repliable it looks</td>
+<td class="path" hidden="">an instagram story is never a chat, however repliable it looks</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">an open instagram dm with a composer is a chat, never a profile</td>
+<td class="path" hidden="">an open instagram dm with a composer is a chat, never a profile</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">an open tinder chat with a composer is a chat</td>
+<td class="path" hidden="">an open tinder chat with a composer is a chat</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">an open whatsapp thread offers a reply</td>
+<td class="path" hidden="">an open whatsapp thread offers a reply</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
 <td class="success">confidence never exceeds one</td>
 <td class="path" hidden="">confidence never exceeds one</td>
 <td>1</td>
@@ -125,12 +278,21 @@
 <td class="success">100%</td>
 </tr>
 <tr>
+<td class="success">hinge is detected structurally, without any prompt copy</td>
+<td class="path" hidden="">hinge is detected structurally, without any prompt copy</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0.001s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
 <td class="success">instagram DMs never trigger</td>
 <td class="path" hidden="">instagram DMs never trigger</td>
 <td>1</td>
 <td>0</td>
 <td>0</td>
-<td>0.001s</td>
+<td>0s</td>
 <td class="success">100%</td>
 </tr>
 <tr>
@@ -157,12 +319,39 @@
 <td>1</td>
 <td>0</td>
 <td>0</td>
-<td>0.023s</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">plain facebook messenger is out of scope for chat</td>
+<td class="path" hidden="">plain facebook messenger is out of scope for chat</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
 <td class="success">100%</td>
 </tr>
 <tr>
 <td class="success">someone else's instagram profile is not flagged as your own</td>
 <td class="path" hidden="">someone else's instagram profile is not flagged as your own</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0.001s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">the count row is recognised when count and label share one node</td>
+<td class="path" hidden="">the count row is recognised when count and label share one node</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>0s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">the whatsapp inbox search field is not an open thread</td>
+<td class="path" hidden="">the whatsapp inbox search field is not an open thread</td>
 <td>1</td>
 <td>0</td>
 <td>0</td>
@@ -184,7 +373,7 @@
 <td>1</td>
 <td>0</td>
 <td>0</td>
-<td>0s</td>
+<td>0.001s</td>
 <td class="success">100%</td>
 </tr>
 <tr>
@@ -193,7 +382,7 @@
 <td>1</td>
 <td>0</td>
 <td>0</td>
-<td>0.001s</td>
+<td>0s</td>
 <td class="success">100%</td>
 </tr>
 <tr>
@@ -202,7 +391,7 @@
 <td>1</td>
 <td>0</td>
 <td>0</td>
-<td>0s</td>
+<td>0.001s</td>
 <td class="success">100%</td>
 </tr>
 </table>
@@ -218,7 +407,7 @@
 <input id="line-wrapping-toggle" type="checkbox" autocomplete="off"/>
 </label>
 </div>Generated by 
-<a href="https://www.gradle.org">Gradle 9.3.1</a> at Jul 17, 2026, 4:50:59 PM</p>
+<a href="https://www.gradle.org">Gradle 9.3.1</a> at Aug 6, 2026, 1:05:05 PM</p>
 </div>
 </div>
 </body>
