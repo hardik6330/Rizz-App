@@ -37,6 +37,22 @@ const TOKEN_KEY = 'rizz.accessToken';
 const SIGNED_OUT_KEY = 'rizz.signedOut';
 /** The server's `users.id`. Persisted only so RevenueCat can be told who this is. */
 const USER_KEY = 'rizz.userId';
+/**
+ * The email of the account this install belongs to.
+ *
+ * Survives sign-out on purpose, like the install id: the server rejects a second
+ * signup on a claimed install ("This device already has an account"), so without
+ * this the user meets that error with no idea which address to log in with — and
+ * there is no password reset to fall back on. Local only, never sent anywhere;
+ * cleared by `deleteAccount`, which is the one path that leaves nothing to
+ * remember.
+ */
+const LAST_EMAIL_KEY = 'rizz.lastEmail';
+
+/** The email last signed in on this device, or undefined on a fresh install. */
+export function lastAccountEmail(): string | undefined {
+  return kv.getString(LAST_EMAIL_KEY);
+}
 export interface Credits {
   is_pro: boolean;
   analysis_count: number;
@@ -194,7 +210,10 @@ export async function signUp(input: {
   email: string;
   password: string;
 }): Promise<SessionUser> {
-  return postSession('/v1/auth/signup', input, await accessToken());
+  const user = await postSession('/v1/auth/signup', input, await accessToken());
+  // After the await, so a rejected signup never claims to be this device's account.
+  kv.set(LAST_EMAIL_KEY, input.email);
+  return user;
 }
 
 /**
@@ -211,11 +230,14 @@ export async function signUp(input: {
  * the server treats it as optional and echoes back whatever it settled on.
  */
 export async function logIn(email: string, password: string): Promise<SessionUser> {
-  return postSession('/v1/auth/login', {
+  const user = await postSession('/v1/auth/login', {
     email,
     password,
     install_id: kv.getString(INSTALL_KEY),
   });
+  // Same as signUp: only a successful login names this device's account.
+  kv.set(LAST_EMAIL_KEY, email);
+  return user;
 }
 
 /**
@@ -284,6 +306,9 @@ export async function deleteAccount(): Promise<void> {
   // `/device` mints a genuinely fresh anonymous install, and leaving the flag set
   // would make that new install look permanently logged out of nothing.
   kv.remove(SIGNED_OUT_KEY);
+  // The account is gone — remembering its address would offer a login that
+  // cannot succeed.
+  kv.remove(LAST_EMAIL_KEY);
   onAccount?.(null);
 }
 

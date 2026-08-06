@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleIconButton } from '@/components/CircleIconButton';
 import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
-import { AuthError, isLiveApi, logIn, logOut, signUp } from '@/state/session';
+import { AuthError, isLiveApi, lastAccountEmail, logIn, logOut, signUp } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing, type as typography } from '@/theme/tokens';
@@ -46,7 +46,21 @@ export default function AccountScreen() {
   const toast = useToast();
 
   const { mode: initialMode } = useLocalSearchParams<{ mode?: Mode }>();
-  const [mode, setMode] = useState<Mode>(initialMode === 'login' ? 'login' : 'signup');
+  /**
+   * The email this device signed in with last, if any.
+   *
+   * Read once at mount — it only changes as a result of submitting this form,
+   * and re-reading it mid-session would swap the field out from under whoever is
+   * typing. Its whole job is the dead end in the screenshot: signup on a claimed
+   * install is rejected by the server, and with no password reset a user who has
+   * forgotten which address they used has no way forward at all.
+   */
+  const [remembered] = useState(lastAccountEmail);
+  const [mode, setMode] = useState<Mode>(
+    // Remembered → Log in, because signup on this install cannot succeed. An
+    // explicit `?mode=` still wins; it comes from a deliberate tap.
+    initialMode === 'login' || (initialMode == null && remembered != null) ? 'login' : 'signup',
+  );
   /**
    * Is this the mandatory launch gate, or the modal from the Profile Scan row?
    *
@@ -75,7 +89,7 @@ export default function AccountScreen() {
     if (isOnboarding) void SplashScreen.hideAsync().catch(() => {});
   }, [isOnboarding]);
   const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(remembered ?? '');
   const [password, setPassword] = useState('');
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -273,6 +287,27 @@ export default function AccountScreen() {
                   : 'Log in and your credits, Pro status and history come with you.'}
               </Text>
             </Animated.View>
+
+            {/* The device knows whose account it is — say so, instead of letting
+                the server say "this device already has an account" after the
+                user has typed a whole signup form. Tapping it is the fix for the
+                one case where it is in the way: signup mode. */}
+            {remembered != null && (
+              <HapticPressable
+                feedback="none"
+                disabled={!isSignup}
+                onPress={() => switchMode('login')}
+                accessibilityRole={isSignup ? 'button' : 'text'}
+                style={styles.remembered}
+              >
+                <Ionicons name="person-circle-outline" size={16} color={palette.violetBright} />
+                <Text style={styles.rememberedText}>
+                  This device&rsquo;s account is{' '}
+                  <Text style={styles.rememberedStrong}>{remembered}</Text>
+                  {isSignup ? ' — tap to log in instead.' : '.'}
+                </Text>
+              </HapticPressable>
+            )}
 
             <View style={styles.tabs}>
               {(['signup', 'login'] as const).map((key) => {
@@ -562,6 +597,20 @@ const styles = StyleSheet.create({
   warningIcon: { marginTop: 2 },
   warningText: { flex: 1, fontSize: 13, lineHeight: 19, color: palette.textSecondary },
   warningStrong: { fontWeight: '800', color: palette.textPrimary },
+
+  remembered: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.lg,
+    backgroundColor: `${palette.violet}14`,
+    borderWidth: 1,
+    borderColor: `${palette.violet}44`,
+  },
+  rememberedText: { flex: 1, fontSize: 13, lineHeight: 19, color: palette.textSecondary },
+  rememberedStrong: { fontWeight: '800', color: palette.textPrimary },
 
   error: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   errorText: { flex: 1, fontSize: 13, lineHeight: 18, color: palette.danger },

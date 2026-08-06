@@ -197,7 +197,24 @@ auth.post('/signup', requireAuth, async (c) => {
     // `email IS NULL` in the predicate: a second signup on an install that
     // already has an account must not silently overwrite the credentials on it.
     if ((result as { affectedRows: number }).affectedRows === 0) {
-      throw Errors.badRequest('This device already has an account — log in instead');
+      /*
+       * Name the account. "This device already has an account" told the user they
+       * were stuck without telling them how to get out — and with no password
+       * reset, a user who has forgotten which address they used has no path back
+       * in at all.
+       *
+       * Not an existence oracle: `sub` comes from the caller's own token, so the
+       * only email this can ever reveal is the one on the row the caller is
+       * already authenticated as. Falls back to the old wording if the row is
+       * somehow gone, which is the only way `existing` can be empty here.
+       */
+      const rows = await db.execute(sql`SELECT email FROM users WHERE id = ${sub} LIMIT 1`);
+      const existing = (rows as unknown as [{ email: string | null }[]])[0]?.[0];
+      throw Errors.badRequest(
+        existing?.email
+          ? `This device already has an account (${existing.email}) — log in instead`
+          : 'This device already has an account — log in instead',
+      );
     }
   } catch (err) {
     if (err instanceof ApiError) throw err;
