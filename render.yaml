@@ -24,7 +24,11 @@ services:
     # `npm ci`, not `npm install` — a local `expo run:android` writes build/ and
     # .gradle/ into autolinked node_modules, and a lockfile-respecting install is
     # what keeps the deploy reproducible.
-    buildCommand: cd backend && npm ci && npm run build
+    # Migrations run BEFORE the build, so a deploy that cannot reach the database
+    # fails here instead of booting new code against an old schema. They must
+    # stay backward-compatible with the release still serving traffic — Render
+    # does rolling deploys, so expand now and contract in the NEXT release.
+    buildCommand: cd backend && npm ci && npm run db:migrate && npm run build
     startCommand: cd backend && node dist/index.js
     # Fails the deploy instead of serving a broken instance. index.ts already
     # exits(1) on an unreachable DB, so this is the second half of that contract:

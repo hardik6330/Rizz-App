@@ -80,7 +80,10 @@ user.post('/pro', async (c) => {
   const { isPro } = await syncEntitlementFor(sub, body.data.rc_app_user_id, body.data.claimed_pro);
 
   // Re-sign: the old token keeps asserting the old entitlement until it expires.
-  const { token, expiresIn } = await signAccess({ sub, pro: isPro });
+  // `ep` comes off the context rather than a fresh read — requireAuth already
+  // fetched it, and re-signing with a stale epoch would revoke the token we are
+  // in the middle of handing out.
+  const { token, expiresIn } = await signAccess({ sub, pro: isPro, ep: c.get('user').ep });
   const { analysisCount, remaining } = await creditsFor(sub);
 
   return c.json({

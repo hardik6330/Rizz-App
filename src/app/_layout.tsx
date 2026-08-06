@@ -11,6 +11,7 @@ import {
   hasPendingCapture,
   isSupported,
 } from '@/../modules/profile-capture';
+
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { identify, initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
@@ -165,18 +166,20 @@ export default function RootLayout() {
     }
     onboardedThisSession.current = true;
     /*
-     * Immediately, and under the splash.
+     * No push. `(tabs)` is removed from the navigator below while the gate is
+     * up, so `/account` is the only route that exists and the router is already
+     * there — there is no navigation to schedule and nothing to land on top of.
      *
-     * This used to wait 400ms, which meant the tab bar and the Lab screen were
-     * on display for four hundred milliseconds before the signup screen slid
-     * over them — the "why did it redirect me?" flash. The splash now covers
-     * the push, and `account.tsx` lifts it once it has painted.
+     * Pushing was the bug. A push happens after the tabs have mounted and
+     * painted, so the Lab screen was on display for the whole transition no
+     * matter how the transition was configured, and the splash could only ever
+     * hide the part of it that came before `account.tsx` mounted. Removing the
+     * route removes the frame.
      */
-    router.push('/account?onboarding=1');
 
     /*
-     * Dead-man's switch. If that push ever fails, the splash would stay up for
-     * ever and the app would look bricked with nothing in the log. Better a
+     * Dead-man's switch. If `account.tsx` never mounts, the splash would stay up
+     * for ever and the app would look bricked with nothing in the log. Better a
      * flash than a black screen.
      */
     const t = setTimeout(hideSplash, 3000);
@@ -236,14 +239,30 @@ export default function RootLayout() {
             contentStyle: { backgroundColor: palette.ink },
           }}
         >
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="vault" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="analyzer" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="account" options={{ presentation: 'modal' }} />
+          {/*
+            Declared FIRST, and outside the guard, so it is the route the
+            navigator falls back to when everything below is removed. A guarded
+            screen is not hidden, it is not declared at all — so while the gate
+            is up `/account` is the whole app and the Lab tab has no frame to
+            render in. That is the fix: not a faster redirect, no redirect.
+
+            It is still a modal the rest of the time, opened from the account
+            row on Profile Scan. `account.tsx` reads the store to tell the two
+            apart — see `isOnboarding` there.
+          */}
           <Stack.Screen
-            name="paywall"
-            options={{ presentation: 'modal', gestureEnabled: false }}
+            name="account"
+            options={accountStepDone ? { presentation: 'modal' } : { animation: 'none' }}
           />
+          <Stack.Protected guard={accountStepDone}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="vault" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="analyzer" options={{ presentation: 'modal' }} />
+            <Stack.Screen
+              name="paywall"
+              options={{ presentation: 'modal', gestureEnabled: false }}
+            />
+          </Stack.Protected>
         </Stack>
       </ThemeProvider>
     </GestureHandlerRootView>

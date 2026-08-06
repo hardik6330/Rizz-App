@@ -45,6 +45,32 @@ function createBackend(): { kv: KVBackend; kind: 'mmkv' | 'memory' } {
 
 const backend = createBackend();
 
+/**
+ * The memory fallback is a DEV convenience and a production data-loss bug.
+ *
+ * Nothing read `storageKind`, so the fallback was silent — and silent means the
+ * install id never persists, which means `/v1/auth/device` mints a brand-new
+ * anonymous `users` row on **every single launch**. Each one carries its own
+ * free-analysis allowance, so the failure mode is unbounded row growth and
+ * unbounded free credits, and the only symptom is the signup gate appearing
+ * every time you open the app.
+ *
+ * Crashing is the correct response in a release build. An app that quietly
+ * forgets who you are on every launch is not degraded, it is broken, and it is
+ * broken in a way that costs money per launch.
+ */
+if (backend.kind === 'memory' && !__DEV__) {
+  throw new Error(
+    'MMKV is unavailable in a release build — refusing to run with unpersisted storage',
+  );
+}
+if (backend.kind === 'memory') {
+  console.warn(
+    '[storage] MMKV unavailable (Expo Go or web) — state is in-memory and will NOT survive a reload.\n' +
+      '          Every launch will create a new anonymous account on the server. Use a dev build.',
+  );
+}
+
 /** 'mmkv' in dev/production builds, 'memory' in Expo Go / web. */
 export const storageKind = backend.kind;
 

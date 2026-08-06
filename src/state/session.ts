@@ -168,9 +168,25 @@ export async function signUp(input: {
   return postSession('/v1/auth/signup', input, await accessToken());
 }
 
-/** Email + password → the original user row, whatever install is asking. */
+/**
+ * Email + password → the original user row, whatever install is asking.
+ *
+ * The install id goes with it so the server can re-point this device at the row
+ * we are about to be handed. Without it login authenticates us as row B while
+ * MMKV still addresses row A, and the next `/device` call — up to 30 days later,
+ * when the token expires — signs the user out and hands back row A's credits.
+ *
+ * Read straight from `kv` rather than via `installId()`: that helper calls
+ * `accessToken()` when the key is missing, which would mint a fresh anonymous
+ * row on the one path whose whole job is to stop doing that. Absent is fine —
+ * the server treats it as optional and echoes back whatever it settled on.
+ */
 export async function logIn(email: string, password: string): Promise<SessionUser> {
-  return postSession('/v1/auth/login', { email, password });
+  return postSession('/v1/auth/login', {
+    email,
+    password,
+    install_id: kv.getString(INSTALL_KEY),
+  });
 }
 
 /**
@@ -181,6 +197,29 @@ export async function logIn(email: string, password: string): Promise<SessionUse
  * a way to farm three more free analyses.
  */
 export function logOut(): void {
+  /*
+   * Kill the token server-side too, and do not wait for it.
+   *
+   * Removing the local copy used to be the whole of sign-out, which meant the
+   * token stayed valid for the rest of its 30 days on any device, backup or
+   * proxy log holding one. `/logout` bumps `users.token_epoch` and every token
+   * signed before it stops verifying on the next request.
+   *
+   * Fire-and-forget on purpose: signing out while offline must still sign you
+   * out locally and immediately. The read below happens BEFORE the removes — by
+   * the time the request is built the token would be gone.
+   */
+  const token = kv.getString(TOKEN_KEY);
+  if (token && isLiveApi) {
+    void fetch(apiUrl('/v1/auth/logout'), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {
+      // Offline. The local sign-out below still stands; the server-side kill is
+      // lost, which is the same exposure as before this existed.
+    });
+  }
+
   kv.remove(TOKEN_KEY);
   // Dropped so `identify()` puts RevenueCat back to anonymous rather than leaving
   // the previous account's App User ID on a device someone else may now log into.

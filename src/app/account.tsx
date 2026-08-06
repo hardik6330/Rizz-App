@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   BackHandler,
+  Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,14 +15,13 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import { CircleIconButton } from '@/components/CircleIconButton';
 import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
-import { AuthError, isLiveApi, logIn, logOut, signUp } from '@/state/session';
+import { AuthError, deleteAccount, isLiveApi, logIn, logOut, signUp } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typography } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
 /**
@@ -45,26 +45,29 @@ export default function AccountScreen() {
   const { gutter } = useLayout();
   const toast = useToast();
 
-  const { mode: initialMode, onboarding } = useLocalSearchParams<{
-    mode?: Mode;
-    onboarding?: string;
-  }>();
+  const { mode: initialMode } = useLocalSearchParams<{ mode?: Mode }>();
   const [mode, setMode] = useState<Mode>(initialMode === 'login' ? 'login' : 'signup');
   /**
-   * Reached from the first-run sequence rather than the Profile Scan row.
+   * Is this the mandatory launch gate, or the modal from the Profile Scan row?
    *
-   * Read once: `setSeenAuth()` flips the store the moment this screen is
-   * dismissed, and the copy must not change under the user mid-signup. Same
-   * pattern as `firstRun` in analyzer.tsx.
+   * The same condition `_layout.tsx` guards the app on, asked directly of the
+   * store. It used to be an `?onboarding=1` param on a push — but there is no
+   * push any more: with no account, `(tabs)` is not declared and this screen IS
+   * the app, so nothing is left to pass a param.
+   *
+   * Read once: signing up flips `account` the instant it succeeds, and the copy
+   * must not change under the user mid-signup — nor may this turn into a
+   * dismissible modal in the frame before the tabs mount. Same pattern as
+   * `firstRun` in analyzer.tsx.
    */
-  const [isOnboarding] = useState(() => onboarding === '1');
+  const [isOnboarding] = useState(() => isLiveApi && useRizzStore.getState().account == null);
 
   /**
-   * Lift the splash `_layout.tsx` is holding, now that this screen exists.
+   * Lift the splash `_layout.tsx` is holding, now that this screen has rendered.
    *
-   * Hiding it there instead would race the push and show the Lab tab for a
-   * frame — the exact flash the splash is there to cover. Waiting for the real
-   * gate to mount is the only version with no timing guess in it.
+   * Hiding it there instead would uncover whatever the navigator had painted at
+   * that moment. Waiting for the real gate to mount is the only version with no
+   * timing guess in it.
    */
   useEffect(() => {
     if (isOnboarding) void SplashScreen.hideAsync().catch(() => {});
@@ -152,10 +155,13 @@ export default function AccountScreen() {
       haptic.success();
       setPassword('');
       // `signUp`/`logIn` already pushed the username into the store, which flips
-      // the launch gate. Hand straight back rather than parking on the signed-in
-      // view — the analyzer step is waiting behind this modal.
+      // the launch gate — `(tabs)` exists as of this render. Replace rather than
+      // `back()`: as the gate this screen is the root, there is nothing behind
+      // it to pop to. Going to the app also clears it from the history, so the
+      // analyzer step waiting behind can present over the tabs and not over a
+      // signup form the user has already finished with.
       if (isOnboarding) {
-        router.back();
+        router.replace('/');
         return;
       }
       toast.show(isSignup ? 'Account created — your credits are safe now' : 'Welcome back');
@@ -168,37 +174,78 @@ export default function AccountScreen() {
     }
   }, [busy, email, isOnboarding, isSignup, password, toast, username]);
 
-  const confirmSignOut = () => {
-    haptic.light();
-    Alert.alert(
-      'Sign out?',
-      // Load-bearing: with no reset flow, signing out without knowing the
-      // password is how an account is lost for good.
-      "You'll need your email and password to get back in. There's no password reset yet.",
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign out',
-          style: 'destructive',
-          onPress: () => {
-            logOut();
-            close();
-          },
-        },
-      ],
-    );
+  /**
+   * The two destructive actions, in the app's own dark sheet rather than
+   * `Alert.alert`.
+   *
+   * The native dialog renders in the platform's light-ish grey with ALL-CAPS
+   * buttons, so the one screen where the user is about to do something they
+   * cannot undo is the one screen that stops looking like this app.
+   *
+   * One dialog driven by `confirming`, not two nearly-identical ones: the second
+   * copy is where the ✕ stops working, or the busy state is forgotten on the
+   * path that actually makes a network call. Still local rather than a shared
+   * `<Confirm>` — these are the only two callers in the app.
+   */
+  const [confirming, setConfirming] = useState<'signout' | 'delete' | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const doSignOut = () => {
+    setConfirming(null);
+    logOut();
+    close();
   };
+
+  /**
+   * Irreversible, and required to ship.
+   *
+   * App Store Review 5.1.1(v) requires in-app deletion for any app that lets a
+   * user create an account, and Play requires a deletion path too. Signup is
+   * mandatory here, so every install creates one — shipping without this is not
+   * a risk, it is a rejection.
+   *
+   * The server does the whole job in one statement because the schema holds no
+   * images, transcripts or saved items; the user row IS the user's data.
+   */
+  const doDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      haptic.success();
+      setConfirming(null);
+      close();
+    } catch (err) {
+      haptic.warning();
+      setConfirming(null);
+      // Surfaced on the screen behind, not swallowed — a delete that silently
+      // did nothing is how somebody submits a data request instead.
+      setError(err instanceof AuthError ? err.message : 'Could not delete the account — try again');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  /** Copy and behaviour for whichever confirmation is open. */
+  const dialog =
+    confirming === 'delete'
+      ? {
+          title: 'Delete account?',
+          // Names every consequence. "This cannot be undone" on its own does not
+          // tell somebody that their subscription is not what is being cancelled.
+          body: 'This erases your account, your credits and your Pro status permanently. It cannot be undone, and it does not cancel a subscription — do that in the App Store or Play Store.',
+          cta: 'Delete',
+          onConfirm: doDelete,
+        }
+      : {
+          title: 'Sign out?',
+          body: "You'll need your email and password to get back in. There's no password reset yet.",
+          cta: 'Sign out',
+          onConfirm: doSignOut,
+        };
 
   return (
     <View style={styles.root}>
-      {/* Stops the iOS swipe-to-dismiss on the mandatory gate. Android back is
-          handled by the BackHandler above; the two are separate mechanisms. */}
-      {/* No slide-up as the launch gate: it is not "a sheet over the app", it is
-          where the app starts. Animating it in is what made it read as a
-          redirect. As a modal from Profile Scan it keeps the normal one. */}
-      <Stack.Screen
-        options={{ gestureEnabled: !isOnboarding, animation: isOnboarding ? 'none' : 'default' }}
-      />
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
@@ -228,7 +275,17 @@ export default function AccountScreen() {
         </View>
 
         {signedInAs != null ? (
-          <SignedIn username={signedInAs} onSignOut={confirmSignOut} />
+          <SignedIn
+            username={signedInAs}
+            onSignOut={() => {
+              haptic.light();
+              setConfirming('signout');
+            }}
+            onDelete={() => {
+              haptic.warning();
+              setConfirming('delete');
+            }}
+          />
         ) : !isLiveApi ? (
           <View style={styles.notice}>
             <Text style={styles.noticeText}>
@@ -383,21 +440,79 @@ export default function AccountScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* Dismissible by the scrim and by Android back — a confirm the hardware
+          back button ignores is the one people hit twice and sign out anyway. */}
+      <Modal
+        visible={confirming != null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        // Not dismissible mid-delete: the request is already in flight and the
+        // account may be gone by the time the sheet closes.
+        onRequestClose={() => !deleting && setConfirming(null)}
+      >
+        <Pressable
+          style={styles.scrim}
+          accessibilityLabel="Dismiss"
+          onPress={() => !deleting && setConfirming(null)}
+        >
+          {/* Swallows taps so a press inside the card does not dismiss it. */}
+          <Pressable style={styles.dialog} onPress={() => {}}>
+            <Text style={styles.dialogTitle}>{dialog.title}</Text>
+            <Text style={styles.dialogBody}>{dialog.body}</Text>
+            <View style={styles.dialogActions}>
+              <HapticPressable
+                onPress={() => setConfirming(null)}
+                disabled={deleting}
+                accessibilityLabel="Cancel"
+                style={[styles.dialogGhost, deleting && styles.dialogDisabled]}
+              >
+                <Text style={styles.dialogGhostText}>Cancel</Text>
+              </HapticPressable>
+              <HapticPressable
+                onPress={dialog.onConfirm}
+                disabled={deleting}
+                accessibilityLabel={`Confirm ${dialog.cta}`}
+                style={styles.dialogDanger}
+              >
+                {deleting ? (
+                  <ActivityIndicator color={palette.danger} size="small" />
+                ) : (
+                  <Text style={styles.dialogDangerText}>{dialog.cta}</Text>
+                )}
+              </HapticPressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
       {toast.element}
     </View>
   );
 }
 
 /**
- * ⚠️ There is no in-app delete here, by request.
+ * ⚠️ The delete row is REQUIRED. Do not remove it again.
  *
  * App Store Review 5.1.1(v) requires an app that lets a user CREATE an account
  * to let them delete it from inside the app, and Play requires a deletion path
- * too. `DELETE /v1/user/me` still exists and still works — only the button is
- * gone — so restoring this is a few lines, not a feature. Expect a rejection on
- * submission until it is back or a web deletion page is linked.
+ * too. Signup is mandatory in this product, so every install creates an account
+ * — which makes its absence a certain rejection rather than a risk. It was
+ * pulled once and `DELETE /v1/user/me` sat here working with no caller.
+ *
+ * Styled quieter than Sign out, not louder: it is the rarer action and the
+ * unrecoverable one, so it should take deliberation to reach, not attract the
+ * thumb. The confirmation is where the weight belongs.
  */
-function SignedIn({ username, onSignOut }: { username: string; onSignOut: () => void }) {
+function SignedIn({
+  username,
+  onSignOut,
+  onDelete,
+}: {
+  username: string;
+  onSignOut: () => void;
+  onDelete: () => void;
+}) {
   return (
     <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.signedIn}>
       <View style={styles.avatar}>
@@ -414,6 +529,15 @@ function SignedIn({ username, onSignOut }: { username: string; onSignOut: () => 
       <HapticPressable onPress={onSignOut} accessibilityLabel="Sign out" style={styles.secondary}>
         <Ionicons name="log-out-outline" size={16} color={palette.textSecondary} />
         <Text style={styles.secondaryText}>Sign out</Text>
+      </HapticPressable>
+
+      <HapticPressable
+        onPress={onDelete}
+        accessibilityLabel="Delete account"
+        accessibilityHint="Permanently erases your account, credits and Pro status"
+        style={styles.destructive}
+      >
+        <Text style={styles.destructiveText}>Delete account</Text>
       </HapticPressable>
     </Animated.View>
   );
@@ -545,4 +669,61 @@ const styles = StyleSheet.create({
     borderColor: palette.hairlineStrong,
   },
   secondaryText: { fontSize: 14.5, fontWeight: '700', color: palette.textSecondary },
+
+  // ── Sign-out confirmation ──────────────────────────────────────────────────
+  scrim: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    // Darker than the app background so the card reads as lifted off it — a
+    // surface-coloured sheet on an ink scrim would just look like a panel.
+    backgroundColor: 'rgba(3,3,8,0.72)',
+  },
+  dialog: {
+    alignSelf: 'stretch',
+    maxWidth: 400,
+    padding: spacing.xl,
+    gap: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: palette.surfaceHigh,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: palette.hairlineStrong,
+  },
+  dialogTitle: { ...typography.h2 },
+  dialogBody: { ...typography.bodyMuted, fontSize: 14 },
+  dialogActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  dialogGhost: {
+    paddingVertical: 11,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.full,
+  },
+  dialogGhostText: { fontSize: 14.5, fontWeight: '700', color: palette.textSecondary },
+  dialogDisabled: { opacity: 0.4 },
+
+  // Text only, no fill and no border. Reachable, but it does not compete with
+  // Sign out for the thumb — the confirmation carries the weight, not this.
+  destructive: {
+    alignSelf: 'center',
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  destructiveText: { fontSize: 13.5, fontWeight: '600', color: palette.danger },
+  dialogDanger: {
+    paddingVertical: 11,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.full,
+    // Tinted rather than solid: destructive, but it is not the action we are
+    // steering the user toward, and a solid red fill reads as the primary CTA.
+    backgroundColor: 'rgba(255,92,92,0.14)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,92,92,0.4)',
+  },
+  dialogDangerText: { fontSize: 14.5, fontWeight: '700', color: palette.danger },
 });

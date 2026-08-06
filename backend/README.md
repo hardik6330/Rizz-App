@@ -86,6 +86,30 @@ curl -s localhost:8787/v1/user/credits -H "Authorization: Bearer $TOKEN" | jq
 - **Never trust the client's mime type.** `sniff()` in `routes/ai.ts` reads magic bytes.
 - **Never trust the client's `isPro`.** It comes from the JWT, which comes from the DB.
 
+## Migrations
+
+```bash
+cd backend && node --env-file=.env --import tsx src/db/migrate.ts   # npm run db:migrate
+```
+
+Tracked in `__drizzle_migrations`, driven by `src/db/migrations/meta/_journal.json`. Safe to
+run repeatedly, and safe against the database that already carries 0000 and 0001 by hand —
+`migrate.ts` detects that case and records them as applied rather than re-running the DDL.
+
+**Where it runs is per-target, and this is not a detail:**
+
+- **Render** — in `buildCommand`, before `npm run build`. The build container can reach the
+  database, so an unreachable database fails the deploy instead of booting new code against
+  an old schema.
+- **Vercel** — **manually, from a machine that can reach the database, before you promote
+  the deploy.** Vercel's build containers have no stable egress IP, and the database sits
+  behind an allowlist, so a migration step in the build would hang to the 60s ceiling and
+  fail every deploy. There is no way around this on Hobby; it is one of the reasons
+  `render.yaml` is the better fit.
+
+Migrations must stay backward-compatible with the release still serving traffic. Both targets
+roll deploys, so expand in one release and contract in the next — never in the same one.
+
 ## Deploy
 
 No Docker. Two targets are configured, both from the **repo root** — never with the project

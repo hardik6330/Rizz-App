@@ -206,11 +206,25 @@ const FEED_VERSION = 1;
  * prompt and the same answer bought N times a day — the largest single cost
  * defect in the product. Now it is one call regardless of user count.
  *
- * ponytail: generated lazily on the first request of the day rather than by a
- * cron, so two clients racing the very first request can both generate. The
- * INSERT IGNORE means only one row survives; the cost ceiling is a couple of
- * duplicate calls per day, which is not worth a lock or a scheduler yet.
+ * Generated lazily on the first miss of the day. The window between the cache
+ * miss and the INSERT is one whole Gemini call — 3-15s — so at any real DAU the
+ * clients arriving just after 00:00 UTC ALL miss, and the "couple of duplicate
+ * calls" this used to accept is really O(concurrent users): hundreds of
+ * identical 4096-token generations, all but one discarded.
+ *
+ * `inFlight` collapses that to one call per instance. Everyone who arrives while
+ * a generation is running awaits the same promise instead of starting their own.
+ *
+ * ponytail: per-instance, so the real ceiling is one call per instance per day,
+ * not one globally. That is bounded by something the platform controls rather
+ * than by user count, which is the part that mattered. A MySQL GET_LOCK would
+ * make it exactly one — but the lock is connection-scoped and this pool runs
+ * with connectionLimit 1 on Vercel, so taking a connection to hold a lock and
+ * then querying inside it deadlocks. Schedule the generation at 23:50 UTC when
+ * one call globally is worth a scheduler.
  */
+let inFlight: { date: string; work: Promise<unknown[]> } | null = null;
+
 ai.post('/feed', async (c) => {
   const today = todayKey();
 
@@ -223,6 +237,23 @@ ai.post('/feed', async (c) => {
     return c.json({ result: { lines: row.items_json }, cached: true });
   }
 
+  // Yesterday's promise is not today's answer.
+  if (inFlight?.date !== today) {
+    inFlight = { date: today, work: generateFeed(today) };
+  }
+
+  try {
+    const lines = await inFlight.work;
+    return c.json({ result: { lines }, cached: false });
+  } catch (err) {
+    // Cleared so a failure does not pin every later caller to the same rejection
+    // for the rest of the day — the next request retries.
+    if (inFlight?.date === today) inFlight = null;
+    throw err;
+  }
+});
+
+async function generateFeed(today: string): Promise<unknown[]> {
   const { data } = await generate<{ lines: unknown[] }>({
     engine: 'feed',
     system: FEED_PROMPT,
@@ -237,9 +268,8 @@ ai.post('/feed', async (c) => {
     VALUES (${today}, ${FEED_VERSION}, ${JSON.stringify(data.lines)}, ${Date.now()})
   `);
   log.info('feed.generated', { date: today, version: FEED_VERSION, count: data.lines.length });
-
-  return c.json({ result: { lines: data.lines }, cached: false });
-});
+  return data.lines;
+}
 
 // ── POST /v1/ai/chat ─────────────────────────────────────────────────────────
 // Called by GeminiChatClient.kt. Matches MAX_TRANSCRIPT_CHARS on the native side.

@@ -57,12 +57,15 @@ interface UserRow {
   banned_at: number | null;
   /** Null until /signup. The client shows it, and uses it as "am I signed in?". */
   username: string | null;
+  /** Signed into the token as `ep`; see lib/jwt.ts. */
+  token_epoch: number;
 }
 
 /** One row by primary key, or undefined. */
 async function userById(id: string): Promise<UserRow | undefined> {
   const rows = await db.execute(sql`
-    SELECT id, ${proNow()} AS is_pro, analysis_count, banned_at, username FROM users WHERE id = ${id} LIMIT 1
+    SELECT id, ${proNow()} AS is_pro, analysis_count, banned_at, username, token_epoch
+      FROM users WHERE id = ${id} LIMIT 1
   `);
   return (rows as unknown as [UserRow[]])[0]?.[0];
 }
@@ -77,7 +80,7 @@ async function userById(id: string): Promise<UserRow | undefined> {
  */
 async function sessionFor(user: UserRow, installId?: string) {
   const isPro = user.is_pro === 1;
-  const { token, expiresIn } = await signAccess({ sub: user.id, pro: isPro });
+  const { token, expiresIn } = await signAccess({ sub: user.id, pro: isPro, ep: user.token_epoch });
   return {
     access_token: token,
     expires_in: expiresIn,
@@ -120,7 +123,8 @@ auth.post('/device', async (c) => {
   `);
 
   const rows = await db.execute(sql`
-    SELECT id, ${proNow()} AS is_pro, analysis_count, banned_at, username FROM users WHERE install_id = ${install_id} LIMIT 1
+    SELECT id, ${proNow()} AS is_pro, analysis_count, banned_at, username, token_epoch
+      FROM users WHERE install_id = ${install_id} LIMIT 1
   `);
   const user = (rows as unknown as [UserRow[]])[0]?.[0];
   if (!user) throw Errors.badRequest('could not create device');
@@ -221,6 +225,11 @@ auth.post('/signup', requireAuth, async (c) => {
 const LoginBody = z.object({
   email: z.string().email().max(255).transform((e) => e.trim().toLowerCase()),
   password: z.string().min(1).max(128),
+  /**
+   * The install doing the logging in. OPTIONAL, so a client built before this
+   * shipped still logs in — it just stays split (see `claimInstall`).
+   */
+  install_id: z.string().uuid().optional(),
 });
 
 /** Consecutive failures before the account is parked for LOCKOUT_MS. */
@@ -234,11 +243,64 @@ interface LoginRow extends UserRow {
 }
 
 /**
+ * Point this install at the row that just authenticated.
+ *
+ * **The bug this fixes.** `/signup` claims the install's row; `/login` used not
+ * to touch `install_id` at all. So after logging in, the device held a token for
+ * row B while MMKV still addressed row A. That is invisible for up to 30 days —
+ * and then the token expires, `accessToken()` falls back to `/device` with
+ * install_id A, the server answers with `username: null`, and the app silently
+ * signs the user out and resets their credits to a row they have never used.
+ * Every login also stranded row A for ever, which is where the duplicate
+ * anonymous rows come from.
+ *
+ * Three statements, in this order, because `uq_users_install` is UNIQUE and
+ * `install_id` is NOT NULL — the id has to be taken off whoever holds it before
+ * it can be given to anybody else:
+ *
+ *   1. The holder is anonymous → DELETE it. Once the device points elsewhere
+ *      nothing can ever reach that row again: it has no email to log in with, so
+ *      keeping it would only park its free credits somewhere unreachable.
+ *      `email IS NULL` is load-bearing — without it a shared device deletes a
+ *      real account.
+ *   2. The holder is a real account (two people share one phone) → give it a
+ *      FRESH install_id rather than deleting it. It stays reachable by email and
+ *      password with its credits intact; it just no longer owns this device.
+ *      Skipping this is not cosmetic, it is an ER_DUP_ENTRY 500 on step 3.
+ *   3. Take the id.
+ *
+ * Transactional because a crash between 1 and 3 leaves the install owned by
+ * nobody, and the next `/device` mints a third row.
+ */
+export async function claimInstall(userId: string, installId: string, now: number): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      DELETE FROM users
+       WHERE install_id = ${installId} AND id <> ${userId} AND email IS NULL
+    `);
+    await tx.execute(sql`
+      UPDATE users SET install_id = ${randomUUID()}, updated_at = ${now}
+       WHERE install_id = ${installId} AND id <> ${userId}
+    `);
+    await tx.execute(sql`
+      UPDATE users
+         SET install_id    = ${installId},
+             failed_logins = 0,
+             locked_until  = NULL,
+             updated_at    = ${now}
+       WHERE id = ${userId}
+    `);
+  });
+}
+
+/**
  * Email + password → a session on the ORIGINAL user row.
  *
  * This is the endpoint that makes an account worth having: a reinstall gets a
  * new install_id and a new anonymous row, then logs in and is handed back the
- * row it started with — spent credits, Pro state and all.
+ * row it started with — spent credits, Pro state and all. `claimInstall` above
+ * is what finishes that handover; without it the device is left addressing the
+ * throwaway row instead of the one it was just handed.
  *
  * With no reset flow, an attacker who brute-forces an account takes it
  * permanently. So the lockout below is load-bearing, and so is the token bucket
@@ -251,7 +313,7 @@ auth.post('/login', async (c) => {
   const now = Date.now();
 
   const rows = await db.execute(sql`
-    SELECT id, password_hash, failed_logins, locked_until, banned_at,
+    SELECT id, password_hash, failed_logins, locked_until, banned_at, token_epoch,
            ${proNow()} AS is_pro, analysis_count, username
       FROM users WHERE email = ${email} LIMIT 1
   `);
@@ -289,11 +351,49 @@ auth.post('/login', async (c) => {
     throw Errors.invalidCredentials();
   }
 
-  await db.execute(sql`
-    UPDATE users SET failed_logins = 0, locked_until = NULL, updated_at = ${now}
-     WHERE id = ${row.id}
-  `);
+  // The install claim SUBSUMES the failed-login reset — see claimInstall step 3.
+  // An old client that sends no install_id still gets the reset on its own.
+  if (parsed.data.install_id) {
+    await claimInstall(row.id, parsed.data.install_id, now);
+  } else {
+    await db.execute(sql`
+      UPDATE users SET failed_logins = 0, locked_until = NULL, updated_at = ${now}
+       WHERE id = ${row.id}
+    `);
+  }
 
-  log.info('auth.login');
-  return c.json(await sessionFor(row));
+  log.info('auth.login', { claimedInstall: parsed.data.install_id != null });
+  // Echoed so the client can persist it: on the reinstall path this may be the
+  // first time this device learns which install id it now owns.
+  return c.json(await sessionFor(row, parsed.data.install_id));
+});
+
+// ── POST /v1/auth/logout ─────────────────────────────────────────────────────
+
+/**
+ * Kill every token this account holds.
+ *
+ * Sign-out used to be `kv.remove(TOKEN_KEY)` and nothing else — the token stayed
+ * valid for the rest of its 30 days on any device, backup or proxy log that had
+ * a copy, and the only way to stop it was to ban the user. Bumping the epoch
+ * invalidates all of them at the next request, at the cost of nothing:
+ * `requireAuth` was already reading this row.
+ *
+ * Signs out EVERY device, not just this one, and that is the intended shape for
+ * a product with no session list and no "sign out other devices" screen. The one
+ * reason a user reaches for sign-out on a phone they no longer trust is the one
+ * this has to cover.
+ *
+ * The client calls it fire-and-forget and clears its own state regardless — an
+ * offline sign-out must still sign you out locally, and the server-side kill
+ * lands on the next successful call.
+ */
+auth.post('/logout', requireAuth, async (c) => {
+  const { sub } = c.get('user');
+  await db.execute(sql`
+    UPDATE users SET token_epoch = token_epoch + 1, updated_at = ${Date.now()}
+     WHERE id = ${sub}
+  `);
+  log.info('auth.logout');
+  return c.json({ ok: true });
 });

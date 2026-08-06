@@ -45,14 +45,23 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
   }
 
   const rows = await db.execute(sql`
-    SELECT ${proNow()} AS is_pro, banned_at FROM users WHERE id = ${claims.sub} LIMIT 1
+    SELECT ${proNow()} AS is_pro, banned_at, token_epoch
+      FROM users WHERE id = ${claims.sub} LIMIT 1
   `);
-  const row = (rows as unknown as [Array<{ is_pro: number; banned_at: number | null }>])[0]?.[0];
+  const row = (rows as unknown as [
+    Array<{ is_pro: number; banned_at: number | null; token_epoch: number }>,
+  ])[0]?.[0];
 
   // A deleted account is an invalid token, not a 500 further down the stack.
   if (!row) throw Errors.unauthorized();
   if (row.banned_at) throw Errors.banned();
+  /*
+   * Revoked. The row has moved past the epoch this token was signed with, which
+   * means somebody signed out — possibly the real owner, on a device they no
+   * longer hold. Free, because the row was already being read.
+   */
+  if (claims.ep !== row.token_epoch) throw Errors.unauthorized();
 
-  c.set('user', { sub: claims.sub, pro: row.is_pro === 1 });
+  c.set('user', { sub: claims.sub, pro: row.is_pro === 1, ep: row.token_epoch });
   await next();
 };

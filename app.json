@@ -15,8 +15,7 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": false,
         "NSSupportsLiveActivitiesFrequentUpdates": false
-      },
-      "googleServicesFile": "./GoogleService-Info.plist"
+      }
     },
     "android": {
       "package": "com.rizzcoach.app",
@@ -26,8 +25,7 @@
         "backgroundImage": "./assets/icons/android-icon-background.png",
         "monochromeImage": "./assets/icons/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "googleServicesFile": "./google-services.json"
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "static",

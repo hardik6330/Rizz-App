@@ -1,4 +1,4 @@
-import { bigint, char, date, index, int, json, mysqlEnum, mysqlTable, smallint, tinyint, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
+import { bigint, char, date, double, index, int, json, mysqlEnum, mysqlTable, smallint, tinyint, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
 
 /**
  * Three tables. See docs/README.md §5 for what is deliberately absent
@@ -36,6 +36,16 @@ export const users = mysqlTable(
     failedLogins: smallint('failed_logins', { unsigned: true }).notNull().default(0),
     lockedUntil: bigint('locked_until', { mode: 'number' }),
 
+    /**
+     * Bumped to kill every token this user holds. Baked into the JWT as `ep` and
+     * compared on every request — see lib/jwt.ts and middleware/auth.ts.
+     *
+     * Sign-out used to be a client-side MMKV delete and nothing else, so a
+     * 30-day token outlived it by 30 days. `banned_at` was the only revocation
+     * that existed, and it locks the owner out too.
+     */
+    tokenEpoch: int('token_epoch', { unsigned: true }).notNull().default(0),
+
     isPro: tinyint('is_pro').notNull().default(0),
     entitlementExpiresAt: bigint('entitlement_expires_at', { mode: 'number' }),
 
@@ -64,6 +74,29 @@ export const dailyFeed = mysqlTable('daily_feed', {
   itemsJson: json('items_json').notNull(),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
+
+/**
+ * Token buckets shared across instances — `/v1/auth/*` only.
+ *
+ * Not a cache and not optional: it is the brute-force limiter in front of a
+ * product with no password reset, and the in-process Map it replaces there was
+ * per-lambda. Everything else still uses the in-process bucket. See
+ * middleware/rateLimit.ts for which gets which and why.
+ *
+ * `tokens` is DOUBLE because refill is fractional — `refillPerSec` of 0.05 on
+ * the login bucket adds three thousandths of a token a second, and rounding that
+ * to an INT means the bucket never refills at all.
+ */
+export const rateLimits = mysqlTable(
+  'rate_limits',
+  {
+    /** `<scope>:<by>:<id>` — see dbRateLimit(). */
+    bucket: varchar('bucket', { length: 160 }).primaryKey(),
+    tokens: double('tokens').notNull(),
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({ idxUpdated: index('idx_rl_updated').on(t.updatedAt) }),
+);
 
 /** RevenueCat webhook idempotency only (Phase 3). No billing content stored. */
 export const rcEvents = mysqlTable(

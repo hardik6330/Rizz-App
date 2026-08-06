@@ -16,7 +16,7 @@ CREATE TABLE users (
   UNIQUE KEY uq_users_install (install_id),
   UNIQUE KEY uq_users_rc      (rc_app_user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
+--> statement-breakpoint
 CREATE TABLE daily_feed (
   feed_date  DATE              NOT NULL,
   version    SMALLINT UNSIGNED NOT NULL,
@@ -24,7 +24,7 @@ CREATE TABLE daily_feed (
   created_at BIGINT            NOT NULL,
   PRIMARY KEY (feed_date, version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
+--> statement-breakpoint
 CREATE TABLE rc_events (
   event_id   VARCHAR(128) NOT NULL,
   user_id    CHAR(36)     NULL,

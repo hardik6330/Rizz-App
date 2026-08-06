@@ -4,7 +4,7 @@ import { assertSafetyRails } from './ai/prompts.ts';
 import { ApiError } from './lib/errors.ts';
 import { log } from './lib/logger.ts';
 import { requireAuth } from './middleware/auth.ts';
-import { rateLimit } from './middleware/rateLimit.ts';
+import { dbRateLimit, rateLimit } from './middleware/rateLimit.ts';
 import { ai } from './routes/ai.ts';
 import { auth } from './routes/auth.ts';
 import { config } from './routes/config.ts';
@@ -43,14 +43,15 @@ app.route('/', legal);
  * attacker who brute-forces an account takes it permanently and the owner has
  * no recovery. The per-account lockout in routes/auth.ts is the other half.
  *
- * ⚠ In-process buckets are correct for ONE instance. On a serverless target
- * every warm lambda gets its own empty Map and this protection evaporates — see
- * the note in middleware/rateLimit.ts. Do not ship accounts to Vercel without
- * moving these to a shared store first.
+ * `dbRateLimit`, not `rateLimit`: these three are the buckets that must survive
+ * horizontal scaling. The in-process Map used to be here too, and on Vercel that
+ * meant each warm lambda handed out a fresh set of attempts — a limit the
+ * platform silently multiplied by however many instances it felt like starting.
+ * The others below stay in-process on purpose; see middleware/rateLimit.ts.
  */
-app.use('/v1/auth/login', rateLimit({ capacity: 8, refillPerSec: 0.05, by: 'ip' }));
-app.use('/v1/auth/signup', rateLimit({ capacity: 5, refillPerSec: 0.01, by: 'ip' }));
-app.use('/v1/auth/*', rateLimit({ capacity: 20, refillPerSec: 0.2, by: 'ip' }));
+app.use('/v1/auth/login', dbRateLimit({ scope: 'login', capacity: 8, refillPerSec: 0.05, by: 'ip' }));
+app.use('/v1/auth/signup', dbRateLimit({ scope: 'signup', capacity: 5, refillPerSec: 0.01, by: 'ip' }));
+app.use('/v1/auth/*', dbRateLimit({ scope: 'auth', capacity: 20, refillPerSec: 0.2, by: 'ip' }));
 app.route('/v1/auth', auth);
 
 app.route('/v1/config', config);
@@ -64,6 +65,27 @@ app.route('/v1/config', config);
 app.use('/v1/webhooks/*', rateLimit({ capacity: 60, refillPerSec: 1, by: 'ip' }));
 app.route('/v1/webhooks', webhooks);
 
+/*
+ * Refuse an oversized body BEFORE reading it.
+ *
+ * `routes/ai.ts` caps images with zod — but zod runs after `c.req.json()` has
+ * already buffered and parsed the whole thing. Three 4MB base64 images is ~12MB
+ * of JSON, and V8 strings are UTF-16, so that is ~24MB resident before a single
+ * validation rule has an opinion. On a 512MB function ten of those is an OOM,
+ * and one free account can send them.
+ *
+ * 14MB, not 12: base64 plus JSON escaping plus the rest of the envelope. This is
+ * a backstop against a body nobody should be sending, not the real limit — the
+ * per-image cap in ai.ts still is.
+ */
+const MAX_BODY_BYTES = 14 * 1024 * 1024;
+app.use('/v1/ai/*', async (c, next) => {
+  const declared = Number(c.req.header('content-length') ?? 0);
+  if (declared > MAX_BODY_BYTES) {
+    throw new ApiError(413, 'PAYLOAD_TOO_LARGE', 'That image is too large', false);
+  }
+  await next();
+});
 app.use('/v1/ai/*', requireAuth, rateLimit({ capacity: 10, refillPerSec: 0.17, by: 'user' }));
 app.route('/v1/ai', ai);
 

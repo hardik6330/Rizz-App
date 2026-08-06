@@ -59,6 +59,14 @@ const hasTeamId = /^[A-Z0-9]{10}$/i.test(APPLE_TEAM_ID);
  *   eas env:create --environment preview --name GOOGLE_SERVICES_JSON \
  *     --type file --value ./google-services.json
  */
+/*
+ * These are the ONLY place `googleServicesFile` is set.
+ *
+ * app.json used to declare both paths unconditionally while gitignoring both
+ * files, which made the opt-in below dead code: a clean clone always failed at
+ * the Gradle google-services task, which is the deep-in-the-build-queue failure
+ * this whole mechanism exists to prevent. Never put them back in app.json.
+ */
 const GOOGLE_SERVICES_JSON = process.env.GOOGLE_SERVICES_JSON ?? '';
 const GOOGLE_SERVICES_PLIST = process.env.GOOGLE_SERVICES_PLIST ?? '';
 const hasFirebaseAndroid = GOOGLE_SERVICES_JSON.length > 0;
