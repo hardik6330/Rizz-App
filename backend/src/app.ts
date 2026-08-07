@@ -1,11 +1,14 @@
+import { randomUUID } from 'node:crypto';
+
 import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 
 import { assertSafetyRails } from './ai/prompts.ts';
 import { db } from './db/client.ts';
 import { ApiError } from './lib/errors.ts';
-import { log } from './lib/logger.ts';
+import { log, withRequestId } from './lib/logger.ts';
 import { requireAuth } from './middleware/auth.ts';
 import { idempotent } from './middleware/idempotency.ts';
 import { dbRateLimit, rateLimit } from './middleware/rateLimit.ts';
@@ -20,6 +23,25 @@ import { webhooks } from './routes/webhooks.ts';
 assertSafetyRails();
 
 export const app = new Hono();
+
+/*
+ * A correlation id on every request, and on every log line it produces.
+ *
+ * FIRST, before CORS and before any limiter, so that a request rejected by one
+ * of those is still traceable — the rejections are the lines you most want to
+ * correlate. See `withRequestId` in lib/logger.ts for why it is ambient rather
+ * than a parameter.
+ *
+ * An inbound `x-request-id` is honoured so a proxy or a load test can supply its
+ * own and have both sides agree; otherwise one is minted. Echoed back on the
+ * response, which is what lets a user paste an id from a failing client into a
+ * bug report and have it find something.
+ */
+app.use('*', async (c, next) => {
+  const rid = c.req.header('x-request-id')?.slice(0, 64) || randomUUID();
+  c.header('x-request-id', rid);
+  await withRequestId(rid, next);
+});
 
 /*
  * CORS, with an explicit allowlist and never `*`.
@@ -141,15 +163,27 @@ app.route('/v1/webhooks', webhooks);
  * 14MB, not 12: base64 plus JSON escaping plus the rest of the envelope. This is
  * a backstop against a body nobody should be sending, not the real limit — the
  * per-image cap in ai.ts still is.
+ *
+ * **This used to read `content-length` and nothing else, which a client can
+ * simply not send.** A chunked request declared no length, `Number(undefined ??
+ * 0)` came out 0, the guard passed, and the 24MB it exists to prevent was
+ * buffered anyway — a check that only stops the honest caller. Hono's own
+ * `bodyLimit` counts bytes off the stream as they arrive and aborts mid-read, so
+ * there is nothing left to lie about. Stock middleware rather than a hand-rolled
+ * reader: this is a hostile-input path and the shipped one has had more eyes.
  */
 const MAX_BODY_BYTES = 14 * 1024 * 1024;
-app.use('/v1/ai/*', async (c, next) => {
-  const declared = Number(c.req.header('content-length') ?? 0);
-  if (declared > MAX_BODY_BYTES) {
-    throw new ApiError(413, 'PAYLOAD_TOO_LARGE', 'That image is too large', false);
-  }
-  await next();
-});
+app.use(
+  '/v1/ai/*',
+  bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    // Thrown, not returned: `onError` wants a Response, and building one here
+    // would be the one 413 in the service that skips the uniform envelope below.
+    onError: () => {
+      throw new ApiError(413, 'PAYLOAD_TOO_LARGE', 'That image is too large', false);
+    },
+  }),
+);
 /*
  * Order matters: auth → limit → idempotency.
  *

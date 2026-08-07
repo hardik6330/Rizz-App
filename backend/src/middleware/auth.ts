@@ -9,6 +9,12 @@ import { verifyAccess, type Claims } from '../lib/jwt.ts';
 declare module 'hono' {
   interface ContextVariableMap {
     user: Claims;
+    /**
+     * The balance as it stood when `requireAuth` read the row, before this
+     * request charged anything. Set here so `/v1/ai/*` can answer with a credit
+     * count WITHOUT a second SELECT — see `withCredits` in routes/ai.ts.
+     */
+    credits: { isPro: boolean; analysisCount: number };
   }
 }
 
@@ -31,6 +37,10 @@ declare module 'hono' {
  * The cost is one PK lookup per request, on a service that already does two to
  * three round trips before Gemini is called. If that ever shows up in a latency
  * profile, cache it in-process for a few seconds — do not remove it.
+ *
+ * `analysis_count` rides along on that same row. It costs nothing here — the
+ * lookup and the row are already paid for — and it removes the separate SELECT
+ * `/v1/ai/*` used to make purely to put a number in the response envelope.
  */
 export const requireAuth: MiddlewareHandler = async (c, next) => {
   const header = c.req.header('authorization') ?? '';
@@ -45,11 +55,16 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
   }
 
   const rows = await db.execute(sql`
-    SELECT ${proNow()} AS is_pro, banned_at, token_epoch
+    SELECT ${proNow()} AS is_pro, banned_at, token_epoch, analysis_count
       FROM users WHERE id = ${claims.sub} LIMIT 1
   `);
   const row = (rows as unknown as [
-    Array<{ is_pro: number; banned_at: number | null; token_epoch: number }>,
+    Array<{
+      is_pro: number;
+      banned_at: number | null;
+      token_epoch: number;
+      analysis_count: number;
+    }>,
   ])[0]?.[0];
 
   // A deleted account is an invalid token, not a 500 further down the stack.
@@ -63,6 +78,7 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
   if (claims.ep !== row.token_epoch) throw Errors.unauthorized();
 
   c.set('user', { sub: claims.sub, pro: row.is_pro === 1, ep: row.token_epoch, dev: claims.dev });
+  c.set('credits', { isPro: row.is_pro === 1, analysisCount: row.analysis_count });
   await next();
 };
 

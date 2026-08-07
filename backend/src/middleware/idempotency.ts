@@ -30,11 +30,38 @@ import { sweeper } from '../lib/sweep.ts';
  * permanently broken key.
  */
 
-/** 24h. Long past any retry a client will still be attempting. */
-const RETENTION_MS = 24 * 60 * 60_000;
+/**
+ * 15 minutes. **This was 24 hours, and 24 hours was a privacy defect.**
+ *
+ * `body` is the whole response envelope, and for `/v1/ai/*` that envelope's
+ * `result` is the generated content: profile reports about a named third party,
+ * rewritten bios, opening lines, chat replies. db/schema.ts opens with "NEVER
+ * add: images, transcripts, replies, reports, or saved items… anything derived
+ * from what a user analysed still has nowhere to live here" — a rule written at
+ * migration 0003 and quietly broken by this table at 0004. The app tells users
+ * "Screenshots and conversations are never saved" on the account screen, so this
+ * was not just an internal rule being bent.
+ *
+ * The body cannot simply go: replaying it IS the feature, and a retry with no
+ * stored answer means the user pays a second credit for the analysis they
+ * already bought. What was wrong was the DURATION. A retry is something a client
+ * does while the user is still looking at a spinner — seconds, or minutes across
+ * a network drop and a resume. Nothing retries a request from yesterday, so the
+ * other 23¾ hours were pure retention of content we promised not to keep.
+ *
+ * The sweep interval is tightened to match. Both together bound the worst case
+ * at ~25 minutes rather than a day, and the read below refuses to replay a row
+ * older than the window even if the sweep has not run yet — so correctness does
+ * not depend on the sweep firing.
+ *
+ * ponytail: the ceiling is that a client which retried after 15 minutes gets a
+ * fresh charge. Nothing in this app does; if some future offline queue does,
+ * store a hash of the request and re-derive rather than lengthening this.
+ */
+const RETENTION_MS = 15 * 60_000;
 
 const sweepKeys = sweeper(
-  60 * 60_000,
+  10 * 60_000,
   (now) => sql`DELETE FROM idempotency WHERE created_at < ${now - RETENTION_MS} LIMIT 5000`,
 );
 
@@ -85,9 +112,31 @@ export const idempotent: MiddlewareHandler = async (c, next) => {
 
   if (!claimed) {
     const rows = await db.execute(sql`
-      SELECT status, body FROM idempotency WHERE id = ${id} LIMIT 1
+      SELECT status, body, created_at FROM idempotency WHERE id = ${id} LIMIT 1
     `);
-    const prior = (rows as unknown as [Array<{ status: number; body: string | null }>])[0]?.[0];
+    const prior = (rows as unknown as [
+      Array<{ status: number; body: string | null; created_at: number }>,
+    ])[0]?.[0];
+
+    /*
+     * The age is checked HERE, not only by the sweep. The sweep is opportunistic
+     * and per-instance, so a row outlives RETENTION_MS on a quiet service — and
+     * the one thing that must never happen is generated content being handed
+     * back long after we told the user it was gone. Enforcing the window on the
+     * read means correctness does not depend on a timer firing; the sweep is
+     * only reclaiming space.
+     *
+     * A stale row is dropped and the request proceeds unprotected — the same
+     * fail-open posture as the claim above, and the alternative (a 409 on a key
+     * whose answer we deliberately discarded) would be a dead end the client
+     * cannot retry out of. It needs a client reusing one key across 15 minutes,
+     * which no build in the field does.
+     */
+    if (prior && now - prior.created_at >= RETENTION_MS) {
+      log.info('idempotency.expired');
+      await db.execute(sql`DELETE FROM idempotency WHERE id = ${id}`).catch(() => {});
+      return next();
+    }
 
     if (prior && prior.status !== IN_FLIGHT && prior.body != null) {
       // The replay. This is the whole feature.

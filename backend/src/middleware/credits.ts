@@ -100,22 +100,37 @@ export async function refundCredit(userId: string, reason: string): Promise<void
   log.info('credit.refund', { reason });
 }
 
-export async function creditsFor(userId: string): Promise<{
+export interface CreditState {
   isPro: boolean;
   analysisCount: number;
   remaining: number;
-}> {
-  const rows = await db.execute(sql`
-    SELECT ${proNow()} AS is_pro, analysis_count FROM users WHERE id = ${userId} LIMIT 1
-  `);
-  const row = (rows as unknown as [Array<{ is_pro: number; analysis_count: number }>])[0]?.[0];
-  const isPro = row?.is_pro === 1;
-  const analysisCount = row?.analysis_count ?? 0;
+}
+
+/**
+ * Balance → the shape everything downstream reads. One definition of
+ * "remaining", because there are now two ways to arrive at a count: this
+ * module's own SELECT, and the row `requireAuth` already read.
+ */
+export function creditsFrom(isPro: boolean, analysisCount: number): CreditState {
   return {
     isPro,
     analysisCount,
     remaining: isPro ? Number.MAX_SAFE_INTEGER : Math.max(0, FREE_ANALYSIS_LIMIT - analysisCount),
   };
+}
+
+/**
+ * Read the balance. **A round trip — prefer `creditsAfter` in routes/ai.ts.**
+ *
+ * Still the right call for `/v1/user/credits`, whose entire job is to answer
+ * with the authoritative number and which makes no other query.
+ */
+export async function creditsFor(userId: string): Promise<CreditState> {
+  const rows = await db.execute(sql`
+    SELECT ${proNow()} AS is_pro, analysis_count FROM users WHERE id = ${userId} LIMIT 1
+  `);
+  const row = (rows as unknown as [Array<{ is_pro: number; analysis_count: number }>])[0]?.[0];
+  return creditsFrom(row?.is_pro === 1, row?.analysis_count ?? 0);
 }
 
 /**

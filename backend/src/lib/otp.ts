@@ -38,6 +38,27 @@ export const MAX_OTP_ATTEMPTS = 5;
  */
 export const RESEND_COOLDOWN_MS = 60_000;
 
+/**
+ * Total sends to one address in 24h, cooldown or no cooldown.
+ *
+ * **The cooldown alone did not bound this.** It sets a MINIMUM GAP between
+ * sends; it never caps the total. An attacker rotating IPs (to get past the
+ * bucket in app.ts) and pacing to 60 seconds delivers 1,440 emails a day into
+ * one person's inbox — each one billed to us, sent from our domain, and marked
+ * as spam by the recipient. The cooldown made that slow. It did not make it
+ * stop.
+ *
+ * 10 is generous for the real user it must not block: a signup, a couple of
+ * "it didn't arrive" resends, and a recovery login all in one day is maybe five.
+ *
+ * Silent when hit, exactly like the cooldown — `issueOtp` returns null and the
+ * caller answers as though it sent. A "you have requested too many codes"
+ * message would confirm to the attacker that the address is worth attacking.
+ */
+export const MAX_SENDS_PER_WINDOW = 10;
+/** Fixed 24h window; see migration 0007 for why fixed rather than sliding. */
+export const SEND_WINDOW_MS = 24 * 60 * 60_000;
+
 export type OtpPurpose = 'signup' | 'login';
 
 /**
@@ -55,10 +76,21 @@ export type OtpPurpose = 'signup' | 'login';
  * backstop that guarantees nothing unverified survives 7 days even if this sweep
  * never runs. This one is still worth having — it clears rows in minutes rather
  * than days whenever the service is actually being used.
+ *
+ * **It sweeps on `created_at`, not `expires_at`, and that is load-bearing.** It
+ * used to drop rows ten minutes after issue, which is fine for a code and fatal
+ * for the send counter added in migration 0007: the row carrying `sends` is the
+ * only record that this address has been mailed today, so deleting it reset the
+ * daily cap every ten minutes and the cap bounded nothing. The row now lives for
+ * the length of the window it is counting.
+ *
+ * A surviving row is NOT a live code. `verifyOtp` has `expires_at > now` in its
+ * DELETE predicate, so a code is dead on the dot at ten minutes whatever the row
+ * does afterwards — what lingers is a SHA-256 and a small integer.
  */
 const sweepExpired = sweeper(
   30 * 60_000,
-  (now) => sql`DELETE FROM email_otps WHERE expires_at < ${now} LIMIT 5000`,
+  (now) => sql`DELETE FROM email_otps WHERE created_at < ${now - SEND_WINDOW_MS} LIMIT 5000`,
 );
 
 /**
@@ -90,12 +122,12 @@ export function hashCode(email: string, purpose: OtpPurpose, code: string): stri
 }
 
 /**
- * Mint and store a code, unless one was just sent.
+ * Mint and store a code, unless one was just sent or this address has had
+ * enough for one day.
  *
- * Returns `null` when the cooldown is still running — the caller answers the
- * user identically either way, so a resend that gets swallowed is invisible to
- * anyone probing, and the person who genuinely double-tapped still has the code
- * that is already on its way to them.
+ * Returns `null` for BOTH refusals, and the caller answers the user identically
+ * either way — so a swallowed resend is invisible to anyone probing, and the
+ * person who genuinely double-tapped still has the code already on its way.
  *
  * The INSERT ... ON DUPLICATE KEY UPDATE resets `attempts` along with the hash.
  * That is intended: a NEW code is a clean slate. It is not a way around the
@@ -106,20 +138,56 @@ export async function issueOtp(email: string, purpose: OtpPurpose): Promise<stri
   sweepExpired(now);
 
   const rows = await db.execute(sql`
-    SELECT created_at FROM email_otps WHERE email = ${email} AND purpose = ${purpose} LIMIT 1
+    SELECT created_at, sends, window_start
+      FROM email_otps WHERE email = ${email} AND purpose = ${purpose} LIMIT 1
   `);
-  const existing = (rows as unknown as [Array<{ created_at: number }>])[0]?.[0];
+  const existing = (rows as unknown as [
+    Array<{ created_at: number; sends: number; window_start: number }>,
+  ])[0]?.[0];
   if (existing && now - existing.created_at < RESEND_COOLDOWN_MS) return null;
 
+  const windowOpen = existing != null && now - existing.window_start < SEND_WINDOW_MS;
+  if (windowOpen && existing.sends >= MAX_SENDS_PER_WINDOW) {
+    // Not `log.warn` and no email in the line — the no-PII rule holds here too.
+    // The `purpose` is enough to see a mailbomb in the aggregate.
+    log.info('otp.capped', { purpose });
+    return null;
+  }
+
+  /*
+   * The counter is rolled in SQL rather than computed above and written back.
+   *
+   * Read-then-write here would let two concurrent requests both see `sends: 9`
+   * and both write 10, which is one free send per race — the same reasoning as
+   * `attempts + 1` in `verifyOtp`. The 60-second cooldown makes the race narrow
+   * rather than impossible, and narrow races are the ones that ship.
+   *
+   * `sends` MUST be assigned before `window_start`: MySQL evaluates ODKU
+   * assignments left to right, so the IF on this line still sees the OLD
+   * `window_start`. Swap the two lines and every send opens a fresh window and
+   * the cap never fires.
+   *
+   * ponytail: the check above is still read-then-decide, so a burst arriving
+   * inside one round trip can overshoot the cap by the size of the burst. The
+   * IP bucket and the cooldown both have to be beaten first, and the cost of
+   * overshooting is a couple of extra emails. A single conditional UPDATE would
+   * close it, at the price of not knowing whether to send.
+   */
   const code = generateCode();
+  const windowExpiredAt = now - SEND_WINDOW_MS;
   await db.execute(sql`
-    INSERT INTO email_otps (email, purpose, code_hash, attempts, expires_at, created_at)
-    VALUES (${email}, ${purpose}, ${hashCode(email, purpose, code)}, 0, ${now + OTP_TTL_MS}, ${now})
+    INSERT INTO email_otps
+      (email, purpose, code_hash, attempts, expires_at, created_at, sends, window_start)
+    VALUES
+      (${email}, ${purpose}, ${hashCode(email, purpose, code)}, 0,
+       ${now + OTP_TTL_MS}, ${now}, 1, ${now})
     ON DUPLICATE KEY UPDATE
-      code_hash  = VALUES(code_hash),
-      attempts   = 0,
-      expires_at = VALUES(expires_at),
-      created_at = VALUES(created_at)
+      code_hash    = VALUES(code_hash),
+      attempts     = 0,
+      expires_at   = VALUES(expires_at),
+      created_at   = VALUES(created_at),
+      sends        = IF(window_start < ${windowExpiredAt}, 1, sends + 1),
+      window_start = IF(window_start < ${windowExpiredAt}, ${now}, window_start)
   `);
   return code;
 }

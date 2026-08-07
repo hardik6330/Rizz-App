@@ -25,8 +25,10 @@ import {
   hashCode,
   issueOtp,
   MAX_OTP_ATTEMPTS,
+  MAX_SENDS_PER_WINDOW,
   OTP_TTL_MS,
   RESEND_COOLDOWN_MS,
+  SEND_WINDOW_MS,
   verifyOtp,
 } from './otp.ts';
 
@@ -164,6 +166,54 @@ try {
     'while the first account was re-homed rather than deleted — it still has an email to log in with',
   );
   assert.equal(byId.get(secondId)?.is_pro, 0, 'a subscription is NEVER copied to the new row');
+
+  // ── The daily send cap ────────────────────────────────────────────────────
+  //
+  // The cooldown sets a minimum GAP between sends and never caps the total, so
+  // an attacker pacing to 60s delivered 1,440 emails a day to one inbox. This is
+  // the limiter that stops it, and it is worth a real check because it lives in
+  // an ON DUPLICATE KEY UPDATE whose assignment ORDER is load-bearing: `sends`
+  // must be evaluated before `window_start` or every send opens a fresh window
+  // and the cap silently never fires. That failure is invisible from the outside.
+  const CAPPED = `otp-cap-${randomUUID()}@example.test`;
+  try {
+    // Backdate `created_at` after each send so the cooldown is not what refuses.
+    for (let i = 0; i < MAX_SENDS_PER_WINDOW; i++) {
+      assert.ok(await issueOtp(CAPPED, 'login'), `send ${i + 1} of ${MAX_SENDS_PER_WINDOW} allowed`);
+      await db.execute(sql`
+        UPDATE email_otps SET created_at = created_at - ${RESEND_COOLDOWN_MS + 1_000}
+         WHERE email = ${CAPPED} AND purpose = 'login'
+      `);
+    }
+
+    const rows = await db.execute(sql`
+      SELECT sends, window_start FROM email_otps WHERE email = ${CAPPED} AND purpose = 'login'
+    `);
+    const row = (rows as unknown as [Array<{ sends: number; window_start: number }>])[0]?.[0];
+    assert.equal(row?.sends, MAX_SENDS_PER_WINDOW, 'the counter climbed rather than resetting');
+
+    assert.equal(await issueOtp(CAPPED, 'login'), null, 'the send past the cap is refused');
+
+    // A window that has rolled over starts the count again — otherwise the cap
+    // is a permanent ban on an address after ten codes, which is a denial of
+    // service against the recovery path rather than a limit on abuse of it.
+    await db.execute(sql`
+      UPDATE email_otps SET window_start = ${row!.window_start - SEND_WINDOW_MS - 1_000}
+       WHERE email = ${CAPPED} AND purpose = 'login'
+    `);
+    assert.ok(await issueOtp(CAPPED, 'login'), 'a new window allows sends again');
+
+    const after = await db.execute(sql`
+      SELECT sends FROM email_otps WHERE email = ${CAPPED} AND purpose = 'login'
+    `);
+    assert.equal(
+      (after as unknown as [Array<{ sends: number }>])[0]?.[0]?.sends,
+      1,
+      'and the counter restarted at 1 — the ODKU assignment order is right',
+    );
+  } finally {
+    await db.execute(sql`DELETE FROM email_otps WHERE email = ${CAPPED}`);
+  }
 
   console.log('otp.selfcheck: ok');
 } finally {

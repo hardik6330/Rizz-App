@@ -9,7 +9,13 @@ import { db } from '../db/client.ts';
 import { Errors } from '../lib/errors.ts';
 import { todayKey } from '../lib/limits.ts';
 import { log } from '../lib/logger.ts';
-import { chargeCredit, creditsEnvelope, creditsFor, refundCredit } from '../middleware/credits.ts';
+import {
+  chargeCredit,
+  creditsEnvelope,
+  creditsFrom,
+  refundCredit,
+  type CreditState,
+} from '../middleware/credits.ts';
 
 export const ai = new Hono();
 
@@ -62,8 +68,30 @@ async function charged<T>(userId: string, run: () => Promise<T>): Promise<T> {
   }
 }
 
-async function withCredits(userId: string, result: unknown) {
-  return { result, credits: creditsEnvelope(await creditsFor(userId)) };
+/**
+ * The balance after this request, WITHOUT asking the database again.
+ *
+ * `requireAuth` has already read the row — `is_pro` and `analysis_count` are
+ * sitting on the context — and a charge moves the count by exactly one. So the
+ * SELECT that used to sit here was re-reading a number this request had just
+ * written, on a pool with `connectionLimit: 1`, after the Gemini call the user
+ * is already waiting on. `delta` is 1 for a charge that stuck and 0 for one that
+ * was charged and refunded (`not_a_profile`).
+ *
+ * **The gate does not read this.** `chargeCredit` is still a single conditional
+ * UPDATE against the live row, so nothing here can hand out a free analysis. The
+ * only exposure is display: two requests racing from the same account both read
+ * the pre-charge count, so one response can show a meter one behind. It is
+ * correct again on the next request, and `/v1/user/credits` — which the app
+ * calls on every launch and resume — is still authoritative.
+ */
+function creditsAfter(c: { get: (k: 'credits') => { isPro: boolean; analysisCount: number } }, delta: 0 | 1): CreditState {
+  const { isPro, analysisCount } = c.get('credits');
+  return creditsFrom(isPro, analysisCount + delta);
+}
+
+function withCredits(c: Parameters<typeof creditsAfter>[0], result: unknown, delta: 0 | 1 = 1) {
+  return { result, credits: creditsEnvelope(creditsAfter(c, delta)) };
 }
 
 // ── POST /v1/ai/lab ──────────────────────────────────────────────────────────
@@ -93,7 +121,7 @@ ai.post('/lab', async (c) => {
     return data;
   });
 
-  return c.json(await withCredits(sub, data));
+  return c.json(withCredits(c, data));
 });
 
 // ── POST /v1/ai/profile ──────────────────────────────────────────────────────
@@ -144,10 +172,11 @@ ai.post('/profile', async (c) => {
     throw err;
   }
 
-  // Rejected work does not burn a credit — mirrors profile.tsx.
+  // Rejected work does not burn a credit — mirrors profile.tsx. The refund is
+  // why this passes delta 0: charged then given back nets to no movement.
   if (!data.isProfile) await refundCredit(sub, 'not_a_profile');
 
-  return c.json(await withCredits(sub, data));
+  return c.json(withCredits(c, data, data.isProfile ? 1 : 0));
 });
 
 // ── POST /v1/ai/bio ──────────────────────────────────────────────────────────
@@ -184,7 +213,7 @@ ai.post('/bio', async (c) => {
     return data;
   });
 
-  return c.json(await withCredits(sub, data));
+  return c.json(withCredits(c, data));
 });
 
 // ── POST /v1/ai/feed ─────────────────────────────────────────────────────────
@@ -215,27 +244,18 @@ const FEED_VERSION = 1;
  * `inFlight` collapses that to one call per instance. Everyone who arrives while
  * a generation is running awaits the same promise instead of starting their own.
  *
- * ponytail: per-instance, so the real ceiling is one call per instance per day,
- * not one globally. That is bounded by something the platform controls rather
- * than by user count, which is the part that mattered. A MySQL GET_LOCK would
- * make it exactly one — but the lock is connection-scoped and this pool runs
- * with connectionLimit 1 on Vercel, so taking a connection to hold a lock and
- * then querying inside it deadlocks. Schedule the generation at 23:50 UTC when
- * one call globally is worth a scheduler.
+ * `generateFeed` then collapses it ACROSS instances with a row claim — see the
+ * comment there. Two layers because they solve different halves: `inFlight` is
+ * free and handles the many concurrent requests one instance is serving, and the
+ * claim costs one INSERT and handles the N instances Vercel decided to start.
  */
 let inFlight: { date: string; work: Promise<unknown[]> } | null = null;
 
 ai.post('/feed', async (c) => {
   const today = todayKey();
 
-  const cached = await db.execute(sql`
-    SELECT items_json FROM daily_feed
-     WHERE feed_date = ${today} AND version = ${FEED_VERSION} LIMIT 1
-  `);
-  const row = (cached as unknown as [Array<{ items_json: unknown }>])[0]?.[0];
-  if (row) {
-    return c.json({ result: { lines: row.items_json }, cached: true });
-  }
+  const cached = await readFeed(today);
+  if (cached) return c.json({ result: { lines: cached }, cached: true });
 
   // Yesterday's promise is not today's answer.
   if (inFlight?.date !== today) {
@@ -253,15 +273,90 @@ ai.post('/feed', async (c) => {
   }
 });
 
+/** Today's batch if some other instance has finished writing it, else null. */
+async function readFeed(today: string): Promise<unknown[] | null> {
+  const rows = await db.execute(sql`
+    SELECT items_json FROM daily_feed
+     WHERE feed_date = ${today} AND version = ${FEED_VERSION} LIMIT 1
+  `);
+  const row = (rows as unknown as [Array<{ items_json: unknown[] }>])[0]?.[0];
+  return row?.items_json ?? null;
+}
+
+/** How long a loser waits for the winner's row before giving up and generating. */
+const CLAIM_WAIT_MS = 20_000;
+const CLAIM_POLL_MS = 1_000;
+
 async function generateFeed(today: string): Promise<unknown[]> {
-  const { data } = await generate<{ lines: unknown[] }>({
-    engine: 'feed',
-    system: FEED_PROMPT,
-    parts: [{ text: "Write today's fresh lines." }],
-    schema: FEED_SCHEMA,
-    maxOutputTokens: 4096,
-    temperature: 1.1,
-  });
+  /*
+   * Claim the day's generation across ALL instances, not just this one.
+   *
+   * `inFlight` above stops one instance buying the batch twice. It cannot stop
+   * ten instances buying it ten times, because a module-level variable is
+   * per-process and Vercel starts as many processes as it likes — so at 00:00
+   * UTC every warm instance missed the cache together and each paid for its own
+   * 4096-token generation, all but one of them thrown away by the INSERT IGNORE
+   * below. That is a real bill for an identical answer.
+   *
+   * The claim reuses the `idempotency` table rather than adding one. It is
+   * already exactly this: a keyed, INSERT IGNORE claim with a retention sweep,
+   * and its ids are `<uuid>:<key>` so a `feed:` prefix cannot collide. Its 15
+   * minute retention is also the right lease — far longer than a generation, far
+   * shorter than a day, so a claim orphaned by a killed process clears itself.
+   *
+   * A MySQL GET_LOCK would be the textbook answer and is not available: the lock
+   * is connection-scoped and this pool runs `connectionLimit: 1` on Vercel, so
+   * holding one and then querying inside it deadlocks the instance.
+   */
+  const claimId = `feed:${today}:${FEED_VERSION}`;
+  let won = true;
+  try {
+    const [claim] = await db.execute(sql`
+      INSERT IGNORE INTO idempotency (id, status, body, created_at)
+      VALUES (${claimId}, 0, NULL, ${Date.now()})
+    `);
+    won = (claim as { affectedRows: number }).affectedRows > 0;
+  } catch (err) {
+    // Fail OPEN, like every other claim in this service. A database blip must
+    // not take Discover down; the cost of proceeding is the duplicate call this
+    // exists to avoid, which is what happened every day before it existed.
+    log.error('feed.claim', err);
+  }
+
+  if (!won) {
+    /*
+     * Someone else is generating. Wait for their answer instead of buying our
+     * own — the whole point of the claim.
+     *
+     * ponytail: polling, not a notification. A 1s poll against a two-column
+     * primary-key lookup is cheap, and the alternatives (LISTEN/NOTIFY, a queue)
+     * are infrastructure for one row a day. It gives up after 20s and generates
+     * anyway, so the worst case is exactly the old behaviour and never worse.
+     */
+    for (let waited = 0; waited < CLAIM_WAIT_MS; waited += CLAIM_POLL_MS) {
+      await new Promise((r) => setTimeout(r, CLAIM_POLL_MS));
+      const lines = await readFeed(today);
+      if (lines) return lines;
+    }
+    log.warn('feed.claim_timeout', { date: today });
+  }
+
+  let data: { lines: unknown[] };
+  try {
+    ({ data } = await generate<{ lines: unknown[] }>({
+      engine: 'feed',
+      system: FEED_PROMPT,
+      parts: [{ text: "Write today's fresh lines." }],
+      schema: FEED_SCHEMA,
+      maxOutputTokens: 4096,
+      temperature: 1.1,
+    }));
+  } catch (err) {
+    // Release the claim so the next request retries rather than polling a
+    // generation that is never coming. Same reasoning as the webhook claim.
+    await db.execute(sql`DELETE FROM idempotency WHERE id = ${claimId}`).catch(() => {});
+    throw err;
+  }
 
   await db.execute(sql`
     INSERT IGNORE INTO daily_feed (feed_date, version, items_json, created_at)
@@ -295,7 +390,7 @@ ai.post('/chat', async (c) => {
     return data;
   });
 
-  const credits = await creditsFor(sub);
+  const credits = creditsAfter(c, 1);
   // Flat shape: the Kotlin client reads `reply` off the top level.
   //
   // `remaining` is kept ALONGSIDE the standard envelope because
