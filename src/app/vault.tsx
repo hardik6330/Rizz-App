@@ -128,8 +128,29 @@ export default function VaultScreen() {
           styles.list,
           { paddingHorizontal: gutter, paddingBottom: insets.bottom + spacing.xl },
         ]}
-        ItemSeparatorComponent={() => <View style={{ height: spacing.sm + 2 }} />}
+        ItemSeparatorComponent={Separator}
         showsVerticalScrollIndicator={false}
+        /*
+         * Virtualization bounds, which this list had none of.
+         *
+         * The vault is the one screen with no cap on how much it holds — scan
+         * history is capped at 20, but saved items grow for as long as someone
+         * keeps tapping the bookmark. With the defaults, FlatList rendered a
+         * window sized for a list it had no measurements for, and every item is
+         * a card with its own entering animation.
+         *
+         * Modest numbers on purpose: these are text cards, so the risk is
+         * over-rendering, not blank space while scrolling. `discover.tsx` gets
+         * the aggressive treatment because its items are full-screen.
+         *
+         * No `getItemLayout` — items are variable height (a saved line can wrap
+         * to three lines or one), and a wrong fixed height there is worse than
+         * none: it desynchronises scroll position from content.
+         */
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        removeClippedSubviews
         ListEmptyComponent={
           savedItems.length === 0 ? (
             <EmptyVault onBrowse={browseFeed} />
@@ -151,6 +172,17 @@ export default function VaultScreen() {
       {toast.element}
     </View>
   );
+}
+
+/**
+ * Hoisted out of the render.
+ *
+ * As an inline arrow this was a NEW component type on every render of the
+ * screen, so React unmounted and remounted every separator in the list each
+ * time the filter chip changed. Defining it once makes it a stable type.
+ */
+function Separator() {
+  return <View style={{ height: spacing.sm + 2 }} />;
 }
 
 const styles = StyleSheet.create({

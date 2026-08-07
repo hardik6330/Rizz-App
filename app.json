@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.rizzcoach.app",
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"],
       "adaptiveIcon": {
         "backgroundColor": "#0A0A12",
         "foregroundImage": "./assets/icons/android-icon-foreground.png",
@@ -46,6 +47,16 @@
         "expo-image-picker",
         {
           "photosPermission": "RizzCoach reads the chat screenshots you pick so it can craft replies. Nothing is uploaded without your say-so."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "buildArchs": ["armeabi-v7a", "arm64-v8a"]
+          }
         }
       ]
     ],

@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -25,6 +25,7 @@ import { palette, radii, spacing } from '@/theme/tokens';
 import type { BioOption, BioResult, BioVibe } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { useBackToIdle } from '@/utils/useBackToIdle';
+import { useKeyboardInset } from '@/utils/useKeyboardInset';
 
 type Phase = 'idle' | 'working' | 'done';
 
@@ -45,6 +46,8 @@ export default function BioScreen() {
   const insets = useSafeAreaInsets();
   const { gutter } = useLayout();
   const bottomClearance = useTabBarClearance();
+  /** Android has no keyboard handling of its own here — see the hook. */
+  const kbInset = useKeyboardInset();
   const toast = useToast();
 
   const [phase, setPhase] = useState<Phase>('idle');
@@ -164,13 +167,22 @@ export default function BioScreen() {
           {
             paddingHorizontal: gutter,
             paddingTop: insets.top + spacing.sm,
-            paddingBottom: bottomClearance,
+            // Keyboard up: its height replaces the tab-bar clearance, since the
+            // tab bar is behind the keyboard and paying for both leaves a gap.
+            paddingBottom: kbInset > 0 ? kbInset + spacing.xl : bottomClearance,
           },
         ]}
         keyboardShouldPersistTaps="handled"
-        // This is the only screen with text inputs, and the multiline "current
-        // bio" field sits at the very bottom — on iOS the keyboard covered it
-        // outright. Android already gets this from adjustResize.
+        /*
+         * This is the only tab with text inputs, and the multiline "current bio"
+         * field sits at the very bottom — the keyboard covered it outright.
+         *
+         * The line that used to be here said "Android already gets this from
+         * adjustResize". That stopped being true: under the edge-to-edge display
+         * Expo SDK 54+ and RN 0.86 enforce, the window no longer resizes when the
+         * keyboard opens, so this iOS-only prop was the ONLY keyboard handling on
+         * the screen and Android had none. `kbInset` above is the Android half.
+         */
         automaticallyAdjustKeyboardInsets
         keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}

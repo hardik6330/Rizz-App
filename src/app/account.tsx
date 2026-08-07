@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -32,6 +32,7 @@ import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing, type as typography } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
+import { useKeyboardInset } from '@/utils/useKeyboardInset';
 
 /**
  * Signup, login and the signed-in account view — one screen, three states.
@@ -59,6 +60,8 @@ export default function AccountScreen() {
   const insets = useSafeAreaInsets();
   const { gutter } = useLayout();
   const toast = useToast();
+  /** Android has no keyboard handling of its own here — see the hook. */
+  const kbInset = useKeyboardInset();
 
   const { mode: initialMode } = useLocalSearchParams<{ mode?: Mode }>();
   /**
@@ -66,13 +69,17 @@ export default function AccountScreen() {
    *
    * Read once at mount — it only changes as a result of submitting this form,
    * and re-reading it mid-session would swap the field out from under whoever is
-   * typing. Its whole job is the dead end in the screenshot: signup on a claimed
-   * install is rejected by the server, and with no password reset a user who has
-   * forgotten which address they used has no way forward at all.
+   * typing.
+   *
+   * It used to justify a banner and a rejection. Now it does one quiet thing:
+   * pre-fill the LOGIN field, so a returning user does not have to remember
+   * which of their addresses they used here. Never the signup field — see below.
    */
   const [remembered] = useState(lastAccountEmail);
   const [mode, setMode] = useState<Mode>(
-    // Remembered → Log in, because signup on this install cannot succeed. An
+    // Remembered → open on Log in, because someone who has signed in on this
+    // device before is overwhelmingly likely to be doing it again. A default, not
+    // a restriction: the Create account tab is right there and now works. An
     // explicit `?mode=` still wins; it comes from a deliberate tap.
     initialMode === 'login' || (initialMode == null && remembered != null) ? 'login' : 'signup',
   );
@@ -104,7 +111,17 @@ export default function AccountScreen() {
     if (isOnboarding) void SplashScreen.hideAsync().catch(() => {});
   }, [isOnboarding]);
   const [username, setUsername] = useState('');
-  const [email, setEmail] = useState(remembered ?? '');
+  /**
+   * Pre-filled on LOGIN only, and blank on signup.
+   *
+   * Handing the remembered address to the signup form is a dead end now that
+   * codes are involved, and a silent one: `/otp` answers `{ok:true}` for an
+   * address that already has an account without sending anything — it must, or
+   * it becomes an account-existence oracle. So a user who taps Create account on
+   * a pre-filled field gets "check your email" and then waits forever for a code
+   * that was never sent. Blank makes them type an address they actually mean.
+   */
+  const [email, setEmail] = useState(mode === 'login' ? remembered ?? '' : '');
   const [password, setPassword] = useState('');
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -188,6 +205,18 @@ export default function AccountScreen() {
     setStep('form');
     setCode('');
     setUseCode(false);
+    /*
+     * The remembered address follows the tab, and only ever when the field is
+     * untouched. Filling it on Log in saves the returning user the one thing they
+     * cannot look up; clearing it on Create account keeps them off the silent
+     * dead end described on `email`. Guarded on the value being exactly the
+     * remembered one (or empty) so it can never overwrite something typed.
+     */
+    if (remembered == null) return;
+    setEmail((current) => {
+      if (next === 'login') return current === '' ? remembered : current;
+      return current === remembered ? '' : current;
+    });
   };
 
   /**
@@ -379,11 +408,24 @@ export default function AccountScreen() {
             paddingHorizontal: gutter,
             // Full-screen modal on Android; iOS sheets report 0 here.
             paddingTop: insets.top + spacing.lg,
-            paddingBottom: insets.bottom + spacing.xxxl,
+            /*
+             * The keyboard's height is added, not assumed away.
+             *
+             * The password field is the last thing on the page, so with no extra
+             * room the content ends exactly where the keyboard begins and there
+             * is nothing to scroll to — the field simply stays covered. This
+             * gives the ScrollView somewhere to go, and the platform's own
+             * reveal-the-focused-input behaviour walks it there.
+             *
+             * `insets.bottom` is dropped while the keyboard is up: the gesture
+             * bar is behind the keyboard, so paying for it twice leaves a gap.
+             */
+            paddingBottom: (kbInset > 0 ? kbInset : insets.bottom) + spacing.xxxl,
           },
         ]}
-        // The password field is the last thing on the page and iOS covered it
-        // outright — same fix, same reason, as bio.tsx.
+        // iOS ONLY — it does nothing on Android, which is why `kbInset` above
+        // exists. Kept because on iOS it tracks the keyboard's own animation
+        // curve, which the padding alone cannot.
         automaticallyAdjustKeyboardInsets
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -433,7 +475,7 @@ export default function AccountScreen() {
                         here is a typo the user cannot see any more — the field is
                         a screen behind them. Reading it back turns "no email
                         arrived" into "ah, that's wrong" without a Back tap. */}
-                    We sent a 6-digit code to <Text style={styles.rememberedStrong}>{email.trim()}</Text>. It
+                    We sent a 6-digit code to <Text style={styles.strong}>{email.trim()}</Text>. It
                     expires in 10 minutes.
                   </>
                 ) : isSignup ? (
@@ -452,25 +494,20 @@ export default function AccountScreen() {
               </Text>
             </Animated.View>
 
-            {/* Which address this device used last, so the user does not have to
-                remember. It no longer explains a rejection — a device may hold
-                several accounts now — it just pre-fills and offers the tab it
-                probably wants. Hidden on the code step, where it is behind them. */}
-            {remembered != null && step === 'form' && (
-              <HapticPressable
-                feedback="none"
-                disabled={!isSignup}
-                onPress={() => switchMode('login')}
-                accessibilityRole={isSignup ? 'button' : 'text'}
-                style={styles.remembered}
-              >
-                <Ionicons name="person-circle-outline" size={16} color={palette.violetBright} />
-                <Text style={styles.rememberedText}>
-                  Last signed in here as <Text style={styles.rememberedStrong}>{remembered}</Text>
-                  {isSignup ? ' — tap to log in instead.' : '.'}
-                </Text>
-              </HapticPressable>
-            )}
+            {/*
+             * REMOVED: the "This device's account is …" banner.
+             *
+             * It was the last piece of one-device-one-account left in the UI. It
+             * existed to get ahead of a server rejection — signup on a claimed
+             * install used to fail — and that rejection no longer exists, so all
+             * the banner did was assert something untrue: a device can now hold
+             * as many accounts as it has verified addresses, and naming one of
+             * them "this device's account" tells a second user on a shared phone
+             * that the app is not for them.
+             *
+             * The address is still remembered, and still pre-fills the LOGIN
+             * form — see `remembered`. It just no longer has an opinion out loud.
+             */}
 
             {/* Hidden on the code step. Switching tabs there throws away a code
                 that is already in the user's inbox and a form they have filled
@@ -863,19 +900,8 @@ const styles = StyleSheet.create({
   warningText: { flex: 1, fontSize: 13, lineHeight: 19, color: palette.textSecondary },
   warningStrong: { fontWeight: '800', color: palette.textPrimary },
 
-  remembered: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: `${palette.violet}14`,
-    borderWidth: 1,
-    borderColor: `${palette.violet}44`,
-  },
-  rememberedText: { flex: 1, fontSize: 13, lineHeight: 19, color: palette.textSecondary },
-  rememberedStrong: { fontWeight: '800', color: palette.textPrimary },
+  /** Emphasis inside a muted paragraph — the address echoed back on the code step. */
+  strong: { fontWeight: '800', color: palette.textPrimary },
 
   /*
    * Wide tracking and a bigger face: six digits copied off a notification are

@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -162,6 +162,26 @@ export default function ProfileScreen() {
       addScan(scanResult);
       incrementAnalysis();
       haptic.success();
+      /*
+       * Release the base64 now the request is done.
+       *
+       * Up to MAX_IMAGES screenshots were held as base64 STRINGS in this state.
+       * Base64 is +33% over the binary and a JS string is UTF-16, so each image
+       * costs roughly 2.7× its file size in resident memory — and it was being
+       * held for the entire time the report is on screen, which is the longest
+       * -lived state this tab has. Three images is several megabytes doing
+       * nothing.
+       *
+       * Safe because nothing reads it again: the only two exits from `done` —
+       * `reset()` and `openScan()` — both clear `images` outright, so there is no
+       * path that re-scans this array. Only on SUCCESS, though; the failure and
+       * rejection branches above leave `phase: 'idle'` with the thumbnails still
+       * up, and the user retrying is exactly the case that still needs the bytes.
+       *
+       * `uri` is kept so anything rendering a thumbnail keeps working — it points
+       * at a file on disk and costs nothing to hold.
+       */
+      setImages((prev) => prev.map((img) => (img.base64 ? { ...img, base64: '' } : img)));
     } catch (error) {
       console.warn('[profile] scan failed', error);
       toast.show('The engine choked — try again');

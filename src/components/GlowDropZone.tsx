@@ -1,9 +1,11 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect } from 'react';
+import { useFocusEffect } from 'expo-router';
+import React, { useCallback } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import Animated, {
+  cancelAnimation,
   Easing,
   useAnimatedStyle,
   useSharedValue,
@@ -51,13 +53,34 @@ export function GlowDropZone({
    */
   const cardHeight = cardHeightFor(height, 300, 200);
 
-  useEffect(() => {
-    pulse.value = withRepeat(
-      withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true,
-    );
-  }, [pulse]);
+  /**
+   * Pulse only while the screen is actually being looked at.
+   *
+   * This was a `useEffect`, which starts the loop on mount and never stops it.
+   * That matters more here than it looks: this component sits on BOTH the Lab
+   * and Profile Scan tabs, and a tab screen is not unmounted when you leave it —
+   * it stays mounted so returning to it is instant. So an infinite animation
+   * started on mount runs for the rest of the session, on two screens at once,
+   * including while the user is on a completely different tab.
+   *
+   * It runs on the UI thread as a worklet, so it never blocked interaction — the
+   * cost is a compositor wake-up every frame for something nobody can see, which
+   * is battery rather than jank. Cheap to stop, so stop it.
+   *
+   * `useFocusEffect` gives the blur callback the plain effect had no equivalent
+   * of. `cancelAnimation` freezes the shared value wherever it is; the next focus
+   * restarts the loop from there, so there is no visible jump on return.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      pulse.value = withRepeat(
+        withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true,
+      );
+      return () => cancelAnimation(pulse);
+    }, [pulse]),
+  );
 
   const glowStyle = useAnimatedStyle(() => ({
     shadowOpacity: 0.22 + pulse.value * 0.3,

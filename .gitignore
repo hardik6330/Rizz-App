@@ -33,3 +33,11 @@ GoogleService-Info.plist
 .claude/
 .mcp.json
 CLAUDE.md
+
+# Local native module build output. Gradle intermediates — merged manifests,
+# blame reports, jars — regenerated on every build. 240 of these were tracked,
+# which is 3.4MB of noise in every clone and diff.
+modules/**/build/
+
+# macOS archive-extraction junk. Never belonged here.
+__MACOSX/
