@@ -5,6 +5,42 @@ import { proNow } from '../lib/entitlement.ts';
 import { Errors } from '../lib/errors.ts';
 import { DAILY_CALL_CAP, FREE_ANALYSIS_LIMIT, todayKey } from '../lib/limits.ts';
 import { log } from '../lib/logger.ts';
+import { sweeper } from '../lib/sweep.ts';
+
+/**
+ * Append the movement to the ledger. Evidence, never state.
+ *
+ * `users.analysis_count` stays the balance — this is the audit trail it does not
+ * have. Without it, "it charged me twice and gave me one answer" is
+ * uninvestigable and uncorrectable except by editing a row, and the failure that
+ * most needs a record leaves none at all: a process killed between the charge
+ * and the refund burns a credit silently, and Vercel has no SIGTERM to catch.
+ *
+ * NOT awaited, and that is the trade. The counter is authoritative and already
+ * durable, so a dropped ledger row costs evidence rather than money — and
+ * awaiting it would put a second round trip to Bangalore on the hot path of
+ * every AI request purely for bookkeeping.
+ */
+function record(userId: string, delta: 1 | -1, reason: string, now: number): void {
+  void db
+    .execute(sql`
+      INSERT INTO credit_events (user_id, delta, reason, created_at)
+      VALUES (${userId}, ${delta}, ${reason}, ${now})
+    `)
+    .catch((err) => log.error('credit.ledger', err, { reason }));
+  sweepLedger(now);
+}
+
+/**
+ * 90 days. Long enough to answer a billing dispute that arrives a
+ * subscription-cycle late, short enough that the table does not become the
+ * largest thing in the database.
+ */
+const LEDGER_RETENTION_MS = 90 * 24 * 60 * 60_000;
+const sweepLedger = sweeper(
+  6 * 60 * 60_000,
+  (now) => sql`DELETE FROM credit_events WHERE created_at < ${now - LEDGER_RETENTION_MS} LIMIT 5000`,
+);
 
 /**
  * The credit gate — one atomic statement, no transaction, no application lock.
@@ -36,6 +72,9 @@ export async function chargeCredit(userId: string): Promise<void> {
   if ((result as { affectedRows: number }).affectedRows === 0) {
     throw Errors.outOfCredits();
   }
+
+  // After the guard: a refused charge is not a movement.
+  record(userId, 1, 'charge', now);
 }
 
 /**
@@ -55,7 +94,10 @@ export async function refundCredit(userId: string, reason: string): Promise<void
            updated_at       = ${now}
      WHERE id = ${userId}
   `);
-  log.info('credit.refund', { userId, reason });
+  record(userId, -1, reason, now);
+  // The userId is dropped: every other line in this service omits identifiers,
+  // and the ledger row above is now the per-user record this was standing in for.
+  log.info('credit.refund', { reason });
 }
 
 export async function creditsFor(userId: string): Promise<{

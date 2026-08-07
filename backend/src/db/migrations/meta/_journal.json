@@ -29,6 +29,27 @@
       "when": 1765000000000,
       "tag": "0003_token_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1770000000000,
+      "tag": "0004_ledger_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1775000000000,
+      "tag": "0005_email_otp",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1776000000000,
+      "tag": "0006_otp_retention",
+      "breakpoints": true
     }
   ]
 }

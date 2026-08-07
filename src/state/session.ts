@@ -38,14 +38,16 @@ const SIGNED_OUT_KEY = 'rizz.signedOut';
 /** The server's `users.id`. Persisted only so RevenueCat can be told who this is. */
 const USER_KEY = 'rizz.userId';
 /**
- * The email of the account this install belongs to.
+ * The email of the account this install last signed in with.
  *
- * Survives sign-out on purpose, like the install id: the server rejects a second
- * signup on a claimed install ("This device already has an account"), so without
- * this the user meets that error with no idea which address to log in with — and
- * there is no password reset to fall back on. Local only, never sent anywhere;
- * cleared by `deleteAccount`, which is the one path that leaves nothing to
- * remember.
+ * Survives sign-out on purpose, like the install id. It no longer exists to
+ * explain a rejection — a device may now hold several accounts, so signup on a
+ * claimed install succeeds — but it still saves the user from the question the
+ * app cannot answer for them: which of their addresses did they use here. It
+ * pre-fills the email field, and that is all it does.
+ *
+ * Local only, never sent anywhere; cleared by `deleteAccount`, which is the one
+ * path that leaves nothing to remember.
  */
 const LAST_EMAIL_KEY = 'rizz.lastEmail';
 
@@ -154,7 +156,8 @@ export function apiUrl(path: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Account — signup and login. No reset, no verification; see backend routes/auth.ts.
+// Account — signup and login, both fronted by an emailed code. There is still no
+// password RESET; a code logs you in instead. See backend routes/auth.ts.
 // ---------------------------------------------------------------------------
 
 /** `code` mirrors the server envelope so callers branch on it, never the message. */
@@ -199,16 +202,55 @@ async function postSession(path: string, body: unknown, token?: string): Promise
 }
 
 /**
+ * Ask the server to email a six-digit code.
+ *
+ * **Always resolves on a 2xx, and the server always sends 2xx.** A `signup`
+ * request for an address that already has an account, and a `login` request for
+ * one that has none, both come back exactly like a real send — otherwise this
+ * endpoint would sort any list of email addresses into "has a RizzCoach account"
+ * and "does not". So the UI must say "if that address has an account, the code
+ * is on its way", never "we sent it", and the only real failure the caller can
+ * see is the network or a mailer that is down.
+ *
+ * Unauthenticated on purpose: recovery has to work on a phone that has been
+ * signed out or wiped, where there may be no usable token at all.
+ */
+export async function requestOtp(email: string, purpose: 'signup' | 'login'): Promise<void> {
+  const res = await fetch(apiUrl('/v1/auth/otp'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, purpose }),
+    // Longer than the other calls: this one blocks on an SMTP handshake, and the
+    // server would rather hold the request than claim a send it has not made.
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (res.ok) return;
+  const data = (await res.json().catch(() => null)) as { error?: { code: string; message: string } } | null;
+  throw new AuthError(
+    data?.error?.code ?? 'NETWORK',
+    data?.error?.message ?? 'Could not reach RizzCoach — check your connection',
+  );
+}
+
+/**
  * Create an account on the install that is already signed in anonymously.
  *
  * The device token is sent deliberately: the server writes the account onto THAT
  * row, so credits already spent stay spent. It is also what makes login after a
  * reinstall return the original row instead of a fresh set of free analyses.
+ *
+ * `code` is the one from `requestOtp(email, 'signup')`, and it is what proves the
+ * address is real. It is also, indirectly, why a device may now hold more than
+ * one account: the server used to reject any signup on a claimed install because
+ * an unverified email cost nothing to invent. A verified one does not, so that
+ * restriction is gone — a second account on this phone simply inherits the
+ * device's spent credits rather than being refused.
  */
 export async function signUp(input: {
   username: string;
   email: string;
   password: string;
+  code: string;
 }): Promise<SessionUser> {
   const user = await postSession('/v1/auth/signup', input, await accessToken());
   // After the await, so a rejected signup never claims to be this device's account.
@@ -236,6 +278,30 @@ export async function logIn(email: string, password: string): Promise<SessionUse
     install_id: kv.getString(INSTALL_KEY),
   });
   // Same as signUp: only a successful login names this device's account.
+  kv.set(LAST_EMAIL_KEY, email);
+  return user;
+}
+
+/**
+ * Log in with a mailed code instead of the password. **This is the recovery path.**
+ *
+ * Same endpoint, same everything else — the server takes a password OR a code
+ * and never both. Worth being clear about what it is and is not: it does not
+ * reset or change the password, so a stolen inbox cannot lock the real owner
+ * out; it only offers a second way to prove the account is yours. Someone who
+ * gets back in this way still has whatever password they had, and if they cannot
+ * remember it, this is simply how they log in from now on.
+ *
+ * It also skips the fifteen-minute lockout on purpose — see routes/auth.ts. A
+ * user locked out by someone guessing at their password can still get in here,
+ * which is the entire point of having it.
+ */
+export async function logInWithCode(email: string, code: string): Promise<SessionUser> {
+  const user = await postSession('/v1/auth/login', {
+    email,
+    code,
+    install_id: kv.getString(INSTALL_KEY),
+  });
   kv.set(LAST_EMAIL_KEY, email);
   return user;
 }

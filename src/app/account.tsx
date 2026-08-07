@@ -18,7 +18,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleIconButton } from '@/components/CircleIconButton';
 import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
-import { AuthError, isLiveApi, lastAccountEmail, logIn, logOut, signUp } from '@/state/session';
+import {
+  AuthError,
+  isLiveApi,
+  lastAccountEmail,
+  logIn,
+  logInWithCode,
+  logOut,
+  requestOtp,
+  signUp,
+} from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing, type as typography } from '@/theme/tokens';
@@ -27,11 +36,17 @@ import { haptic } from '@/utils/haptics';
 /**
  * Signup, login and the signed-in account view — one screen, three states.
  *
+ * Two of those states are now two STEPS: details, then the six-digit code we
+ * emailed. Still one file. The code step is the same four styles and the same
+ * submit path with a different field in it, and splitting it into a route would
+ * mean carrying an unsubmitted password across a navigation.
+ *
  * One file rather than three routes because the forms differ by a single field
  * and the three states are the same object at different points in its life. It
  * also means there is exactly one place the auth copy lives, which matters more
- * than usual here: this product has **no password reset**, and the warning that
- * says so has to be impossible to miss and impossible to forget to update.
+ * than usual here: this product still has **no password reset**. What it has is
+ * a mailed code that logs you in without one, and both halves of that have to be
+ * said where the user goes looking — on the signup warning and on the login form.
  *
  * Why an account exists at all: the install id lives in MMKV and MMKV dies with
  * the app, so an uninstall used to hand out three fresh free analyses. Signing
@@ -94,6 +109,24 @@ export default function AccountScreen() {
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Details, or the code we emailed. One flag rather than a route.
+   *
+   * The details are still mounted behind it — going back is `setStep('form')`
+   * and nothing else, with the password still typed. A second screen would have
+   * meant either passing an unsubmitted password through a navigation param or
+   * lifting it into the store, and neither is a thing to do with a password.
+   */
+  const [step, setStep] = useState<'form' | 'code'>('form');
+  const [code, setCode] = useState('');
+  /**
+   * Log in with a mailed code instead of the password.
+   *
+   * The nearest thing this product has to a reset, and the reason the code step
+   * is worth its complexity: before it, a forgotten password was an account
+   * nobody could recover. Login-only — signup always takes the code path.
+   */
+  const [useCode, setUseCode] = useState(false);
   /** The store owns this — it re-renders the launch gate the instant it changes. */
   const signedInAs = useRizzStore((s) => s.account);
 
@@ -122,22 +155,96 @@ export default function AccountScreen() {
    * Returning true after exitApp() stops the navigator also popping the modal in
    * the frame before the process goes away.
    */
+  /*
+   * The code step is the exception, and it is registered even when this ISN'T the
+   * gate: to an Android user the code screen looks like a second screen, so back
+   * means "back to the details". Without this it means either "quit the app"
+   * (gate) or "dismiss the modal" (from Profile Scan) — both of which throw away
+   * a filled-in form and a code already sitting in the user's inbox, for a tap
+   * that reads as a correction.
+   */
   useFocusEffect(
     useCallback(() => {
-      if (!isOnboarding) return;
+      if (!isOnboarding && step !== 'code') return;
       const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (step === 'code') {
+          setStep('form');
+          setCode('');
+          setError(null);
+          return true;
+        }
         BackHandler.exitApp();
         return true;
       });
       return () => sub.remove();
-    }, [isOnboarding]),
+    }, [isOnboarding, step]),
   );
 
+  /** Anything typed on one tab is noise on the other, including a half-done code step. */
   const switchMode = (next: Mode) => {
     haptic.selection();
     setMode(next);
     setError(null);
+    setStep('form');
+    setCode('');
+    setUseCode(false);
   };
+
+  /**
+   * Does this path end in a code?
+   *
+   * Signup always does — that is what makes the address real. Login only when
+   * the user asked for it, which is the recovery route.
+   */
+  const wantsCode = isSignup || useCode;
+
+  /** What the one button actually does right now — see the note at its render. */
+  const ctaLabel =
+    wantsCode && step === 'form'
+      ? 'Send code'
+      : isSignup
+        ? 'Create account'
+        : 'Log in';
+  const ctaIcon =
+    wantsCode && step === 'form' ? 'mail-outline' : isSignup ? 'sparkles' : 'log-in-outline';
+
+  /**
+   * Send (or resend) the code, and move to the code step.
+   *
+   * Shared by the CTA and the Resend button. `announce` is set only by Resend:
+   * the first send changes the whole screen, which is feedback enough, but a
+   * resend leaves the user on the same screen looking at the same field, and a
+   * button that appears to do nothing is a button people tap five times.
+   *
+   * Note the copy: **"if that address has an account"**, never "we sent it". The
+   * server answers identically whether or not it actually mailed anything, on
+   * purpose — see `requestOtp` — and promising a delivery it may not have made
+   * would be the app claiming knowledge the server deliberately withheld.
+   */
+  const sendCode = useCallback(
+    async (announce = false) => {
+      const mail = email.trim();
+      setBusy(true);
+      setError(null);
+      try {
+        await requestOtp(mail, isSignup ? 'signup' : 'login');
+        haptic.success();
+        setStep('code');
+        if (!announce) return;
+        toast.show(
+          isSignup
+            ? 'Code sent — check your inbox and spam'
+            : 'If that address has an account, the code is on its way',
+        );
+      } catch (err) {
+        haptic.warning();
+        setError(err instanceof AuthError ? err.message : 'Could not send the code — try again');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [email, isSignup, toast],
+  );
 
   const submit = useCallback(async () => {
     if (busy) return;
@@ -157,8 +264,28 @@ export default function AccountScreen() {
       setError('Password must be at least 10 characters');
       return;
     }
-    if (!password) {
+    // Only the password paths need one. A code login has no password to check,
+    // and demanding one there would shut the recovery route to the exact people
+    // it exists for.
+    if (!wantsCode && !password) {
       setError('Enter your password');
+      return;
+    }
+
+    /*
+     * Step one of two: the details check out, so mail a code and stop here.
+     *
+     * Everything typed stays mounted behind the code step, so "wrong email"
+     * costs a Back and not a retype.
+     */
+    if (wantsCode && step === 'form') {
+      haptic.medium();
+      await sendCode();
+      return;
+    }
+
+    if (wantsCode && !/^\d{6}$/.test(code.trim())) {
+      setError('Enter the 6-digit code from your email');
       return;
     }
 
@@ -166,10 +293,18 @@ export default function AccountScreen() {
     setBusy(true);
     try {
       const user = isSignup
-        ? await signUp({ username: username.trim(), email: email.trim(), password })
-        : await logIn(email.trim(), password);
+        ? await signUp({
+            username: username.trim(),
+            email: email.trim(),
+            password,
+            code: code.trim(),
+          })
+        : useCode
+          ? await logInWithCode(email.trim(), code.trim())
+          : await logIn(email.trim(), password);
       haptic.success();
       setPassword('');
+      setCode('');
       // `signUp`/`logIn` already pushed the username into the store, which flips
       // the launch gate — `(tabs)` exists as of this render. Replace rather than
       // `back()`: as the gate this screen is the root, there is nothing behind
@@ -177,6 +312,9 @@ export default function AccountScreen() {
       // analyzer step waiting behind can present over the tabs and not over a
       // signup form the user has already finished with.
       if (isOnboarding) {
+        // Returns while still busy, on purpose — the spinner is what the user
+        // looks at for the frames the navigator needs, and this screen is going
+        // away, so there is nothing left to un-busy.
         router.replace('/');
         return;
       }
@@ -185,10 +323,11 @@ export default function AccountScreen() {
       haptic.warning();
       // The server writes these for the user and never quotes what was typed.
       setError(err instanceof AuthError ? err.message : 'Something went wrong — try again');
-    } finally {
-      setBusy(false);
     }
-  }, [busy, email, isOnboarding, isSignup, password, toast, username]);
+    // Not `finally`: that also runs on the early return above, which is the one
+    // path that must stay busy. A rejected login still lands here.
+    setBusy(false);
+  }, [busy, code, email, isOnboarding, isSignup, password, sendCode, step, toast, useCode, username, wantsCode]);
 
   /**
    * Confirm sign-out in the app's own dark sheet, not `Alert.alert`.
@@ -261,7 +400,13 @@ export default function AccountScreen() {
           )}
         </View>
 
-        {signedInAs != null ? (
+        {/* `&& !isOnboarding`: as the gate, a successful auth flips `account` in
+            the store several frames before `router.replace('/')` can finish —
+            `(tabs)` has to be declared and mounted first. Without the guard this
+            branch renders in that gap and the user watches a Sign out screen
+            spring in on their way into the app. The form stays put instead, CTA
+            still spinning (see `finally` in submit). */}
+        {signedInAs != null && !isOnboarding ? (
           <SignedIn username={signedInAs} onSignOut={confirmSignOut} />
         ) : !isLiveApi ? (
           <View style={styles.notice}>
@@ -273,26 +418,45 @@ export default function AccountScreen() {
           <>
             <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.hero}>
               <Text style={styles.title} maxFontSizeMultiplier={1.25}>
-                {!isSignup
-                  ? 'Welcome back.'
-                  : isOnboarding
-                    ? 'Welcome to RizzCoach.'
-                    : 'Keep your credits.\nWherever you install.'}
+                {step === 'code'
+                  ? 'Check your email.'
+                  : !isSignup
+                    ? 'Welcome back.'
+                    : isOnboarding
+                      ? 'Welcome to RizzCoach.'
+                      : 'Keep your credits.\nWherever you install.'}
               </Text>
               <Text style={styles.body}>
-                {isSignup
-                  ? isOnboarding
-                    ? 'Create an account so your free analyses, Pro status and saved lines belong to you — not to this one phone. Already have one? Log in.'
-                    : 'Your analyses live on this device today. An account moves them to you, so a new phone or a reinstall picks up where you left off.'
-                  : 'Log in and your credits, Pro status and history come with you.'}
+                {step === 'code' ? (
+                  <>
+                    {/* The address is echoed back because the commonest failure
+                        here is a typo the user cannot see any more — the field is
+                        a screen behind them. Reading it back turns "no email
+                        arrived" into "ah, that's wrong" without a Back tap. */}
+                    We sent a 6-digit code to <Text style={styles.rememberedStrong}>{email.trim()}</Text>. It
+                    expires in 10 minutes.
+                  </>
+                ) : isSignup ? (
+                  isOnboarding ? (
+                    'Create an account so your free analyses, Pro status and saved lines belong to you — not to this one phone. Already have one? Log in.'
+                  ) : (
+                    'Your analyses live on this device today. An account moves them to you, so a new phone or a reinstall picks up where you left off.'
+                  )
+                ) : useCode ? (
+                  // A plain string, so the entity has to be the real character —
+                  // `&rsquo;` only decodes in JSX text, never inside a literal.
+                  'Enter your email and we’ll send you a code. No password needed.'
+                ) : (
+                  'Log in and your credits, Pro status and history come with you.'
+                )}
               </Text>
             </Animated.View>
 
-            {/* The device knows whose account it is — say so, instead of letting
-                the server say "this device already has an account" after the
-                user has typed a whole signup form. Tapping it is the fix for the
-                one case where it is in the way: signup mode. */}
-            {remembered != null && (
+            {/* Which address this device used last, so the user does not have to
+                remember. It no longer explains a rejection — a device may hold
+                several accounts now — it just pre-fills and offers the tab it
+                probably wants. Hidden on the code step, where it is behind them. */}
+            {remembered != null && step === 'form' && (
               <HapticPressable
                 feedback="none"
                 disabled={!isSignup}
@@ -302,13 +466,16 @@ export default function AccountScreen() {
               >
                 <Ionicons name="person-circle-outline" size={16} color={palette.violetBright} />
                 <Text style={styles.rememberedText}>
-                  This device&rsquo;s account is{' '}
-                  <Text style={styles.rememberedStrong}>{remembered}</Text>
+                  Last signed in here as <Text style={styles.rememberedStrong}>{remembered}</Text>
                   {isSignup ? ' — tap to log in instead.' : '.'}
                 </Text>
               </HapticPressable>
             )}
 
+            {/* Hidden on the code step. Switching tabs there throws away a code
+                that is already in the user's inbox and a form they have filled
+                in, for a tap they almost certainly meant as "go back". */}
+            {step === 'form' && (
             <View style={styles.tabs}>
               {(['signup', 'login'] as const).map((key) => {
                 const active = key === mode;
@@ -334,75 +501,165 @@ export default function AccountScreen() {
                 );
               })}
             </View>
-
-            {isSignup && (
-              <Field
-                label="USERNAME"
-                value={username}
-                onChangeText={setUsername}
-                placeholder="yourname"
-                autoCapitalize="none"
-                autoCorrect={false}
-                textContentType="username"
-                maxLength={32}
-              />
             )}
 
-            <Field
-              label="EMAIL"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              textContentType="emailAddress"
-              maxLength={255}
-            />
+            {step === 'code' ? (
+              <>
+                <Field
+                  label="6-DIGIT CODE"
+                  value={code}
+                  // Digits only, and never longer than six. Pasting from a mail
+                  // client drags whitespace and the odd stray character in with
+                  // it, and the server takes exactly six digits or nothing.
+                  onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="123456"
+                  keyboardType="number-pad"
+                  // The whole reason iOS offers to fill this from the
+                  // notification without the user opening the mail at all.
+                  textContentType="oneTimeCode"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  maxLength={6}
+                  onSubmitEditing={() => void submit()}
+                  returnKeyType="go"
+                  style={styles.codeInput}
+                />
 
-            <Field
-              label="PASSWORD"
-              value={password}
-              onChangeText={setPassword}
-              placeholder={isSignup ? 'At least 10 characters' : 'Your password'}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry={!reveal}
-              // `newPassword` lets the OS keychain offer to generate and save
-              // one — the closest thing to a reset flow this version has.
-              textContentType={isSignup ? 'newPassword' : 'password'}
-              maxLength={128}
-              onSubmitEditing={() => void submit()}
-              returnKeyType="go"
-              accessory={
-                <HapticPressable
-                  feedback="none"
-                  hitSlop={10}
-                  onPress={() => setReveal((r) => !r)}
-                  accessibilityLabel={reveal ? 'Hide password' : 'Show password'}
-                >
-                  <Ionicons
-                    name={reveal ? 'eye-off-outline' : 'eye-outline'}
-                    size={18}
-                    color={palette.textTertiary}
+                <View style={styles.codeActions}>
+                  {/* Back, not a router pop — the form is still mounted with
+                      everything typed still in it, so a wrong address costs one
+                      tap and a correction rather than the whole form again. */}
+                  <HapticPressable
+                    feedback="none"
+                    onPress={() => {
+                      setStep('form');
+                      setCode('');
+                      setError(null);
+                    }}
+                    accessibilityLabel="Change email address"
+                    style={styles.linkRow}
+                  >
+                    <Ionicons name="chevron-back" size={14} color={palette.textSecondary} />
+                    <Text style={styles.linkText}>Wrong email?</Text>
+                  </HapticPressable>
+
+                  <HapticPressable
+                    feedback="none"
+                    disabled={busy}
+                    onPress={() => void sendCode(true)}
+                    accessibilityLabel="Resend the code"
+                    style={styles.linkRow}
+                  >
+                    <Ionicons name="refresh" size={14} color={palette.textSecondary} />
+                    <Text style={styles.linkText}>Resend code</Text>
+                  </HapticPressable>
+                </View>
+              </>
+            ) : (
+              <>
+                {isSignup && (
+                  <Field
+                    label="USERNAME"
+                    value={username}
+                    onChangeText={setUsername}
+                    placeholder="yourname"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    textContentType="username"
+                    maxLength={32}
                   />
-                </HapticPressable>
-              }
-            />
+                )}
 
-            {isSignup && (
+                <Field
+                  label="EMAIL"
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="you@example.com"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  maxLength={255}
+                />
+
+                {/* No password field on the recovery path — there is nothing to
+                    type there, and showing a disabled one would only suggest
+                    the user is supposed to remember something. */}
+                {!useCode && (
+                  <Field
+                    label="PASSWORD"
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder={isSignup ? 'At least 10 characters' : 'Your password'}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry={!reveal}
+                    // `newPassword` lets the OS keychain offer to generate and
+                    // save one, which is still the best outcome available: a
+                    // mailed code gets you back IN, but nothing resets this.
+                    textContentType={isSignup ? 'newPassword' : 'password'}
+                    maxLength={128}
+                    onSubmitEditing={() => void submit()}
+                    returnKeyType="go"
+                    accessory={
+                      <HapticPressable
+                        feedback="none"
+                        hitSlop={10}
+                        onPress={() => setReveal((r) => !r)}
+                        accessibilityLabel={reveal ? 'Hide password' : 'Show password'}
+                      >
+                        <Ionicons
+                          name={reveal ? 'eye-off-outline' : 'eye-outline'}
+                          size={18}
+                          color={palette.textTertiary}
+                        />
+                      </HapticPressable>
+                    }
+                  />
+                )}
+
+                {/* The recovery switch, and the single most important control on
+                    this screen for anyone who has forgotten a password. Placed
+                    directly under the password field, which is where they are
+                    already looking when they realise they cannot fill it in. */}
+                {!isSignup && (
+                  <HapticPressable
+                    feedback="none"
+                    onPress={() => {
+                      haptic.selection();
+                      setUseCode((v) => !v);
+                      setError(null);
+                    }}
+                    accessibilityRole="button"
+                    style={styles.linkRow}
+                  >
+                    <Ionicons
+                      name={useCode ? 'key-outline' : 'mail-outline'}
+                      size={14}
+                      color={palette.violetBright}
+                    />
+                    <Text style={styles.linkAccent}>
+                      {useCode ? 'Use my password instead' : 'Forgot your password? Email me a code'}
+                    </Text>
+                  </HapticPressable>
+                )}
+              </>
+            )}
+
+            {isSignup && step === 'form' && (
               /*
-               * Shown BEFORE the button, not after a failure. There is no
-               * password reset: a forgotten password is an account nobody can
-               * recover, so the user has to be told while they can still act on
-               * it. Delete this paragraph the day /auth/reset ships, not before.
+               * Shown BEFORE the button, not after a failure. There is still no
+               * password RESET — a mailed code logs you in, it does not give you
+               * a new password — so a user who loses theirs keeps their account
+               * but is on the code path for ever. Worth knowing up front, while
+               * they can still save it. Rewrite this the day /auth/reset ships.
                */
               <View style={styles.warning}>
                 <Ionicons name="key-outline" size={15} color={palette.gold} style={styles.warningIcon} />
                 <Text style={styles.warningText}>
                   <Text style={styles.warningStrong}>Save your password. </Text>
-                  There&apos;s no reset yet — if you lose it you&apos;ll need a new account. Pro can
-                  still be restored on the paywall; saved lines and scan history can&apos;t.
+                  There&apos;s no reset — if you lose it, you can still get in with a code emailed to
+                  this address, so use one you&apos;ll keep.
                 </Text>
               </View>
             )}
@@ -414,19 +671,24 @@ export default function AccountScreen() {
               </View>
             )}
 
+            {/* Three labels from two flags. On the form step of a code path the
+                button sends the code and does NOT create anything — calling it
+                "Create account" there would be a lie about what the tap does,
+                and the moment a user believes the account exists is the moment
+                they stop looking for the email. */}
             <HapticPressable
               feedback="none"
               onPress={() => void submit()}
               disabled={busy}
-              accessibilityLabel={isSignup ? 'Create account' : 'Log in'}
+              accessibilityLabel={ctaLabel}
               style={[styles.cta, busy && styles.ctaBusy]}
             >
               {busy ? (
                 <ActivityIndicator color={palette.ink} />
               ) : (
                 <>
-                  <Ionicons name={isSignup ? 'sparkles' : 'log-in-outline'} size={17} color={palette.ink} />
-                  <Text style={styles.ctaText}>{isSignup ? 'Create account' : 'Log in'}</Text>
+                  <Ionicons name={ctaIcon} size={17} color={palette.ink} />
+                  <Text style={styles.ctaText}>{ctaLabel}</Text>
                 </>
               )}
             </HapticPressable>
@@ -539,7 +801,10 @@ function Field({ label, accessory, ...input }: FieldProps) {
           {...input}
           accessibilityLabel={label}
           placeholderTextColor={palette.textTertiary}
-          style={styles.input}
+          // Merged, not replaced. `style` sits after the spread so it wins, which
+          // meant a caller passing one had it silently dropped — the code field's
+          // whole point is the tracking and the 26pt face.
+          style={[styles.input, input.style]}
         />
         {accessory}
       </View>
@@ -611,6 +876,20 @@ const styles = StyleSheet.create({
   },
   rememberedText: { flex: 1, fontSize: 13, lineHeight: 19, color: palette.textSecondary },
   rememberedStrong: { fontWeight: '800', color: palette.textPrimary },
+
+  /*
+   * Wide tracking and a bigger face: six digits copied off a notification are
+   * read back one at a time to check them, and the default 15pt run reads as a
+   * number rather than as six separate characters. `center` because there is
+   * nothing else on the line to align to.
+   */
+  codeInput: { textAlign: 'center', fontSize: 26, fontWeight: '800', letterSpacing: 10 },
+  codeActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+
+  /** Text-button row: the secondary actions that are not the CTA. */
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
+  linkText: { fontSize: 13, fontWeight: '700', color: palette.textSecondary },
+  linkAccent: { fontSize: 13, fontWeight: '700', color: palette.violetBright },
 
   error: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   errorText: { flex: 1, fontSize: 13, lineHeight: 18, color: palette.danger },

@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict';
 
-import { DUMMY_HASH, hashPassword, verifyPassword } from './password.ts';
+import { dummyHash, hashPassword, verifyPassword } from './password.ts';
 
 const PLAIN = 'correct horse battery staple';
 
@@ -42,6 +42,6 @@ for (const bad of [null, '', 'garbage', 'scrypt$1$2$3', 'bcrypt$a$b$c$d$e']) {
 }
 
 // The dummy exists so an unknown email costs the same time as a known one.
-assert.equal(await verifyPassword(PLAIN, await DUMMY_HASH), false, 'dummy hash never verifies');
+assert.equal(await verifyPassword(PLAIN, await dummyHash()), false, 'dummy hash never verifies');
 
 console.log('password.selfcheck: ok');

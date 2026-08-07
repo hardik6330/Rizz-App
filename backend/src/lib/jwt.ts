@@ -13,6 +13,21 @@ export interface Claims {
    * row has moved past it, which is what makes sign-out mean something.
    */
   ep: number;
+  /**
+   * Minted by `/v1/auth/device` from an install id alone — no password was
+   * involved. See `requireAccount` in middleware/auth.ts.
+   *
+   * The install id is a permanent bearer credential that deliberately SURVIVES
+   * sign-out (dropping it would hand out three fresh free analyses per sign-out).
+   * But signup claims the install's row, so that id resolves to the account —
+   * which meant `/device` would happily mint a full account session for anyone
+   * holding it, walking straight around the `token_epoch` revocation `/logout`
+   * exists to provide.
+   *
+   * Absent on a token signed before this shipped, and absent means `false`: an
+   * existing field token was minted for a real session and must keep working.
+   */
+  dev?: boolean;
 }
 
 /**
@@ -34,7 +49,9 @@ export interface Claims {
  */
 export async function signAccess(claims: Claims): Promise<{ token: string; expiresIn: number }> {
   const expiresIn = 60 * 60 * 24 * 30;
-  const token = await new SignJWT({ pro: claims.pro, ep: claims.ep })
+  // `dev` omitted rather than sent as false: an account token is the norm, and a
+  // claim that is absent by default cannot be forgotten into the wrong value.
+  const token = await new SignJWT({ pro: claims.pro, ep: claims.ep, ...(claims.dev ? { dev: true } : {}) })
     .setProtectedHeader({ alg: ALG })
     .setSubject(claims.sub)
     .setIssuedAt()
@@ -52,5 +69,8 @@ export async function verifyAccess(token: string): Promise<Claims> {
     // default, so every existing token stays valid until its own expiry —
     // the alternative is signing out every user in the field on deploy day.
     ep: typeof payload.ep === 'number' ? payload.ep : 0,
+    // Absent → account token. See the note on `dev` above: existing field tokens
+    // carry no claim and must not be downgraded on deploy day.
+    dev: payload.dev === true,
   };
 }

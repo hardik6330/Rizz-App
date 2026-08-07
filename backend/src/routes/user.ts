@@ -8,6 +8,7 @@ import { signAccess } from '../lib/jwt.ts';
 import { FREE_ANALYSIS_LIMIT } from '../lib/limits.ts';
 import { log } from '../lib/logger.ts';
 import { syncEntitlementFor } from '../lib/revenuecat.ts';
+import { requireAccount } from '../middleware/auth.ts';
 import { creditsFor } from '../middleware/credits.ts';
 
 export const user = new Hono();
@@ -46,7 +47,9 @@ user.get('/credits', async (c) => {
  * Hard DELETE, not a soft flag: "we kept your email but marked it inactive" is
  * not deletion, and the unique key on `email` would block them signing up again.
  */
-user.delete('/me', async (c) => {
+// `requireAccount`: irreversible, and a device token proves only that somebody
+// holds this install id — not that they are the person whose account it is.
+user.delete('/me', requireAccount, async (c) => {
   const { sub } = c.get('user');
   await db.execute(sql`DELETE FROM users WHERE id = ${sub}`);
   // Never the email. The event is the record; the identity is what we just erased.

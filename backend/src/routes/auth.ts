@@ -9,8 +9,10 @@ import { ApiError, Errors } from '../lib/errors.ts';
 import { signAccess } from '../lib/jwt.ts';
 import { FREE_ANALYSIS_LIMIT } from '../lib/limits.ts';
 import { log } from '../lib/logger.ts';
-import { DUMMY_HASH, hashPassword, verifyPassword } from '../lib/password.ts';
-import { requireAuth } from '../middleware/auth.ts';
+import { sendOtpEmail } from '../lib/mailer.ts';
+import { issueOtp, type OtpPurpose, verifyOtp } from '../lib/otp.ts';
+import { dummyHash, hashPassword, verifyPassword } from '../lib/password.ts';
+import { requireAccount, requireAuth } from '../middleware/auth.ts';
 
 /**
  * Identity, in two layers.
@@ -25,8 +27,17 @@ import { requireAuth } from '../middleware/auth.ts';
  * a new one, so credits already spent stay spent, and a reinstall that logs in
  * lands back on the same row rather than a fresh set of free analyses.
  *
- * There is deliberately NO password reset and NO email verification in v1 — see
- * the note on /signup. Both are on the roadmap; neither is here.
+ * Email addresses are VERIFIED. `/otp` mails a six-digit code, `/signup` will
+ * not write an email without one, and `/login` accepts a code in place of the
+ * password — which is this product's account recovery. There is still no
+ * password RESET (no reset link, no "new password" screen): owning the mailbox
+ * gets you back into the account, and you can keep using the password you have.
+ *
+ * A verified address is also what let "one device, one account" go. Signup used
+ * to reject any install that already had an account, because an unverified email
+ * cost nothing to invent and the install row was the only thing tying a signup
+ * to something real. Now the mailbox is, so a device can host as many accounts
+ * as it has addresses to prove — see `/signup`.
  *
  * PHASE 1 CAVEAT: a JWT alone does not stop someone extracting the endpoint and
  * minting install_ids. Play Integrity / App Attest gating token issuance is
@@ -78,9 +89,22 @@ async function userById(id: string): Promise<UserRow | undefined> {
  * `analysis_count` goes missing on one path and `useOutOfCredits` starts
  * evaluating `undefined >= 3`. See the note on `creditsEnvelope`.
  */
-async function sessionFor(user: UserRow, installId?: string) {
+/**
+ * @param opts.device Mint a DEVICE session — see the `dev` claim in lib/jwt.ts.
+ *   Set only by `/device`, which authenticates an install id and never a person.
+ */
+async function sessionFor(
+  user: UserRow,
+  opts: { installId?: string; device?: boolean } = {},
+) {
   const isPro = user.is_pro === 1;
-  const { token, expiresIn } = await signAccess({ sub: user.id, pro: isPro, ep: user.token_epoch });
+  const { installId, device = false } = opts;
+  const { token, expiresIn } = await signAccess({
+    sub: user.id,
+    pro: isPro,
+    ep: user.token_epoch,
+    dev: device,
+  });
   return {
     access_token: token,
     expires_in: expiresIn,
@@ -95,8 +119,20 @@ async function sessionFor(user: UserRow, installId?: string) {
        * that token, never by this.
        */
       id: user.id,
-      // null = anonymous install. The client gates its account UI on this.
-      username: user.username,
+      /*
+       * null = anonymous install. The client gates its account UI on this — and
+       * that is why a DEVICE session must always report null, whatever is on the
+       * row.
+       *
+       * The install id survives sign-out on purpose, and signup claimed the
+       * install's row, so `/device` resolves straight to the account. It used to
+       * answer with the username attached, and the client's `persistSession`
+       * read that as "signed in" — so the first resume after signing out put the
+       * user back into their account with no password, having also walked around
+       * the `token_epoch` bump that `/logout` had just made. A device proves
+       * possession of an install id; it cannot vouch for a person.
+       */
+      username: device ? null : user.username,
       is_pro: isPro,
       analysis_count: user.analysis_count,
       credits_remaining: isPro ? null : Math.max(0, FREE_ANALYSIS_LIMIT - user.analysis_count),
@@ -133,8 +169,81 @@ auth.post('/device', async (c) => {
   log.info('auth.device', { platform, isNew: user.id === id });
 
   // install_id echoed back so a first-launch client can persist the one the
-  // server minted.
-  return c.json(await sessionFor(user, install_id));
+  // server minted. `device: true` — this endpoint authenticates an install, not
+  // a person, and the session it hands out says so.
+  return c.json(await sessionFor(user, { installId: install_id, device: true }));
+});
+
+// ── POST /v1/auth/otp ────────────────────────────────────────────────────────
+
+/**
+ * One definition of an email, used by all three endpoints that take one.
+ *
+ * The `.transform` is load-bearing rather than tidiness: `users.email` is UNIQUE
+ * and the OTP table is keyed on the address, so `Sam@x.com` and `sam@x.com` have
+ * to normalise to the same string or a code mailed by one is invisible to the
+ * other and the same person can hold two accounts.
+ */
+const emailField = z
+  .string()
+  .email('That email does not look right')
+  .max(255)
+  .transform((e) => e.trim().toLowerCase());
+
+/**
+ * String, never a number — `012345` is a valid code and `parseInt` is not.
+ * See `generateCode()` in lib/otp.ts.
+ */
+const codeField = z
+  .string()
+  .trim()
+  .regex(/^\d{6}$/, 'Enter the 6-digit code from your email');
+
+const OtpBody = z.object({ email: emailField, purpose: z.enum(['signup', 'login']) });
+
+/**
+ * Mail a code. **Always answers `{ ok: true }`.**
+ *
+ * The uniform answer is the whole security design of this endpoint, and it is
+ * worth spelling out because a "helpful" error here undoes it: a `purpose` of
+ * `signup` against a taken address, or `login` against an unknown one, sends
+ * nothing and still returns ok. Telling the caller which happened turns this
+ * into a free account-existence oracle — point it at a leaked address list and
+ * it sorts them into "has a RizzCoach account" and "does not", which is exactly
+ * the list a credential-stuffer wants, and which /login goes to some trouble
+ * (the dummy scrypt) to avoid handing out.
+ *
+ * The cooldown inside `issueOtp` is likewise silent. A resend the server
+ * swallowed and a resend it honoured look identical, and the user has a live
+ * code in their inbox either way.
+ *
+ * Unauthenticated on purpose. The recovery path has to work on a phone that has
+ * been signed out, wiped, or is not the phone the account was made on — and
+ * requiring a device token would only mean one extra call to `/device` for
+ * anybody abusing it. The real limits are the IP bucket in app.ts and the
+ * per-address cooldown.
+ */
+auth.post('/otp', async (c) => {
+  const parsed = OtpBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) throw Errors.badRequest(parsed.error.issues[0]?.message ?? 'Check your email');
+  const { email, purpose } = parsed.data;
+
+  const rows = await db.execute(sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`);
+  const taken = ((rows as unknown as [Array<{ id: string }>])[0]?.[0] ?? null) != null;
+
+  // Nothing to verify: signing up into an address that is already an account, or
+  // recovering one that does not exist. Silent no-op — see above.
+  if (purpose === 'signup' ? taken : !taken) {
+    log.info('auth.otp.noop', { purpose });
+    return c.json({ ok: true });
+  }
+
+  const code = await issueOtp(email, purpose as OtpPurpose);
+  // null = cooldown; a code is already in flight, so this really is a no-op.
+  if (code != null) await sendOtpEmail(email, code, purpose as OtpPurpose);
+
+  log.info('auth.otp.sent', { purpose, throttled: code == null });
+  return c.json({ ok: true });
 });
 
 // ── POST /v1/auth/signup ─────────────────────────────────────────────────────
@@ -152,15 +261,13 @@ const SignupBody = z.object({
     .min(3, 'Username must be at least 3 characters')
     .max(32, 'Username must be 32 characters or fewer')
     .regex(/^[a-z0-9_]+$/i, 'Username can use letters, numbers and _ only'),
-  email: z
-    .string()
-    .email('That email does not look right')
-    .max(255)
-    .transform((e) => e.trim().toLowerCase()),
+  email: emailField,
   password: z
     .string()
     .min(10, 'Password must be at least 10 characters')
     .max(128, 'Password must be 128 characters or fewer'),
+  /** From the email `/otp` just sent. This is what makes the address real. */
+  code: codeField,
 });
 
 /**
@@ -171,50 +278,74 @@ const SignupBody = z.object({
  * three more free analyses for the price of a signup form, which is the exact
  * hole an account is supposed to close.
  *
- * No email verification, by decision: without a resend endpoint a mistyped email
- * would be an account with no way back in, which is worse than not verifying at
- * all. The cost is that an email costs nothing to invent, so this endpoint does
- * NOT by itself stop reinstall farming — the IP-scoped grant cap and the global
- * spend ceiling are what bound that. Do not describe this as anti-abuse.
+ * The email is verified before anything is written: `code` has to be the one
+ * `/otp` mailed to that exact address, and `verifyOtp` burns it. So an account
+ * cannot be created against an address the user does not control, and a typo
+ * fails at the code step — where it is still fixable — rather than becoming an
+ * account with no way back in.
+ *
+ * **"One device, one account" is gone.** This used to require `email IS NULL` on
+ * the row and reject the whole request otherwise, on the reasoning that an
+ * unverified email cost nothing to invent so the install had to be the scarce
+ * thing. A verified address is now the scarce thing, so the restriction has no
+ * job left — and it was costing real users: a shared phone, a second account, or
+ * anyone who signed out and wanted to start fresh hit a hard wall. Two paths
+ * now, and which one runs turns on whether this device's row is already spoken
+ * for; see the branch below.
+ *
+ * Verification is still NOT the anti-abuse story on its own — disposable
+ * addresses exist. The IP-scoped grant cap and the global spend ceiling remain
+ * what bound farming, along with the credit carry-over noted below.
  */
 auth.post('/signup', requireAuth, async (c) => {
   const { sub } = c.get('user');
   const parsed = SignupBody.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) throw Errors.badRequest(parsed.error.issues[0]?.message ?? 'Check your details');
-  const { username, email, password } = parsed.data;
+  const { username, email, password, code } = parsed.data;
+
+  /*
+   * Before the hash and before any write. `hashPassword` is ~100ms of scrypt and
+   * a wrong code has no business paying for it, but the ordering matters more
+   * than the cost: nothing about the account may be written on the strength of
+   * an address that has not been proven.
+   */
+  if (!(await verifyOtp(email, 'signup', code))) throw Errors.badRequest(BAD_CODE);
+
+  const now = Date.now();
+  const rows = await db.execute(sql`
+    SELECT install_id, email FROM users WHERE id = ${sub} LIMIT 1
+  `);
+  const caller = (rows as unknown as [Array<{ install_id: string; email: string | null }>])[0]?.[0];
+  if (!caller) throw Errors.unauthorized();
 
   const hash = await hashPassword(password);
+  // Which row the session is issued for: the device's own on the claim path, a
+  // brand new one on the second-account path.
+  let accountId = sub;
 
   try {
-    const [result] = await db.execute(sql`
-      UPDATE users
-         SET username      = ${username},
-             email         = ${email},
-             password_hash = ${hash},
-             updated_at    = ${Date.now()}
-       WHERE id = ${sub} AND email IS NULL
-    `);
-    // `email IS NULL` in the predicate: a second signup on an install that
-    // already has an account must not silently overwrite the credentials on it.
-    if ((result as { affectedRows: number }).affectedRows === 0) {
+    if (caller.email == null) {
       /*
-       * Name the account. "This device already has an account" told the user they
-       * were stuck without telling them how to get out — and with no password
-       * reset, a user who has forgotten which address they used has no path back
-       * in at all.
-       *
-       * Not an existence oracle: `sub` comes from the caller's own token, so the
-       * only email this can ever reveal is the one on the row the caller is
-       * already authenticated as. Falls back to the old wording if the row is
-       * somehow gone, which is the only way `existing` can be empty here.
+       * The ordinary path, unchanged: the install is anonymous, so CLAIM its row
+       * rather than making a new one. This is what stops a reinstall buying three
+       * more free analyses — the credits already spent stay spent because they
+       * are counted on the very row that is becoming the account.
        */
-      const rows = await db.execute(sql`SELECT email FROM users WHERE id = ${sub} LIMIT 1`);
-      const existing = (rows as unknown as [{ email: string | null }[]])[0]?.[0];
-      throw Errors.badRequest(
-        existing?.email
-          ? `This device already has an account (${existing.email}) — log in instead`
-          : 'This device already has an account — log in instead',
-      );
+      const [result] = await db.execute(sql`
+        UPDATE users
+           SET username      = ${username},
+               email         = ${email},
+               password_hash = ${hash},
+               updated_at    = ${now}
+         WHERE id = ${sub} AND email IS NULL
+      `);
+      // Still guarded. Two signups racing on one install must not have the second
+      // overwrite the first's credentials; the loser falls through to a fresh row.
+      if ((result as { affectedRows: number }).affectedRows === 0) {
+        accountId = await createSecondAccount(sub, caller.install_id, username, email, hash, now);
+      }
+    } else {
+      accountId = await createSecondAccount(sub, caller.install_id, username, email, hash, now);
     }
   } catch (err) {
     if (err instanceof ApiError) throw err;
@@ -229,29 +360,132 @@ auth.post('/signup', requireAuth, async (c) => {
     throw err;
   }
 
-  const user = await userById(sub);
+  const user = await userById(accountId);
   if (!user) throw Errors.unauthorized();
 
   // Never the email, never the username — same rule as logger.ts.
-  log.info('auth.signup');
-  return c.json(await sessionFor(user));
+  log.info('auth.signup', { secondAccount: accountId !== sub });
+  return c.json(await sessionFor(user, { installId: caller.install_id }));
 });
+
+/**
+ * A second (or third) account on a device that already hosts one.
+ *
+ * The claim-in-place path cannot be used here: the caller's row belongs to
+ * somebody's account, and writing a new username/email/password over it would
+ * destroy that account rather than create one.
+ *
+ * **The credit carry-over is not a detail.** The new row inherits
+ * `analysis_count` from whoever currently owns the install. Without it, dropping
+ * the one-account rule would have reopened the exact hole accounts were built to
+ * close, and made it cheaper than before: sign up, spend three free analyses,
+ * sign up again with another address, repeat — no reinstall required. Free
+ * analyses are a property of the DEVICE and they stay that way.
+ *
+ * ponytail: the honest cost is that a genuine second person on a shared phone
+ * gets no free trial. That is the right side to err on for a paid product, and
+ * the fix if it ever bites is a per-device grant with a long window rather than
+ * a per-account one — a bigger change than this line.
+ *
+ * `is_pro` and `entitlement_expires_at` are deliberately NOT copied: they are a
+ * subscription, and cloning one hands out a paid entitlement for free. Nor is
+ * `rc_app_user_id`, which is UNIQUE and belongs to exactly one row.
+ *
+ * The row is inserted holding a THROWAWAY install id, then `claimInstall` moves
+ * the real one across. `install_id` is UNIQUE and NOT NULL, so it cannot be
+ * inserted directly (duplicate) and cannot be left out (null) — claimInstall is
+ * already the routine that takes an id off its current holder safely, and this
+ * is the same problem /login solves.
+ */
+export async function createSecondAccount(
+  callerId: string,
+  installId: string,
+  username: string,
+  email: string,
+  passwordHash: string,
+  now: number,
+): Promise<string> {
+  const id = randomUUID();
+  await db.execute(sql`
+    INSERT INTO users (id, install_id, platform, app_version, username, email, password_hash,
+                       analysis_count, created_at, updated_at)
+    SELECT ${id}, ${randomUUID()}, platform, app_version, ${username}, ${email}, ${passwordHash},
+           analysis_count, ${now}, ${now}
+      FROM users WHERE id = ${callerId}
+  `);
+  await claimInstall(id, installId, now);
+  return id;
+}
 
 // ── POST /v1/auth/login ──────────────────────────────────────────────────────
 
-const LoginBody = z.object({
-  email: z.string().email().max(255).transform((e) => e.trim().toLowerCase()),
-  password: z.string().min(1).max(128),
-  /**
-   * The install doing the logging in. OPTIONAL, so a client built before this
-   * shipped still logs in — it just stays split (see `claimInstall`).
-   */
-  install_id: z.string().uuid().optional(),
-});
+/** One message for a code that is wrong, expired, already spent, or never issued. */
+const BAD_CODE = 'That code is wrong or has expired — request a new one';
+
+/**
+ * Two ways in, and exactly one of them per request.
+ *
+ * `password` is the ordinary path. `code` is the recovery path: prove you own
+ * the mailbox and the password is not needed. That IS the password reset this
+ * product never had — without the part where a reset link lets a stolen inbox
+ * lock the real owner out by CHANGING the password. Here the password is
+ * untouched; the mailbox is simply a second way to prove it is you.
+ */
+const LoginBody = z
+  .object({
+    email: emailField,
+    password: z.string().min(1).max(128).optional(),
+    /** From `/otp` with `purpose: 'login'`. Mutually exclusive with `password`. */
+    code: codeField.optional(),
+    /**
+     * The install doing the logging in. OPTIONAL, so a client built before this
+     * shipped still logs in — it just stays split (see `claimInstall`).
+     */
+    install_id: z.string().uuid().optional(),
+  })
+  // XOR, not "at least one". Accepting both would mean a request with a valid
+  // code and a junk password, and then the answer depends on which branch the
+  // handler happens to check first — an ambiguity in an auth decision.
+  .refine((v) => (v.password == null) !== (v.code == null), {
+    message: 'Enter your password, or the code we emailed you',
+  });
 
 /** Consecutive failures before the account is parked for LOCKOUT_MS. */
-const MAX_FAILED_LOGINS = 10;
-const LOCKOUT_MS = 15 * 60_000;
+export const MAX_FAILED_LOGINS = 10;
+export const LOCKOUT_MS = 15 * 60_000;
+
+/**
+ * The failure counter after one more wrong guess.
+ *
+ * **The bug this fixes.** `failed_logins` was only ever reset on a SUCCESSFUL
+ * login, so it was a lifetime counter rather than the consecutive one the schema
+ * comment claims. Once it passed 10 the account sat permanently one wrong guess
+ * away from another 15-minute lock:
+ *
+ *     t=0    10 wrong guesses → failed=10, locked_until = now + 15min
+ *     t=15m  lock expires, failed_logins is STILL 10
+ *     t=15m  1 wrong guess    → failed=11 ≥ 10 → locked another 15 min
+ *            ↻ 96 attempts a day holds it shut for ever
+ *
+ * The IP bucket does not stop that — it is 8 tokens refilling at 0.05/s, and the
+ * attack needs one attempt per fifteen minutes. So anyone who knew a user's
+ * email could deny them their account indefinitely, and **there is no password
+ * reset**, which means no recovery that does not involve editing the database by
+ * hand. A lockout added to protect an unrecoverable account was the surest way
+ * to make one.
+ *
+ * An expired lock is a clean slate: the punishment has been served.
+ *
+ * Pure so it can be tested without a database — see auth.selfcheck.ts.
+ */
+export function nextFailureState(
+  row: { failed_logins: number; locked_until: number | null },
+  now: number,
+): { failed: number; lockedUntil: number | null } {
+  const lockExpired = row.locked_until != null && row.locked_until <= now;
+  const failed = (lockExpired ? 0 : row.failed_logins) + 1;
+  return { failed, lockedUntil: failed >= MAX_FAILED_LOGINS ? now + LOCKOUT_MS : null };
+}
 
 interface LoginRow extends UserRow {
   password_hash: string | null;
@@ -275,11 +509,19 @@ interface LoginRow extends UserRow {
  * `install_id` is NOT NULL — the id has to be taken off whoever holds it before
  * it can be given to anybody else:
  *
- *   1. The holder is anonymous → DELETE it. Once the device points elsewhere
- *      nothing can ever reach that row again: it has no email to log in with, so
- *      keeping it would only park its free credits somewhere unreachable.
- *      `email IS NULL` is load-bearing — without it a shared device deletes a
- *      real account.
+ *   1. The holder is anonymous AND owns no subscription → DELETE it. Once the
+ *      device points elsewhere nothing can ever reach that row again: it has no
+ *      email to log in with, so keeping it would only park its free credits
+ *      somewhere unreachable. `email IS NULL` is load-bearing — without it a
+ *      shared device deletes a real account.
+ *
+ *      `rc_app_user_id IS NULL` is load-bearing for a subtler case: someone who
+ *      SUBSCRIBED before signing up has an entitlement on a row with no email.
+ *      Deleting it when a second person logs in on that phone left RevenueCat
+ *      billing a card for a user that no longer exists — every later renewal
+ *      landing as `rc.webhook.unknown_user`, entitling nobody, refundable by
+ *      nobody. Such a row falls through to step 2 and is re-homed instead, so
+ *      the webhook can still find it by `rc_app_user_id`.
  *   2. The holder is a real account (two people share one phone) → give it a
  *      FRESH install_id rather than deleting it. It stays reachable by email and
  *      password with its credits intact; it just no longer owns this device.
@@ -293,7 +535,10 @@ export async function claimInstall(userId: string, installId: string, now: numbe
   await db.transaction(async (tx) => {
     await tx.execute(sql`
       DELETE FROM users
-       WHERE install_id = ${installId} AND id <> ${userId} AND email IS NULL
+       WHERE install_id = ${installId}
+         AND id <> ${userId}
+         AND email IS NULL
+         AND rc_app_user_id IS NULL
     `);
     await tx.execute(sql`
       UPDATE users SET install_id = ${randomUUID()}, updated_at = ${now}
@@ -319,14 +564,18 @@ export async function claimInstall(userId: string, installId: string, now: numbe
  * is what finishes that handover; without it the device is left addressing the
  * throwaway row instead of the one it was just handed.
  *
- * With no reset flow, an attacker who brute-forces an account takes it
- * permanently. So the lockout below is load-bearing, and so is the token bucket
- * on this path in app.ts.
+ * Takes EITHER a password or a mailed code — see `LoginBody`. The lockout and
+ * the token bucket in app.ts still guard the password branch; the code branch is
+ * bounded by the code's own attempt cap instead, and skips the lockout on
+ * purpose. The reasoning for that is in the branch itself and is the sharpest
+ * decision in this file.
  */
 auth.post('/login', async (c) => {
   const parsed = LoginBody.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) throw Errors.badRequest('Email and password are required');
-  const { email, password } = parsed.data;
+  if (!parsed.success) {
+    throw Errors.badRequest(parsed.error.issues[0]?.message ?? 'Email and password are required');
+  }
+  const { email, password, code } = parsed.data;
   const now = Date.now();
 
   const rows = await db.execute(sql`
@@ -336,36 +585,64 @@ auth.post('/login', async (c) => {
   `);
   const row = (rows as unknown as [LoginRow[]])[0]?.[0];
 
+  // Before either branch. A ban outranks any proof of identity.
   if (row?.banned_at) throw Errors.banned();
-  if (row?.locked_until != null && row.locked_until > now) throw Errors.rateLimited();
 
-  /*
-   * Hash even when there is no such user.
-   *
-   * A missing row returns in ~1ms and a real one in ~100ms, and that difference
-   * is an account-existence oracle no amount of careful error copy can cover.
-   * The dummy costs one scrypt on a path that is already rate limited.
-   */
-  const ok = row
-    ? await verifyPassword(password, row.password_hash)
-    : await verifyPassword(password, await DUMMY_HASH);
+  if (code != null) {
+    /*
+     * ── Recovery path ────────────────────────────────────────────────────────
+     *
+     * **No lockout check here, deliberately.** `locked_until` exists to stop
+     * password guessing, and this branch does not guess a password — it proves
+     * possession of the mailbox the account was verified against. Applying the
+     * lock to it as well would mean the documented recovery route is shut off by
+     * precisely the attack it recovers from: ten wrong guesses against a
+     * stranger's email and the owner is locked out of BOTH ways in for fifteen
+     * minutes at a time, indefinitely. The code's own five-attempt cap is this
+     * branch's limiter, and `/otp`'s cooldown bounds how fast codes appear.
+     *
+     * Verified before the row is consulted, so an address with no account and an
+     * address with a wrong code fail identically — `/otp` never issued a code for
+     * the former, so `verifyOtp` cannot succeed for it, and neither reveals which
+     * case it was.
+     */
+    if (!(await verifyOtp(email, 'login', code))) throw Errors.badRequest(BAD_CODE);
+    // Only reachable if `/otp` found this address, so the row is all but
+    // guaranteed. Deleted in between is the exception, and it is not a code
+    // problem — same generic answer as a wrong password.
+    if (!row) throw Errors.invalidCredentials();
+    log.info('auth.login.code');
+  } else {
+    if (row?.locked_until != null && row.locked_until > now) throw Errors.rateLimited();
 
-  // `!row` is folded in here rather than returned early above, so a missing
-  // email and a wrong password take the same path and the same time.
-  if (!ok || !row) {
-    if (row) {
-      const failed = row.failed_logins + 1;
-      await db.execute(sql`
-        UPDATE users
-           SET failed_logins = ${failed},
-               locked_until  = ${failed >= MAX_FAILED_LOGINS ? now + LOCKOUT_MS : null}
-         WHERE id = ${row.id}
-      `);
-      if (failed >= MAX_FAILED_LOGINS) log.warn('auth.locked', { failed });
+    /*
+     * Hash even when there is no such user.
+     *
+     * A missing row returns in ~1ms and a real one in ~100ms, and that difference
+     * is an account-existence oracle no amount of careful error copy can cover.
+     * The dummy costs one scrypt on a path that is already rate limited.
+     */
+    const ok = row
+      ? await verifyPassword(password!, row.password_hash)
+      : await verifyPassword(password!, await dummyHash());
+
+    // `!row` is folded in here rather than returned early above, so a missing
+    // email and a wrong password take the same path and the same time.
+    if (!ok || !row) {
+      if (row) {
+        const { failed, lockedUntil } = nextFailureState(row, now);
+        await db.execute(sql`
+          UPDATE users
+             SET failed_logins = ${failed},
+                 locked_until  = ${lockedUntil}
+           WHERE id = ${row.id}
+        `);
+        if (lockedUntil != null) log.warn('auth.locked', { failed });
+      }
+      // ONE message for both branches. "No such user" tells an attacker which
+      // half of the guess to keep.
+      throw Errors.invalidCredentials();
     }
-    // ONE message for both branches. "No such user" tells an attacker which
-    // half of the guess to keep.
-    throw Errors.invalidCredentials();
   }
 
   // The install claim SUBSUMES the failed-login reset — see claimInstall step 3.
@@ -379,10 +656,10 @@ auth.post('/login', async (c) => {
     `);
   }
 
-  log.info('auth.login', { claimedInstall: parsed.data.install_id != null });
+  log.info('auth.login', { claimedInstall: parsed.data.install_id != null, viaCode: code != null });
   // Echoed so the client can persist it: on the reinstall path this may be the
   // first time this device learns which install id it now owns.
-  return c.json(await sessionFor(row, parsed.data.install_id));
+  return c.json(await sessionFor(row, { installId: parsed.data.install_id }));
 });
 
 // ── POST /v1/auth/logout ─────────────────────────────────────────────────────
@@ -405,7 +682,7 @@ auth.post('/login', async (c) => {
  * offline sign-out must still sign you out locally, and the server-side kill
  * lands on the next successful call.
  */
-auth.post('/logout', requireAuth, async (c) => {
+auth.post('/logout', requireAuth, requireAccount, async (c) => {
   const { sub } = c.get('user');
   await db.execute(sql`
     UPDATE users SET token_epoch = token_epoch + 1, updated_at = ${Date.now()}

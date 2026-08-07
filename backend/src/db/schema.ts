@@ -1,4 +1,4 @@
-import { bigint, char, date, double, index, int, json, mysqlEnum, mysqlTable, smallint, tinyint, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
+import { bigint, char, date, double, index, int, json, mediumtext, mysqlEnum, mysqlTable, primaryKey, smallint, tinyint, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
 
 /**
  * Three tables. See docs/README.md §5 for what is deliberately absent
@@ -27,7 +27,11 @@ export const users = mysqlTable(
      * Account, attached by /v1/auth/signup. All nullable: an install that never
      * signs up keeps working exactly as it did. Signup claims THIS row rather
      * than creating one, which is what stops a reinstall buying three more free
-     * analyses. No verification and no reset in v1 — see routes/auth.ts.
+     * analyses.
+     *
+     * `email` is VERIFIED as of migration 0005: /signup will not write one
+     * without a code mailed to it and handed back. There is still no password
+     * column to reset — recovery is a mailed code on /login instead.
      */
     username: varchar('username', { length: 32 }),
     email: varchar('email', { length: 255 }),
@@ -68,12 +72,65 @@ export const users = mysqlTable(
 );
 
 /** Generated ONCE per day, globally. The PK doubles as the cron idempotency guard. */
-export const dailyFeed = mysqlTable('daily_feed', {
-  feedDate: date('feed_date', { mode: 'string' }).notNull(),
-  version: smallint('version', { unsigned: true }).notNull(),
-  itemsJson: json('items_json').notNull(),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-});
+export const dailyFeed = mysqlTable(
+  'daily_feed',
+  {
+    feedDate: date('feed_date', { mode: 'string' }).notNull(),
+    version: smallint('version', { unsigned: true }).notNull(),
+    itemsJson: json('items_json').notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  /*
+   * The composite PK is NOT decoration — `generateFeed()` relies on
+   * `INSERT IGNORE` to collapse a race between two instances that both missed
+   * the cache, and INSERT IGNORE without a unique key ignores nothing. Every
+   * request would then generate and insert its own copy of the day's batch.
+   *
+   * It was missing here while `0000_init.sql` declared it, so the running
+   * database was correct and the model was not. Invisible, because every query
+   * in this service is raw SQL — until someone ran `db:generate`, at which point
+   * drizzle-kit would have diffed a PK-less table against a PK'd one and emitted
+   * a migration to "fix" the difference in the wrong direction.
+   */
+  (t) => ({ pk: primaryKey({ columns: [t.feedDate, t.version] }) }),
+);
+
+/**
+ * Every credit movement, append-only. See migration 0004.
+ *
+ * Evidence, not state: `users.analysis_count` remains the balance. Nothing in
+ * the request path reads this, which is what lets the writes be fire-and-forget.
+ */
+export const creditEvents = mysqlTable(
+  'credit_events',
+  {
+    id: bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+    userId: char('user_id', { length: 36 }).notNull(),
+    /** +1 charge, -1 refund. */
+    delta: tinyint('delta').notNull(),
+    /** Fixed vocabulary, never user content — same rule as lib/logger.ts. */
+    reason: varchar('reason', { length: 32 }).notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({ idxUser: index('idx_ce_user').on(t.userId, t.createdAt) }),
+);
+
+/**
+ * Replay protection for `/v1/ai/*`. See middleware/idempotency.ts.
+ *
+ * `<user_id>:<Idempotency-Key>`, so one user's key cannot collide with another's.
+ * `status = 0` means claimed but unfinished.
+ */
+export const idempotency = mysqlTable(
+  'idempotency',
+  {
+    id: varchar('id', { length: 200 }).primaryKey(),
+    status: smallint('status', { unsigned: true }).notNull(),
+    body: mediumtext('body'),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({ idxCreated: index('idx_idem_created').on(t.createdAt) }),
+);
 
 /**
  * Token buckets shared across instances — `/v1/auth/*` only.
@@ -98,12 +155,45 @@ export const rateLimits = mysqlTable(
   (t) => ({ idxUpdated: index('idx_rl_updated').on(t.updatedAt) }),
 );
 
+/**
+ * Emailed one-time codes. See migration 0005 and lib/otp.ts.
+ *
+ * The one place an email address lives outside `users`, and deliberately
+ * short-lived: rows are single-use, expire in ten minutes and are swept. It is
+ * not a log of who tried to sign up — a consumed code leaves nothing behind.
+ */
+export const emailOtps = mysqlTable(
+  'email_otps',
+  {
+    email: varchar('email', { length: 255 }).notNull(),
+    /** 'signup' | 'login'. Part of the PK, so the two can never be swapped. */
+    purpose: varchar('purpose', { length: 16 }).notNull(),
+    /** SHA-256 hex of `<email>:<purpose>:<code>`. Never the code itself. */
+    codeHash: char('code_hash', { length: 64 }).notNull(),
+    attempts: smallint('attempts', { unsigned: true }).notNull().default(0),
+    expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
+    /** Doubles as the resend cooldown clock. */
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.email, t.purpose] }),
+    idxExpires: index('idx_otp_expires').on(t.expiresAt),
+  }),
+);
+
 /** RevenueCat webhook idempotency only (Phase 3). No billing content stored. */
 export const rcEvents = mysqlTable(
   'rc_events',
   {
     eventId: varchar('event_id', { length: 128 }).primaryKey(),
-    userId: char('user_id', { length: 36 }),
+    /*
+     * VARCHAR(128), not CHAR(36): this holds RevenueCat's `app_user_id`, not a
+     * `users.id`. It is a UUID today, but a legacy or sandbox row carries
+     * `$RCAnonymousID:<32 hex>` = 46 chars, which under strict mode threw
+     * ER_DATA_TOO_LONG and 500'd the whole webhook. Matches
+     * `users.rc_app_user_id`. See migration 0004.
+     */
+    userId: varchar('user_id', { length: 128 }),
     type: varchar('type', { length: 48 }).notNull(),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   },

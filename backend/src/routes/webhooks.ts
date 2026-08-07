@@ -132,7 +132,35 @@ webhooks.post('/revenuecat', async (c) => {
    * If webhook volume ever makes that tight, write the event, return 200, and
    * drain rc_events from a worker; the idempotency row is already the queue.
    */
-  await syncEntitlementFor(user.id, appUserId);
+  /*
+   * Release the claim if the work fails.
+   *
+   * The INSERT IGNORE above is written like a completion record but used as a
+   * lock claim, and the two need opposite failure behaviour. Without this, a
+   * `syncEntitlementFor` that throws — an RC timeout, a DB blip, an instance
+   * killed mid-request — returns 500, RevenueCat retries, and the retry finds
+   * the row the FAILED attempt wrote and reports `duplicate: true`. The event is
+   * then gone for good: RevenueCat abandons delivery after five retries
+   * (5/10/20/40/80 minutes), so there is no later chance.
+   *
+   * Which direction that loses depends on the event. A dropped CANCELLATION or
+   * EXPIRATION leaves a churned user with unlimited AI at our cost, invisible in
+   * every dashboard — the exact leak this route exists to close. A dropped
+   * RENEWAL cuts off someone who is paying.
+   *
+   * ponytail: delete-on-failure rather than a `processed_at` column. It covers
+   * every failure the process survives, which is all of them except a hard kill
+   * between the throw and this DELETE. Add the column when there is a worker to
+   * drain it; the idempotency row is already the queue.
+   */
+  try {
+    await syncEntitlementFor(user.id, appUserId);
+  } catch (err) {
+    await db
+      .execute(sql`DELETE FROM rc_events WHERE event_id = ${eventId}`)
+      .catch((delErr) => log.error('rc.claim.release', delErr));
+    throw err;
+  }
   sweepEvents(Date.now());
   log.info('rc.webhook', { type: event.type });
   return c.json({ ok: true });

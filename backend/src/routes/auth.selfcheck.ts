@@ -28,13 +28,21 @@ const DEVICE = randomUUID();
 const anonId = randomUUID();
 const otherAccountId = randomUUID();
 const targetId = randomUUID();
-const written = [anonId, otherAccountId, targetId];
+/** H-4: an anonymous row that owns a subscription, and the person who displaces it. */
+const subscriberId = randomUUID();
+const newcomerId = randomUUID();
+const written = [anonId, otherAccountId, targetId, subscriberId, newcomerId];
 
-async function seed(id: string, installId: string, email: string | null): Promise<void> {
+async function seed(
+  id: string,
+  installId: string,
+  email: string | null,
+  rcAppUserId: string | null = null,
+): Promise<void> {
   const now = Date.now();
   await db.execute(sql`
-    INSERT INTO users (id, install_id, platform, email, analysis_count, created_at, updated_at)
-    VALUES (${id}, ${installId}, 'android', ${email}, 2, ${now}, ${now})
+    INSERT INTO users (id, install_id, platform, email, rc_app_user_id, analysis_count, created_at, updated_at)
+    VALUES (${id}, ${installId}, 'android', ${email}, ${rcAppUserId}, 2, ${now}, ${now})
   `);
 }
 
@@ -68,8 +76,37 @@ try {
   assert.ok(rehomed, 'the displaced account still EXISTS — it has an email to log back in with');
   assert.notEqual(rehomed, DEVICE, 'and no longer owns the device');
 
+  // ── 4. H-4 · an anonymous row holding a SUBSCRIPTION is re-homed, not deleted
+  //
+  // Someone subscribes before signing up: their entitlement sits on a row with
+  // no email. When a second person logs in on that phone, step 1 used to delete
+  // it — and RevenueCat then kept billing a card for a user that no longer
+  // existed, every renewal landing as `rc.webhook.unknown_user`, entitling
+  // nobody. `rc_app_user_id IS NULL` in the DELETE is what keeps it reachable.
+  const DEVICE2 = randomUUID();
+  await seed(subscriberId, DEVICE2, null, `rc-${subscriberId}`);
+  await seed(newcomerId, randomUUID(), 'newcomer@example.test');
+  await claimInstall(newcomerId, DEVICE2, Date.now());
+
+  assert.equal(await installOf(newcomerId), DEVICE2, 'the new account owns the device');
+  const survivor = await installOf(subscriberId);
+  assert.ok(survivor, 'H-4: the anonymous SUBSCRIBER row still exists');
+  assert.notEqual(survivor, DEVICE2, 'H-4: re-homed rather than deleted');
+
+  // And the webhook can still find it, which is the whole point of keeping it.
+  const found = await db.execute(sql`
+    SELECT id FROM users WHERE rc_app_user_id = ${`rc-${subscriberId}`} LIMIT 1
+  `);
+  assert.equal(
+    (found as unknown as [Array<{ id: string }>])[0]?.[0]?.id,
+    subscriberId,
+    'H-4: the subscription is still resolvable by rc_app_user_id',
+  );
+
   console.log('auth.selfcheck: ok');
 } finally {
-  await db.execute(sql`DELETE FROM users WHERE id IN (${written[0]}, ${written[1]}, ${written[2]})`);
+  // One statement per id: a parameterised `IN` would bind the whole list as a
+  // single string.
+  for (const id of written) await db.execute(sql`DELETE FROM users WHERE id = ${id}`);
   await pool.end();
 }

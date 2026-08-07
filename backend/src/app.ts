@@ -1,9 +1,13 @@
+import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 
 import { assertSafetyRails } from './ai/prompts.ts';
+import { db } from './db/client.ts';
 import { ApiError } from './lib/errors.ts';
 import { log } from './lib/logger.ts';
 import { requireAuth } from './middleware/auth.ts';
+import { idempotent } from './middleware/idempotency.ts';
 import { dbRateLimit, rateLimit } from './middleware/rateLimit.ts';
 import { ai } from './routes/ai.ts';
 import { auth } from './routes/auth.ts';
@@ -17,8 +21,57 @@ assertSafetyRails();
 
 export const app = new Hono();
 
+/*
+ * CORS, with an explicit allowlist and never `*`.
+ *
+ * The native app does not need this — it is not a browser and sends no Origin.
+ * Three things do: the `web.output: "static"` target declared in app.json, any
+ * future admin surface, and a developer poking the API from a browser console.
+ * All of them currently fail with an opaque network error and no CORS header to
+ * explain why.
+ *
+ * `*` is wrong here specifically because this API is bearer-authenticated: a
+ * wildcard origin plus a token in localStorage is how a malicious page reads a
+ * user's account. `credentials` is left off for the same reason — the token
+ * travels in a header, never a cookie, so nothing needs it.
+ */
+const ORIGINS = ['https://rizz-app-five.vercel.app', 'http://localhost:8081'];
+app.use(
+  '/v1/*',
+  cors({
+    origin: (origin) => (ORIGINS.includes(origin) ? origin : null),
+    allowHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
+    allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    maxAge: 86_400,
+  }),
+);
+
+/** Liveness: is the process up. Deliberately dumb — no dependencies. */
 app.get('/', (c) => c.text('Server is running!'));
-app.get('/healthz', (c) => c.json({ ok: true }));
+
+/**
+ * Readiness: can this instance actually serve a request?
+ *
+ * It used to return `{ ok: true }` unconditionally, and `render.yaml` points its
+ * health check at it. `index.ts` exits(1) on a database that is unreachable AT
+ * BOOT, but a database that dies afterwards left a "healthy" instance 500ing
+ * every request with the platform happily routing traffic to it.
+ *
+ * Short timeout: a health check that hangs is read as a failure anyway, and
+ * hanging occupies a connection from a pool of 1 on Vercel.
+ */
+app.get('/healthz', async (c) => {
+  try {
+    await Promise.race([
+      db.execute(sql`SELECT 1`),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('db timeout')), 2_000)),
+    ]);
+    return c.json({ ok: true, db: true });
+  } catch (err) {
+    log.error('healthz.db', err);
+    return c.json({ ok: false, db: false }, 503);
+  }
+});
 
 /*
  * Public, unauthenticated, and required to ship: the paywall links to both, and
@@ -51,6 +104,17 @@ app.route('/', legal);
  */
 app.use('/v1/auth/login', dbRateLimit({ scope: 'login', capacity: 8, refillPerSec: 0.05, by: 'ip' }));
 app.use('/v1/auth/signup', dbRateLimit({ scope: 'signup', capacity: 5, refillPerSec: 0.01, by: 'ip' }));
+/*
+ * `/otp` is the only endpoint here that spends real money and can be aimed at a
+ * third party — every call is an email, billed by the provider and delivered to
+ * an address the caller chose rather than one that belongs to them. So it gets
+ * the tightest bucket of the three: 4 to start, refilling at one every ~50s.
+ *
+ * This is the IP half. The other half is the per-address cooldown in lib/otp.ts,
+ * and both are needed for different attacks: the bucket stops one host mailing a
+ * thousand different people, the cooldown stops a thousand hosts mailing one.
+ */
+app.use('/v1/auth/otp', dbRateLimit({ scope: 'otp', capacity: 4, refillPerSec: 0.02, by: 'ip' }));
 app.use('/v1/auth/*', dbRateLimit({ scope: 'auth', capacity: 20, refillPerSec: 0.2, by: 'ip' }));
 app.route('/v1/auth', auth);
 
@@ -86,7 +150,19 @@ app.use('/v1/ai/*', async (c, next) => {
   }
   await next();
 });
-app.use('/v1/ai/*', requireAuth, rateLimit({ capacity: 10, refillPerSec: 0.17, by: 'user' }));
+/*
+ * Order matters: auth → limit → idempotency.
+ *
+ * `idempotent` keys on the user id, so it must come after `requireAuth`. It must
+ * also come after the rate limiter, or a replayed key would consume a token from
+ * a bucket the original request already paid into.
+ */
+app.use(
+  '/v1/ai/*',
+  requireAuth,
+  rateLimit({ capacity: 10, refillPerSec: 0.17, by: 'user' }),
+  idempotent,
+);
 app.route('/v1/ai', ai);
 
 app.use('/v1/user/*', requireAuth, rateLimit({ capacity: 30, refillPerSec: 1, by: 'user' }));

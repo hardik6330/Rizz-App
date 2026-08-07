@@ -75,12 +75,43 @@ export async function checkEntitlement(
  *
  * Returns the entitlement so callers can re-sign a token from it.
  */
+/**
+ * May this entitlement answer be written to the user row?
+ *
+ * Pure, and separate from the writer, because getting it wrong is silent and
+ * expensive in the user's disfavour — see `revenuecat.selfcheck.ts`.
+ *
+ * `verified: false` means "RevenueCat did not tell us" — a network error, a 429,
+ * a 503. `checkEntitlement` correctly returns `isPro: false` for those so THIS
+ * request fails closed, but persisting that turns a transient outage into a
+ * durable downgrade: `requireAuth` reads `is_pro` off the row on every request,
+ * so a paying subscriber is on the paywall within milliseconds and stays there
+ * until some later sync happens to succeed. A 404 is different — "never
+ * purchased" is knowledge, and `checkEntitlement` marks it verified.
+ *
+ * Mock mode (no secret key) always writes: `claimedPro` is the only signal that
+ * exists there, and refusing it would break every preview build.
+ */
+export function shouldPersist(result: Entitlement, hasSecretKey: boolean): boolean {
+  return result.verified || !hasSecretKey;
+}
+
 export async function syncEntitlementFor(
   userId: string,
   rcAppUserId: string,
   claimedPro = false,
 ): Promise<Entitlement> {
   const result = await checkEntitlement(rcAppUserId, claimedPro);
+
+  if (!shouldPersist(result, Boolean(env.REVENUECAT_SECRET_KEY))) {
+    /*
+     * Leave the row alone. The caller still gets `isPro: false` and fails closed
+     * for this request; what it does NOT do is overwrite a true entitlement with
+     * an answer RevenueCat never gave us.
+     */
+    log.warn('rc.sync.skipped', { reason: 'unverified' });
+    return result;
+  }
 
   /*
    * Detach the id from any OTHER row first.
@@ -92,19 +123,32 @@ export async function syncEntitlementFor(
    * their subscription back. The id is now `users.id`, which cannot collide, but
    * this stays for every row written before that.
    */
-  await db.execute(sql`
-    UPDATE users SET rc_app_user_id = NULL
-     WHERE rc_app_user_id = ${rcAppUserId} AND id <> ${userId}
-  `);
+  /*
+   * Both statements or neither.
+   *
+   * Detach-then-attach across two autocommitted UPDATEs has a window in which
+   * the id belongs to nobody: a failure between them leaves `rc_app_user_id`
+   * NULL on both rows, so the webhook's `rc_app_user_id` lookup finds nothing
+   * and every later renewal for that subscriber lands as `unknown_user`. It
+   * happens to still resolve today via the `id = appUserId` half of the UNION,
+   * which is luck rather than design — that only works because the app now
+   * passes `users.id`.
+   */
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      UPDATE users SET rc_app_user_id = NULL
+       WHERE rc_app_user_id = ${rcAppUserId} AND id <> ${userId}
+    `);
 
-  await db.execute(sql`
-    UPDATE users
-       SET rc_app_user_id         = ${rcAppUserId},
-           is_pro                 = ${result.isPro ? 1 : 0},
-           entitlement_expires_at = ${result.expiresAt},
-           updated_at             = ${Date.now()}
-     WHERE id = ${userId}
-  `);
+    await tx.execute(sql`
+      UPDATE users
+         SET rc_app_user_id         = ${rcAppUserId},
+             is_pro                 = ${result.isPro ? 1 : 0},
+             entitlement_expires_at = ${result.expiresAt},
+             updated_at             = ${Date.now()}
+       WHERE id = ${userId}
+    `);
+  });
 
   // Never the rc id or the email — it is an account identifier like any other.
   log.info('rc.sync', { isPro: result.isPro, verified: result.verified });

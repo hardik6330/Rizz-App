@@ -62,6 +62,25 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
    */
   if (claims.ep !== row.token_epoch) throw Errors.unauthorized();
 
-  c.set('user', { sub: claims.sub, pro: row.is_pro === 1, ep: row.token_epoch });
+  c.set('user', { sub: claims.sub, pro: row.is_pro === 1, ep: row.token_epoch, dev: claims.dev });
+  await next();
+};
+
+/**
+ * Refuse a device token. Chain AFTER `requireAuth`.
+ *
+ * A device token proves possession of an install id and nothing else — no
+ * password was ever entered. That is fine for spending credits (it is how the
+ * native chat bubble works, days after the app was last opened, when a token
+ * would long since have expired) and not fine for anything that changes or
+ * destroys the account behind it.
+ *
+ * Deliberately NOT applied to `/v1/user/pro`: entitlement sync runs at launch,
+ * before the user has necessarily logged back in, and failing it would strip Pro
+ * from a subscriber for the sake of a route that only ever writes what
+ * RevenueCat says. It is also not applied to `/v1/ai/*` — that is the bubble.
+ */
+export const requireAccount: MiddlewareHandler = async (c, next) => {
+  if (c.get('user').dev) throw Errors.unauthorized();
   await next();
 };
