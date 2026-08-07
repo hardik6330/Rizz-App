@@ -49,7 +49,7 @@ interface Envelope<T> {
 
 const TIMEOUT_MS = 60_000;
 
-async function post<T>(path: string, body: unknown, token: string): Promise<Response> {
+async function post(path: string, body: unknown, token: string): Promise<Response> {
   return fetch(apiUrl(path), {
     method: 'POST',
     headers: {
@@ -73,13 +73,13 @@ export async function callApi<T>(path: string, body: unknown): Promise<T> {
   const started = Date.now();
 
   try {
-    let res = await post<T>(path, body, await accessToken());
+    let res = await post(path, body, await accessToken());
 
     // Exactly one retry, and only on 401: the 24h token expired, or
     // `/v1/user/pro` changed the entitlement underneath it. Retrying anything
     // else would double a charge that already succeeded server-side.
     if (res.status === 401) {
-      res = await post<T>(path, body, await accessToken(true));
+      res = await post(path, body, await accessToken(true));
     }
 
     const data = (await res.json().catch(() => null)) as Envelope<T> | null;

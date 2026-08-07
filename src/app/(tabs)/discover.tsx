@@ -30,6 +30,9 @@ const FILTERS: { key: FeedCategory | 'All'; label: string }[] = [
   { key: 'Closer', label: 'Closers' },
 ];
 
+/** A card counts as viewed once 60% of it is on screen. Constant, so module scope. */
+const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
+
 export default function DiscoverScreen() {
   // Page height is the window height, so this must be the live value — it is
   // what makes the feed re-lay-out on rotation and on a foldable's hinge.
@@ -41,14 +44,26 @@ export default function DiscoverScreen() {
   const [index, setIndex] = useState(0);
   const [filter, setFilter] = useState<FeedCategory | 'All'>('All');
   const listRef = useRef<FlatList<FeedItem>>(null);
-  const seen = useRef<Set<number>>(new Set([0]));
+  /**
+   * Lines whose view has already been counted against today's allowance.
+   *
+   * **Keyed by item id, not by list index.** It was a `Set<number>` of indices,
+   * and `changeFilter` reset it to `new Set([0])` — so the same line, viewed
+   * under "All" and again under "Openers", was two different indices and got
+   * charged twice. Browsing three filters could burn the whole ten-swipe
+   * allowance on about four distinct lines, and the user has no way to see why.
+   *
+   * Ids survive filtering, reordering and the daily feed landing on top of the
+   * curated set, which indices do not. Never reset on a filter change.
+   */
+  const seen = useRef<Set<string>>(new Set());
   const pushedPaywall = useRef(false);
 
   const changeFilter = useCallback((next: FeedCategory | 'All') => {
     haptic.selection();
     setFilter(next);
     setIndex(0);
-    seen.current = new Set([0]);
+    // `seen` deliberately NOT cleared — see above.
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, []);
 
@@ -101,17 +116,39 @@ export default function DiscoverScreen() {
     if (!locked) pushedPaywall.current = false;
   }, [locked]);
 
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const visibleIndex = viewableItems[0]?.index;
-    if (visibleIndex == null) return;
-    setIndex(visibleIndex);
-    if (!seen.current.has(visibleIndex)) {
-      seen.current.add(visibleIndex);
-      useRizzStore.getState().incrementSwipe();
-    }
-  }).current;
+  /**
+   * Arriving on the screen is not a swipe.
+   *
+   * The old index-keyed `seen` was pre-seeded with `0` for exactly this reason —
+   * the first card is already on screen before the user does anything, and
+   * charging for it means the allowance is really nine. Ids cannot be pre-seeded
+   * (the first item depends on the filter and on whether today's AI batch has
+   * landed), so the first viewability callback marks instead of charging.
+   */
+  const arrived = useRef(false);
 
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  /*
+   * `useRef(fn).current`, and reading `.current` during render, is the pattern
+   * FlatList documents for this prop — it warns and re-measures if
+   * `onViewableItemsChanged` changes identity between renders, so it cannot be a
+   * `useCallback` with real dependencies. The rule is right in general and wrong
+   * here; the closure only touches refs and `getState()`, never render state.
+   */
+  // eslint-disable-next-line react-hooks/refs
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const visible = viewableItems[0];
+    if (visible?.index == null) return;
+    setIndex(visible.index);
+
+    const id = (visible.item as FeedItem).id;
+    if (seen.current.has(id)) return;
+    seen.current.add(id);
+    if (!arrived.current) {
+      arrived.current = true;
+      return;
+    }
+    useRizzStore.getState().incrementSwipe();
+  }).current;
 
   const copyItem = useCallback(
     async (item: FeedItem) => {
@@ -183,7 +220,7 @@ export default function DiscoverScreen() {
           index: itemIndex,
         })}
         onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
+        viewabilityConfig={VIEWABILITY_CONFIG}
         initialNumToRender={2}
         maxToRenderPerBatch={3}
         windowSize={5}

@@ -63,7 +63,7 @@ export function ABSimulator({ replies, sims }: ABSimulatorProps) {
         </View>
         <View style={styles.headerText}>
           <Text style={styles.title}>A/B Response Simulator</Text>
-          <Text style={styles.subtitle}>Preview how they'll probably reply</Text>
+          <Text style={styles.subtitle}>Preview how they&apos;ll probably reply</Text>
         </View>
         <Animated.View style={chevronStyle}>
           <Ionicons name="chevron-down" size={18} color={palette.textSecondary} />

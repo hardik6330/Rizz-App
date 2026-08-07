@@ -13,6 +13,7 @@ import {
   isSupported,
 } from '@/../modules/profile-capture';
 
+import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { identify, initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
@@ -23,6 +24,18 @@ import { palette } from '@/theme/tokens';
 export const unstable_settings = {
   anchor: '(tabs)',
 };
+
+/**
+ * The app-wide crash screen. Expo Router picks this up BY NAME — it must be
+ * exported as `ErrorBoundary` from a route file or it is inert.
+ *
+ * This is the outermost one: it catches a throw in the auth gate, which is the
+ * only screen with nothing behind it to fall back to. `(tabs)/_layout.tsx`
+ * exports the same component again, and Expo Router prefers the nearest
+ * boundary — so a broken tab is contained to that tab and this one only sees
+ * what happens above the tab tree.
+ */
+export { AppErrorBoundary as ErrorBoundary };
 
 /**
  * Hold the splash until we know whether the account gate is needed.
@@ -132,19 +145,48 @@ export default function RootLayout() {
   }, [accountStepDone]);
 
   /**
+   * Pull the server's true balance on launch and on every resume.
+   *
+   * **This used to live inside the chat-bubble effect below, behind that
+   * effect's `isSupported` guard** — and `isSupported` is
+   * `Platform.OS === 'android' && native != null`. So the app's only credit
+   * reconciliation was Android-only: on iOS, in Expo Go, and in any dev client
+   * without the native module, `analysisCount` never came back from the server
+   * after launch. It ran entirely on the optimistic MMKV cache plus whatever the
+   * last AI response returned, and a credit spent on another device was never
+   * seen at all.
+   *
+   * That guard belongs to the bubble. Credits belong to every platform, so they
+   * get their own effect. Silent on failure by design — this is a
+   * reconciliation, not a gate; the server still owns the real decision.
+   */
+  useEffect(() => {
+    void refreshCredits();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') void refreshCredits();
+    });
+    return () => sub.remove();
+  }, []);
+
+  /**
    * Keep the native chat bubble's entitlement snapshot in sync with JS.
    *
    * The inline chat reply is generated natively and never launches the app, so —
    * unlike the profile flow — there is no mount where JS can apply the freemium
-   * rule. So we push the rule's INPUTS down (isPro + free credits left + the Gemini
-   * key) on launch and every resume, and drain the credits the native side burned
-   * back into `analysisCount`. Reconcile BEFORE computing the snapshot so the
-   * balance we push already reflects the just-consumed usage. See
+   * rule. So we push the rule's INPUTS down (isPro + free credits left) on launch
+   * and every resume, and drain the credits the native side burned. See
    * modules/profile-capture ChatEntitlement.
    */
   useEffect(() => {
     if (!isSupported) return;
     const sync = async () => {
+      /*
+       * The drain is the OFFLINE fallback now, not the primary count.
+       * `incrementAnalysis` no-ops against a live API — `reportCredits` and the
+       * effect above own the number there — because counting in both places is
+       * exactly the double-count that was costing every free user an analysis.
+       * See the note on `incrementAnalysis` in useRizzStore.
+       */
       const consumed = consumeChatUsage();
       const store = useRizzStore.getState();
       for (let i = 0; i < consumed; i++) store.incrementAnalysis();

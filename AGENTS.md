@@ -24,7 +24,7 @@ credit enforcement and rate limiting all live on the server now.
 `isLiveApi` (from `state/session.ts`) replaces `isLiveKey`: it is true when
 `EXPO_PUBLIC_API_URL` is set, and false means every engine serves mock seeds exactly as
 before. Identity is `state/session.ts` — an anonymous install id the **server** mints on first
-launch, traded for a 24h JWT. It is not generated on the device: RN has no `crypto` global, so
+launch, traded for a 30-day JWT (revocable — see `token_epoch` below). It is not generated on the device: RN has no `crypto` global, so
 that would mean either `expo-crypto` (native, therefore a rebuild rather than an OTA) or
 `Math.random`, and this id is the credential that owns a user's credits.
 
@@ -33,7 +33,7 @@ bubble generates a reply inside the accessibility service, where the RN/JS conte
 exist, so it cannot go through `services/api.ts` and makes its own HTTP call. It now posts to
 `POST /v1/ai/chat` — **there is no Gemini key and no prompt in that file any more**, and it
 authenticates with the install id rather than a token, because the bubble fires days after the
-app was last opened and a 24h JWT is dead by then. Do not add a second exception.
+app was last opened and even a 30-day JWT may be dead by then. Do not add a second exception.
 
 Four engines sit on top of `callApi`: `engine.ts` (chat screenshot), `bioEngine.ts` (bio
 optimizer), `profileEngine.ts` (profile scan), `feedEngine.ts` (daily Discover lines). They
@@ -125,6 +125,29 @@ MMKV no longer grants three more analyses. Pro is verified against RevenueCat by
 `POST /v1/user/pro`, which re-issues the token — call it after a purchase and after a restore
 or a subscriber gets cut off at three analyses.
 
+⚠️ **There is exactly ONE writer to `analysisCount` against a live API, and it is
+`reportCredits`. Never add a second.** `incrementAnalysis()` in the store is guarded —
+`isLiveApi ? state : count + 1` — and that guard is not defensive tidiness, it is a fix for
+a bug that cost every free user a third of their trial:
+
+```
+callApi → server charges → envelope carries the POST-charge count
+        → reportCredits sets analysisCount = 1
+        → the screen then called incrementAnalysis() → 2
+analysis 2 → server says 2 → set to 2 → +1 → 3 → locked out after TWO of three
+```
+
+It hid because the local increment is *correct* offline — with no API there is no envelope,
+so it is the only counter there is. It only double-counts against a live server, which is
+the configuration that ships and the one nobody runs while developing on mock data. The
+guard lives in the store, not at the four call sites (Lab, Bio, Profile Scan, the chat-usage
+drain in `_layout.tsx`), for the same reason `useOutOfCredits` is one selector: three copies
+of a freemium rule is three chances to drift, and this one drifted silently for money.
+
+**`LimitBadge` renders `used/limit`, not remaining.** `3/3 free` means three *spent*. If you
+change that, change `ScreenHeader`'s `accessibilityLabel` with it — it currently says "3/3
+free analyses used", which is the only place the direction is stated unambiguously.
+
 **The bubble spends credits in a process the store cannot see, so `refreshCredits()` must run
 BEFORE `configureChat()`.** The accessibility service charges `/v1/ai/chat` itself and mirrors
 the server's balance into its own SharedPreferences snapshot. `_layout.tsx`'s resume hook then
@@ -132,6 +155,15 @@ pushes a snapshot *down* — so if it derives that snapshot from MMKV without pu
 `GET /v1/user/credits` first, it overwrites an accurate balance with a stale one and bubble
 replies look free forever. `consumeChatUsage()` is always 0 now by design; it is kept only so
 a future offline queue has somewhere to refill.
+
+⚠️ **`refreshCredits()` has its own effect, and must NOT be folded back into the bubble
+one.** It lived inside that effect, behind its `if (!isSupported) return` — and
+`isSupported` is `Platform.OS === 'android' && native != null`. So the app's only credit
+reconciliation was Android-only: on iOS, in Expo Go, and in any dev client without the
+native module, `analysisCount` never came back from the server after launch, and a credit
+spent on another device was never seen. The bubble's guard belongs to the bubble. The
+ordering rule above still applies *inside* the bubble effect, which awaits its own
+`refreshCredits()` before deriving the snapshot.
 
 **The Lab quotes the chat before it answers it.** `labSchema` puts a `read` object first in the
 schema and first in every mode's `required` list — last message verbatim, who sent it, the
@@ -154,21 +186,34 @@ uninstall used to mean a brand-new user row with a fresh `analysis_count = 0`. L
 after a reinstall returns the original row. AGENTS.md previously claimed the server-side
 credit move had already fixed this — it had not, and that claim was wrong until now.
 
-**The account gate is mandatory, and it renders UNDER the splash — that ordering is the
-feature.** `_layout.tsx` calls `SplashScreen.preventAutoHideAsync()` at *module scope*
-(an effect runs after the first frame, which is the frame being hidden), pushes
-`/account?onboarding=1` immediately, and `account.tsx` calls `hideAsync()` once it has
-mounted. The gate presents with `animation: 'none'` because it is where the app starts,
-not a sheet over it.
+**The account gate is mandatory, and there is NO REDIRECT — the route simply does not
+exist.** `(tabs)`, `vault`, `analyzer` and `paywall` are wrapped in
+`<Stack.Protected guard={accountStepDone}>`, and a guarded screen is not hidden, it is
+**not declared**. So while the gate is up, `/account` is the entire app and the Lab tab has
+no frame to render in. `_layout.tsx` calls `SplashScreen.preventAutoHideAsync()` at *module
+scope* (an effect runs after the first frame, which is the frame being hidden) and
+`account.tsx` calls `hideAsync()` once it has mounted.
 
-This replaced a 400ms `setTimeout`, which showed the Lab tab for four hundred
-milliseconds and then slid signup over the top — it read as a bug, and users asked why
-the app "redirected" them. There was never anything to wait for: the store is MMKV-backed
-and rehydrates synchronously, so `account` is already correct on the first render. **Do
-not reintroduce a delay here, and do not move the `hideAsync()` into `_layout.tsx`** —
-hiding it there races the push and shows the tab bar for a frame, which is the whole
-problem. The 3s timer in that effect is a dead-man's switch only: if the push ever fails,
-a flash beats a splash that never lifts.
+This went through two wrong versions, and both are worth knowing so neither comes back. A
+400ms `setTimeout` + push showed the Lab tab for four hundred milliseconds and then slid
+signup over the top; users asked why the app "redirected" them. Removing the delay did not
+fix it — **a push happens after the tabs have mounted and painted**, so the Lab was on
+screen for the whole transition however the transition was configured. Removing the route
+removes the frame. There was never anything to wait for either: the store is MMKV-backed
+and rehydrates synchronously, so `account` is correct on the first render.
+
+**Do not reintroduce a delay, a push, or a redirect here**, and do not move `hideAsync()`
+into `_layout.tsx` — hiding it there uncovers whatever the navigator had painted at that
+moment. The 3s timer is a dead-man's switch only: if `account.tsx` never mounts, a flash
+beats a splash that never lifts.
+
+**The mirror image is the post-login flash.** `signedInAs != null` is guarded by
+`&& !isOnboarding` in `account.tsx`, because a successful auth flips `account` in the store
+several frames before `router.replace('/')` can finish — `(tabs)` has to be declared and
+mounted first. Without the guard the Sign-out view springs in during that gap. The CTA
+stays busy through it: `submit()` ends with a bare `setBusy(false)` **after** the
+try/catch, not a `finally`, so the `router.replace` early-return keeps spinning while a
+rejected login still un-busies.
 
 While the gate is showing there is no ✕, no swipe-back (`gestureEnabled: false`), and
 Android back **exits the app** rather than being swallowed. Gated on `isLiveApi` — with no
@@ -189,11 +234,34 @@ refresh. That check IS the revocation mechanism — remove it and a 30-day token
 30-day window. If it ever shows up in a latency profile, cache it for seconds; do not
 delete it.
 
-**Login must not distinguish "no such email" from "wrong password".** One `Errors
-.invalidCredentials()` for both, and the handler hashes against `DUMMY_HASH` when the row
-is missing so the *timing* does not leak it either. With no reset flow, an account an
-attacker guesses into is gone for good. Signup may name a username clash (usernames are
-public); it must never confirm an email exists.
+**Login and `/otp` now DO say whether an account exists. That reversal was deliberate —
+do not "fix" it back.** There were once one `invalidCredentials()` for both failures and a
+dummy scrypt hash to close the timing channel too. Correct security advice; bad product.
+`/v1/auth/otp` answered `{ok:true}` for a signup into a taken address **without sending
+anything**, so the commonest signup mistake produced "check your email" and a code that
+never existed, with nothing in the UI able to tell the user. No wording fixes that — only
+naming the case does.
+
+Four codes now, and `account.tsx` branches on the code, not the message:
+
+| Code | Status | When |
+|---|---|---|
+| `EMAIL_TAKEN` | 409 | `/otp` signup, or a signup race on `uq_users_email` |
+| `NO_ACCOUNT` | 404 | `/otp` login, or `/login` with an unknown address |
+| `WRONG_PASSWORD` | 401 | password branch only |
+| `ACCOUNT_LOCKED` | 429 | 10 failures — **including the attempt that trips it** |
+
+`nudgeMode()` in `account.tsx` moves the user to the other tab on the first two, keeping
+what they typed. That is the whole point of naming them; an error string they have to read
+and act on themselves is barely better than the silence.
+
+**What still bounds enumeration:** the IP bucket on `/v1/auth/*` (`/otp` is 4 tokens
+refilling at 0.02/s — about one probe every 50s per address), the per-account lockout, and
+the fact that neither a password nor a mailbox gets easier to guess for knowing the address
+is real. `dummyHash()` is no longer called by `/login` — it only ever existed to hide what
+`/otp` now says outright — but it stays exported and selfchecked.
+
+Usernames were always nameable (they are public); that is unchanged.
 
 **`lib/password.ts` is `node:crypto` scrypt and nothing else.** N=2^15 needs 32MB, which
 is exactly Node's default `maxmem` — so `MAXMEM` is set explicitly and every call passes
@@ -205,9 +273,10 @@ on iOS and Android keyboards, and without it a password set on one platform fail
 other, with no reset to recover from.
 
 **`DELETE /v1/user/me` is not a feature.** App Store Review 5.1.1(v) requires in-app
-account deletion, and Play requires a deletion path. It is one statement only because the
-schema holds no images, transcripts or reports; if that ever changes, this route grows
-with it.
+account deletion, and Play requires a deletion path. It is one statement, and **that is now a known bug**: migration 0004 added
+`credit_events` (90-day retention) and `idempotency`, so the row's UUID outlives the
+account. The route's own comment still claims "the user row IS the user's data" — true at
+0003, false since 0004. Fix is three statements in a transaction, or `ON DELETE CASCADE`.
 
 ⚠️ **The Delete account BUTTON was removed from `account.tsx` by request; the route and
 `deleteAccount()` in `session.ts` are intact.** That is a known, deliberate 5.1.1(v)
@@ -220,11 +289,89 @@ or a web deletion page is linked from the listing. Do not "clean up" the unused
 migration 0001. Never a third column. Never log either one: `log.info('auth.signup')`
 carries no fields on purpose, same rule as `logger.ts`.
 
-**The rate limits on `/v1/auth/login` and `/signup` are load-bearing, not hygiene.**
-They plus the 10-failure account lockout are the entire brute-force defence. They are
-in-process counters, so they are correct on exactly one instance — **do not deploy
-accounts to a serverless target without moving them to a shared store first**, or every
-warm lambda hands the attacker a fresh allowance.
+**The rate limits on `/v1/auth/*` are load-bearing, not hygiene**, and they are
+`dbRateLimit` — a shared MySQL token bucket, **not** the in-process `rateLimit`. That
+distinction is the whole reason they survive Vercel: an in-process Map hands every warm
+lambda a fresh set of attempts, so the platform silently multiplies the limit by however
+many instances it felt like starting. `/v1/ai/*` and `/v1/user/*` stay in-process on
+purpose (they are per-user, and the real gate is the database-backed credit cap).
+
+Four buckets, tightest first: `/otp` 4 @ 0.02/s · `/signup` 5 @ 0.01/s · `/login` 8 @
+0.05/s · `/v1/auth/*` 20 @ 0.2/s. `/otp` is tightest because it is the only endpoint that
+spends real money and can be aimed at a **third party** — every call is an email to an
+address the caller chose.
+
+**The IP bucket is only half of the mailbomb defence.** It stops one host mailing a
+thousand people; it cannot stop a thousand hosts mailing one. `lib/otp.ts` owns the other
+half, and both halves are needed:
+
+- `RESEND_COOLDOWN_MS` (60s) — the minimum gap between codes to one address.
+- `MAX_SENDS_PER_WINDOW` (10 per 24h, migration 0007) — the **total**. The cooldown alone
+  never capped it: rotate IPs, pace to 60 seconds, and you deliver 1,440 emails a day to
+  one victim's inbox, on our bill and from our sending domain.
+
+Both refusals return `null` from `issueOtp` and the caller answers as though it sent. A
+"too many codes" message would confirm the address is worth attacking.
+
+⚠️ **`email_otps` rows outlive their codes, and that is load-bearing.** The sweep is on
+`created_at < now - 24h`, **not** `expires_at`. It used to drop rows ten minutes after
+issue, which threw away the `sends` counter and reset the daily cap every ten minutes — a
+limit that bounded nothing. A surviving row is not a live code: `verifyOtp` has
+`expires_at > now` inside its DELETE predicate, so what lingers is a SHA-256 and a small
+integer. `idx_otp_created` exists for that sweep; do not drop it.
+
+## Backend invariants added after the audit
+
+⚠️ **`idempotency.body` holds AI-generated content, so its retention is 15 MINUTES, not
+24 hours.** The middleware stores the whole response envelope for replay, and for `/v1/ai/*`
+that envelope's `result` **is** the generated content — profile reports about a named third
+party, rewritten bios, openers, chat replies. `db/schema.ts` opens with *"NEVER add: images,
+transcripts, replies, reports, or saved items"*, a rule written at migration 0003 and
+quietly broken by this table at 0004; the account screen also tells users "Screenshots and
+conversations are never saved". The body cannot simply go — replaying it *is* the feature,
+and a retry with no stored answer charges a second credit — so what was wrong was the
+DURATION. A retry happens while the user is still watching a spinner. **Do not lengthen
+`RETENTION_MS`**; if some future offline queue needs longer, store a hash and re-derive. The
+age is also checked on the READ, not just by the sweep, so correctness never depends on a
+timer firing.
+
+**Every log line carries `rid`, via `AsyncLocalStorage` — never thread it as a parameter.**
+`withRequestId` in `lib/logger.ts` wraps the whole request in `app.ts`'s first middleware,
+above CORS and every limiter, so a rejected request is traceable too. It is a REQUEST id,
+not a user id; the no-PII rule is unchanged. An inbound `x-request-id` is honoured and the
+id is echoed back, which is what lets a user paste one from a failing client into a bug
+report.
+
+**The body cap is `bodyLimit` from `hono/body-limit`, not a `content-length` check.** The
+old guard read only that header — which a chunked client simply does not send, so
+`Number(undefined ?? 0)` came out 0 and the 24MB it exists to prevent was buffered anyway. A
+check that only stops the honest caller is not a check. Zod's `.max(MAX_B64)` runs *after*
+`c.req.json()` has already buffered everything, so it cannot be the backstop either.
+
+**`/v1/ai/feed` claims the day's generation in the `idempotency` table.** `inFlight` is a
+module-level variable, so it collapses concurrent requests within one instance and does
+nothing across instances — at 00:00 UTC every warm Vercel lambda missed the cache together
+and each bought its own 4096-token generation, all but one discarded by the `INSERT IGNORE`.
+The claim reuses `idempotency` rather than adding a table: it is already a keyed INSERT
+IGNORE claim with a sweep, its ids are `<uuid>:<key>` so a `feed:` prefix cannot collide, and
+its 15-minute retention is the right lease. A `GET_LOCK` would be textbook and is
+unavailable — the lock is connection-scoped and the pool is `connectionLimit: 1` on Vercel,
+so holding one and querying inside it deadlocks. Losers poll for 20s then generate anyway,
+which is never worse than the old behaviour.
+
+**`/v1/ai/*` answers credits from `creditsAfter(c, delta)`, not a second SELECT.**
+`requireAuth` already read the row, so `is_pro` and `analysis_count` are on the context and a
+charge moves the count by exactly one — the old `creditsFor()` was re-reading a number this
+request had just written, on a pool of 1, after the Gemini call the user is already waiting
+on. `delta` is 1 for a charge that stuck and **0** for `/profile`'s `not_a_profile` refund.
+The gate is untouched: `chargeCredit` still reads the live row atomically, so nothing here
+can hand out a free analysis; the only exposure is a meter one behind under same-account
+concurrency, corrected on the next request. `/v1/user/credits` still does a real SELECT and
+stays authoritative.
+
+**Do NOT make the idempotency store fire-and-forget.** It is tempting (the ledger already
+is), but Vercel freezes the instance after the response, so the write would silently not
+land and the replay protection would evaporate without a symptom.
 
 ## Analytics — `src/services/analytics.ts` + `RizzAnalytics.kt`
 
@@ -285,6 +432,15 @@ drift from `paywall_dismissed`. Do not instrument the `router.push` call sites.
 counts swipes and Discover decides `locked`; when they disagreed, a cumulative count
 permanently locked free users out of a feed that refreshes daily. Both call sites must use
 `swipesUsedToday()` / `nextSwipeState()`.
+
+**Discover's `seen` set is keyed by item ID, and `changeFilter` must NEVER clear it.** It
+was a `Set<number>` of list indices, reset on every filter change — so the same line viewed
+under "All" and again under "Openers" was two different indices and got charged twice.
+Browsing three filters could burn the whole ten-swipe allowance on about four distinct
+lines, with nothing on screen explaining why. Ids survive filtering, reordering, and the
+daily AI batch landing on top of the curated set; indices survive none of it. The `arrived`
+ref preserves the free first card that the old `new Set([0])` was quietly providing —
+arriving on a screen is not a swipe.
 
 Rejected work should not burn a credit — e.g. Profile Scan checks `isProfile` and returns
 before `incrementAnalysis()`.
@@ -448,6 +604,16 @@ clips there — `LockOverlay` had to become a `ScrollView` for exactly this reas
 - Read tokens from `src/theme/tokens.ts`. Never hardcode hex or px in screens. Screen gutters
   and tab-bar clearance come from `layout.ts`, never from `spacing.xl` / a literal.
 - All touchables route through `HapticPressable` so touch feel stays consistent.
+- **`ErrorBoundary` is exported from BOTH `app/_layout.tsx` and `app/(tabs)/_layout.tsx`, and
+  Expo Router finds it BY NAME.** Rename the export and it silently stops existing — there is
+  no warning, and the symptom is the one it exists to prevent: a render throw unmounts the
+  whole tree to a white screen with no way back but a force-quit. Two boundaries because
+  Router uses the nearest: a broken report on Profile Scan keeps the tab bar and the other
+  three tools alive, while the root one covers the auth gate, which has nothing behind it.
+  `AppErrorBoundary` deliberately uses no animation, no store read, no `useToast` and no
+  `expo-image` — a boundary that throws is a crash with extra steps — and shows the stack only
+  under `__DEV__`, because in release that is an internal trace shown to a stranger and this
+  app's error strings can quote model output.
 - The three AI tools share `<ScreenHeader icon title tint />` (wordmark + credit meter +
   vault) and `<StagedLoader stages stage badge tint />` (text-only "thinking" card). The Lab
   uses `AnalyzingOverlay` instead — it sweeps a beam over the picked image, a genuinely
@@ -463,9 +629,13 @@ clips there — `LockOverlay` had to become a `ScrollView` for exactly this reas
 - `toast.show(msg, ms?)` — pass a longer duration for long messages (default 1.7s).
 - Persisted state must be added to `partialize` in `useRizzStore.ts` or it won't survive
   reload.
-- `bio.tsx` is the only screen with text inputs; its ScrollView carries
-  `automaticallyAdjustKeyboardInsets` because the multiline field is the last thing on the
-  page and iOS covered it outright. Any new input screen needs the same prop.
+- **Two screens have text inputs — `bio.tsx` and `account.tsx` — and each needs BOTH halves
+  of the keyboard fix.** `automaticallyAdjustKeyboardInsets` is **iOS-only**; under the
+  edge-to-edge display Expo SDK 54+ and RN 0.86 enforce, the Android window no longer resizes
+  when the keyboard opens, so `adjustResize` stopped doing anything and Android had no
+  handling at all. `useKeyboardInset()` (`src/utils/`) is the Android half: add its height to
+  `paddingBottom` so the ScrollView has somewhere to scroll to. Drop `insets.bottom` while the
+  keyboard is up — the gesture bar is behind it, and paying for both leaves a gap.
 
 ## Shipping (EAS)
 
@@ -524,7 +694,7 @@ change minted a fresh runtime version and orphaned every installed build, so eac
 on zero devices until a new APK was built and reinstalled. Three builds in one morning had
 three fingerprints and an update matched none of them.
 
-Under `appVersion` every build sharing `version` (`app.json`, currently `1.0.4`) accepts the
+Under `appVersion` every build sharing `version` (`app.json`, currently `1.0.5`) accepts the
 same updates, so JS-only fixes actually reach installed apps. The cost is that the safety net
 is gone:
 
@@ -554,7 +724,9 @@ landed as 1.0.1 → 1.0.2 for exactly this reason.
 ## Checks
 
 ```bash
+npm run checks                                          # tsc + eslint + limits, the gate
 npx tsc --noEmit                                        # must pass
+npx eslint src modules                                  # must be 0 errors
 node src/state/limits.selfcheck.ts                      # swipe-allowance + store-key rules
 node src/theme/contrast.selfcheck.ts                    # palette vs WCAG AA (reads tokens.ts as text)
 cd backend && node --import tsx src/lib/password.selfcheck.ts                  # scrypt round-trip, no env needed
@@ -567,6 +739,21 @@ cd backend && npx tsc --noEmit                          # server must pass too
 `*.selfcheck.ts` are framework-free Node scripts (Node 24 strips types natively) and are
 excluded from `tsconfig.json`. Add one next to non-trivial pure logic; don't add a test
 framework.
+
+**ESLint exists now (`eslint.config.js`) and must stay at 0 errors.** It is
+`eslint-config-expo/flat` taken wholesale — do not hand-assemble a rule list — with four
+deliberate deviations, each documented inline:
+
+| Rule | | Why |
+|---|---|---|
+| `react-hooks/exhaustive-deps` | **error** (Expo ships warn) | This is the rule that catches *this* app's bug class — stale `useCallback` captures and listeners resubscribing every render. A warning in a codebase with no lint history is a warning nobody clears |
+| `react-hooks/immutability` | **off** | It flags `sharedValue.value = withSpring(…)`. The rule does not know Reanimated; a shared value's assignment IS the API and React never re-renders for it. Reinstate when `react-hooks` learns worklets |
+| `@typescript-eslint/no-require-imports` | **off** | All five `require()`s are optional native modules (`react-native-purchases`, `react-native-mmkv`, two Firebase SDKs) that must not be hoisted, and Metro resolves only from a string literal — so they can be neither `import` nor `import()` |
+| `react-hooks/set-state-in-effect` | **warn** | The 3 hits are "sync React to something React cannot see" (accessibility permissions granted in Settings; the auth gate re-arming after sign-out). Left visible so a genuinely cascading one still surfaces |
+
+An `eslint-disable-next-line` needs a reason beside it. The two in the tree
+(`discover.tsx`'s `exhaustive-deps` on the daily-feed fetch, and `react-hooks/refs` on
+`onViewableItemsChanged` — FlatList re-measures if that prop changes identity) both have one.
 
 **Run `vercel.selfcheck.ts` after touching `backend/src/vercel.ts`, and never trust a local
 run to cover it.** `npm run dev` uses `src/index.ts` and a real Node server, so the serverless

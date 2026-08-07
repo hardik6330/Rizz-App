@@ -55,9 +55,8 @@ The tempting fix for any of the above is `rejectUnauthorized: false`. Don't — 
 connection is a credit balance or a purchase state, crossing the public internet to a managed
 host, and an unverified peer is a silent MITM. It stays true in every branch of `client.ts`.
 
-`npm run db:migrate` is currently broken — drizzle-kit's bundled esbuild rejects this repo's
-`target: ES2023`, and there is no `meta/_journal.json` because `0000_init.sql` is hand-written.
-Apply it directly (`mysql < src/db/migrations/0000_init.sql`).
+`npm run db:migrate` works — it runs `src/db/migrate.ts` directly rather than drizzle-kit
+(whose bundled esbuild rejects this repo's `target: ES2023`). Migrations 0000–0007 are applied.
 
 ```bash
 # smoke test
@@ -77,12 +76,18 @@ curl -s localhost:8787/v1/user/credits -H "Authorization: Bearer $TOKEN" | jq
 | `src/ai/prompts.ts` | Every system prompt, lifted verbatim from the client. `assertSafetyRails()` refuses to boot without the `them`-mode HARD RULES block |
 | `src/middleware/credits.ts` | The atomic gate. One conditional `UPDATE`, fails closed |
 | `src/lib/limits.ts` | **Re-exports** `src/state/limits.ts`. One rule, two callers — never a fork |
-| `src/lib/logger.ts` | Takes a typed event, not a string, so a transcript has nowhere to leak into |
+| `src/lib/logger.ts` | Takes a typed event, not a string, so a transcript has nowhere to leak into. Every line carries `rid` via `AsyncLocalStorage` |
+| `src/lib/otp.ts` | Email codes. Single-use (the DELETE predicate IS the check), 5-guess cap, 10-min expiry, 60s cooldown, 10/24h send cap |
+| `src/middleware/idempotency.ts` | ⚠ `body` holds AI-generated content — retention is **15 minutes**, not 24h. Do not lengthen |
 
 ## Rules
 
 - **Never log content.** No base64, transcripts, replies, bios, names or `ui_text`.
 - **Never store an image.** Request body → validate → forward → drop. There is no bucket.
+- **Never store generated content at rest for long.** `idempotency.body` is the one place any
+  survives, it is 15 minutes, and it exists only so a client retry does not pay twice.
+  `db/schema.ts`'s "NEVER add: images, transcripts, replies, reports" rule is what the privacy
+  policy's strongest claim rests on.
 - **Never trust the client's mime type.** `sniff()` in `routes/ai.ts` reads magic bytes.
 - **Never trust the client's `isPro`.** It comes from the JWT, which comes from the DB.
 
@@ -95,6 +100,16 @@ cd backend && node --env-file=.env --import tsx src/db/migrate.ts   # npm run db
 Tracked in `__drizzle_migrations`, driven by `src/db/migrations/meta/_journal.json`. Safe to
 run repeatedly, and safe against the database that already carries 0000 and 0001 by hand —
 `migrate.ts` detects that case and records them as applied rather than re-running the DDL.
+
+**Adding one:** the `.sql` file, a `meta/_journal.json` entry, AND a `PROBES` row in
+`migrate.ts` naming something the migration adds (`columnExists`, `tableExists`,
+`eventExists`). The probe is what makes baseline detection work on a database migrated by hand.
+Multi-statement files need `--> statement-breakpoint` between statements — MySQL will not take
+two in one call, and Railway's web console runs one statement per execution too.
+
+⚠️ **Never paste DDL by hand into a database whose journal is non-empty.** Baseline detection
+only runs when `__drizzle_migrations` is empty, so a hand-applied change means the next
+`db:migrate` re-runs it and dies on a duplicate column. Run the migrator instead.
 
 **Where it runs is per-target, and this is not a detail:**
 
@@ -138,13 +153,15 @@ Five things are load-bearing:
 | The function is a **bundle**, not source | Every import here ends in `.ts`. Vercel's Node builder transpiles file-by-file and does **not** rewrite specifiers, so loading `src/` directly dies with `ERR_MODULE_NOT_FOUND … 'backend/src/ai/prompts.ts'` on the first request. `npm run build:vercel` bundles to `dist/vercel.mjs`; `api/index.mjs` is a committed one-line re-export, because Vercel scans `api/` in the **source** tree and never finds a generated entrypoint |
 | `@hono/node-server/vercel` + a single `export default` | mysql2 needs a real TCP socket, so this must be the Node runtime — `hono/vercel` is the Web/Edge handler. And named `GET`/`POST` exports are Next.js App Router only; a plain Vercel function exporting just those has no handler at all |
 | `maxDuration: 60` | Must stay **above** the 45s `AbortSignal.timeout` in `ai/gateway.ts`. Serverless has no SIGTERM, so that abort is the only thing that still lets `charged()` refund. Vercel's default is 10s and Hobby caps at 60s — a 3–15s Gemini call needs the headroom |
-| `connectionLimit: 1` when `process.env.VERCEL` | Every warm instance gets its own pool; Aiven's small plans cap `max_connections` in the low tens |
+| `connectionLimit: 1` when `process.env.VERCEL` | Every warm instance gets its own pool, and managed MySQL plans cap `max_connections` in the low tens. This is also why `/v1/auth/*` uses `dbRateLimit` rather than the in-process one |
 | The catch-all rewrite | Vercel preserves the original URL through a rewrite into a function, so Hono still sees `/v1/…` and needs no `basePath()` |
 | `framework: null` + `public/robots.txt` | Without the first, Vercel's Node-server detector hunts for `index.js`/`server.js`, never looks in `api/`, and fails with `No entrypoint found`. With it, Vercel demands an `outputDirectory` that exists **and is non-empty** — hence one committed file. It is a `robots.txt` and not an `index.html` on purpose: Vercel resolves the filesystem before applying the rewrite, so `public/index.html` would shadow the API's own `GET /`. Do **not** point `outputDirectory` at `.` to satisfy this — it would publish the whole repo, source included, as static files |
 
-Accepted costs: `rateLimit` becomes per-instance and effectively off (the per-day cap in
-`middleware/credits.ts` is in the database and still holds the Gemini bill); and an unreachable
-database surfaces as live 500s instead of the failed deploy that `src/index.ts` gives you.
+Accepted costs: the **in-process** `rateLimit` becomes per-instance and effectively off (the
+per-day cap in `middleware/credits.ts` is in the database and still holds the Gemini bill); and
+an unreachable database surfaces as live 500s instead of the failed deploy that `src/index.ts`
+gives you. `/v1/auth/*` is unaffected — it uses `dbRateLimit`, a shared MySQL token bucket, for
+exactly this reason.
 
 ### Render — `render.yaml`
 
@@ -176,6 +193,16 @@ serves mock seeds. Leaving it unset cannot fail this way, which is the point.
 **There is no cron to port.** `node-cron` is in `package.json` and unused: the daily Discover
 batch is generated lazily on the first `POST /v1/ai/feed` of the day and deduped by
 `INSERT IGNORE` on `daily_feed`'s primary key. Nothing needs scheduling on either platform.
+
+That generation is also claimed **across instances** via a `feed:<date>:<version>` row in the
+`idempotency` table — `inFlight` in `routes/ai.ts` is a module variable and only dedupes within
+one process, so at 00:00 UTC every warm lambda used to buy its own 4096-token batch and discard
+all but one. A `GET_LOCK` is unavailable here: it is connection-scoped and the pool is
+`connectionLimit: 1` on Vercel, so holding one and querying inside it deadlocks.
+
+One thing *is* scheduled, in MySQL rather than Node: migration 0006's `ev_email_otps_gc` event
+deletes unverified codes after 7 days. It needs `event_scheduler=ON`; `migrate.ts` warns if it
+is off.
 
 ## Cutover — done
 

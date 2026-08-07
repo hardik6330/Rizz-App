@@ -23,6 +23,7 @@ a Hono API on Vercel + Railway MySQL that holds the Gemini key.
 | Vault | `src/app/vault.tsx` | everything you saved |
 | The bubble | `modules/profile-capture/` | Android accessibility service — reply inline, never leave the host app |
 | Paywall | `src/app/paywall.tsx` | RevenueCat; 3 lifetime analyses and 10 swipes/day are free |
+| Account | `src/app/account.tsx` | mandatory signup gate — email verified by a mailed 6-digit code |
 
 ## Run it
 
@@ -67,14 +68,15 @@ Full shipping rules and the traps that have actually cost time: `docs/README.md`
 ## Checks
 
 ```bash
-npx tsc --noEmit
-node src/state/limits.selfcheck.ts
+npm run checks                  # tsc + eslint + limits — must pass before any build
 node src/theme/contrast.selfcheck.ts
-cd backend && npx tsc --noEmit
+cd backend && npm run check     # tsc + 6 pure selfchecks
+cd backend && npm run check:db  # 4 selfchecks against a real database
 ```
 
 Plus the live ones in `docs/README.md` §10. No test framework — `*.selfcheck.ts` are
-framework-free Node scripts.
+framework-free Node scripts. ESLint (`eslint.config.js`) must be **0 errors**; its four
+deliberate rule deviations are documented in the config and in `AGENTS.md`.
 
 ## Generated assets
 
@@ -86,7 +88,20 @@ mapping.
 
 1. **RevenueCat** — real `appl_…` / `goog_…` keys in the EAS `production` environment. Preview
    ships stubs on purpose, which means preview builds hand out Pro for free.
-2. **iOS widget** — needs `APPLE_TEAM_ID` set; the plugin attaches only when it is
+2. **iOS has never been built.** There is no `ios/` directory and no iOS profile in
+   `build:preview`/`build:production`. The config resolves cleanly
+   (`npx expo config --type prebuild`), but nothing iOS-specific has ever run — safe areas in
+   modals, `textContentType="oneTimeCode"` autofill, and the whole `glow()` shadow aesthetic
+   (Android gets flat `elevation`) are written and unverified. Start with
+   `eas build -p ios --profile simulator`, which needs no Apple account.
+3. **iOS widget** — needs `APPLE_TEAM_ID` set; the plugin attaches only when it is
    (`widgets/README-WIDGETS.md`).
-3. **Play Store** — Android adaptive icons still use the template art, and the accessibility
+4. **Play Store** — Android adaptive icons still use the template art, and the accessibility
    service needs its prominent-disclosure review (`modules/profile-capture/README.md`).
+5. **In-app account deletion** — the route and `deleteAccount()` exist with no caller, and
+   `DELETE /v1/user/me` currently leaves `credit_events` behind for 90 days. Signup is
+   mandatory, so App Store Review 5.1.1(v) applies. Deliberately deferred; see
+   `docs/README.md` §5.5.
+6. **SMTP** — `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` / `MAIL_FROM` are all-or-none and
+   required in production. Without them signup cannot mail a code, so nobody can create an
+   account.

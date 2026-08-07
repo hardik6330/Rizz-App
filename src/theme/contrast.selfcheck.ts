@@ -54,7 +54,7 @@ const SURFACES = ['ink', 'surface', 'surfaceHigh'] as const;
  * fills — `violet` sits at 4.01:1 on surfaceHigh, so it is held to the large-text
  * bar and must not be used for small copy.
  */
-const FOREGROUNDS: Array<[name: string, min: number]> = [
+const FOREGROUNDS: [name: string, min: number][] = [
   ['textPrimary', 4.5],
   ['textSecondary', 4.5],
   ['textTertiary', 4.5],

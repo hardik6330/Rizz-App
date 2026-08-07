@@ -45,6 +45,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "^57.0.1",
     "fs-extra": "^11.3.6",
     "typescript": "~6.0.3"
   },
@@ -55,7 +57,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "checks": "tsc --noEmit && node src/state/limits.selfcheck.ts",
+    "checks": "tsc --noEmit && eslint src modules --max-warnings=5 && node src/state/limits.selfcheck.ts",
     "login": "npx eas-cli login",
     "whoami": "npx eas-cli whoami",
     "fingerprint": "expo-updates fingerprint:generate --platform android",

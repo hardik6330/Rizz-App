@@ -65,15 +65,16 @@ RizzCoach/
 │   │   │   ├── _layout.tsx         the four tabs, drawn by FloatingTabBar
 │   │   │   ├── index.tsx           ▸ LAB — chat screenshot → replies / vibe / roast
 │   │   │   ├── profile.tsx         ▸ PROFILE SCAN — self & them modes, tabbed report, history
-│   │   │   ├── bio.tsx             ▸ BIO OPTIMIZER — the only screen with text inputs
+│   │   │   ├── bio.tsx             ▸ BIO OPTIMIZER — text inputs; needs useKeyboardInset
 │   │   │   └── discover.tsx        ▸ DISCOVER — daily feed, swipe limit, lock overlay
 │   │   ├── paywall.tsx           plans + purchase + restore; ALL paywall analytics live here
 │   │   ├── vault.tsx             saved lines (full-screen modal on Android)
 │   │   ├── analyzer.tsx          disclosure + the two-permission flow for the bubble
 │   │   └── +not-found.tsx
 │   │
-│   ├── components/             21 shared UI pieces
+│   ├── components/             23 shared UI pieces
 │   │   ├── HapticPressable.tsx   the base touchable — everything routes through it
+│   │   ├── AppErrorBoundary.tsx  ★ the crash screen — exported as `ErrorBoundary` by NAME
 │   │   ├── ScreenHeader.tsx      wordmark + credit meter + vault, on all three AI tools
 │   │   ├── GlowDropZone.tsx      the breathing screenshot drop pad
 │   │   ├── StagedLoader.tsx      text-only "thinking" card (Bio, Profile)
@@ -107,7 +108,7 @@ RizzCoach/
 │   │   └── contrast.selfcheck.ts ✓ runnable — WCAG AA vs tokens.ts
 │   │
 │   ├── data/                   mockAnalysis.ts · feed.ts · assets.ts   (offline seeds)
-│   ├── utils/                  useBackToIdle.ts · haptics.ts · misc.ts
+│   ├── utils/                  useBackToIdle.ts · useKeyboardInset.ts · haptics.ts · misc.ts
 │   ├── constants.ts            FREE_ANALYSIS_LIMIT (3) · FREE_SWIPE_LIMIT (10)
 │   └── types.ts                result shapes — must match the server schemas exactly
 │
@@ -122,11 +123,13 @@ RizzCoach/
 │       │   ├── prompts.ts          every system prompt + the safety-rail boot guard
 │       │   ├── schemas.ts          responseSchema per engine (uppercase OpenAPI)
 │       │   └── gateway.selfcheck.ts    ✓ one tiny LIVE call
-│       ├── routes/               auth.ts · ai.ts · user.ts · config.ts
-│       ├── middleware/           auth.ts · credits.ts · rateLimit.ts
+│       ├── routes/               auth.ts · ai.ts · user.ts · config.ts · webhooks.ts · legal.ts
+│       │   └── auth.selfcheck.ts     ✓ install claim + the four account-existence codes
+│       ├── middleware/           auth.ts · credits.ts · rateLimit.ts · idempotency.ts
 │       │   └── credits.selfcheck.ts    ✓ runnable
-│       ├── db/                   schema.ts (users · daily_feed · rc_events) · client.ts
-│       ├── lib/                  logger · errors · jwt · limits · revenuecat
+│       ├── db/                   schema.ts · client.ts · migrate.ts · migrations/ (0000–0007)
+│       ├── lib/                  logger (rid) · errors · jwt · limits · revenuecat · otp · mailer
+│       │   └── otp.selfcheck.ts      ✓ single-use · attempt cap · expiry · daily send cap
 │       └── vercel.selfcheck.ts   ✓ the ONLY check that exercises vercel.ts
 │
 ├── modules/profile-capture/    ─────────────  THE ANDROID BUBBLE  ─────────────
@@ -142,6 +145,7 @@ RizzCoach/
 │       ├── RizzAnalytics.kt              bubble_shown / bubble_tapped, from Kotlin
 │       └── ScreenClassifierTest.kt       ✓ JUnit — the only Kotlin runner here
 │
+├── eslint.config.js            expo flat config + 4 documented deviations — 0 errors required
 └── docs/README.md              this file
 ```
 
@@ -172,14 +176,25 @@ listed in `partialize` or it silently won't be.
 credit balance; every API response carries the real number and overwrites the local one. This is
 why reinstalling to clear MMKV no longer grants three fresh analyses.
 
+⚠️ **Exactly one writer against a live API: `reportCredits`.** `incrementAnalysis()` is guarded
+with `isLiveApi ? state : count + 1`. Both used to fire — the server envelope already carries the
+post-charge count, and the screen then added its own +1 — so a free user was locked out after
+**two** of three free analyses. It hid because the local increment is correct offline, which is
+the mode everyone develops in. Full trace in `AGENTS.md`.
+
 `state/limits.ts` owns the swipe allowance. Both the store and Discover must call
 `swipesUsedToday()` / `nextSwipeState()` — when they each derived it themselves, a cumulative
 count permanently locked free users out of a feed that refreshes daily.
 
 `state/session.ts` is identity. There is no login. The **server** mints an anonymous install id
-on first launch, which the device keeps forever and trades for a 24h JWT. It is not generated on
-device: React Native has no `crypto` global, and this id is the bearer credential that owns the
-user's credits.
+on first launch, which the device keeps forever and trades for a 30-day JWT. Long tokens are safe because
+`requireAuth` re-reads the row every request and compares `token_epoch` — that check IS the
+revocation mechanism. The id is not generated on device: React Native has no `crypto` global,
+and it is the bearer credential that owns the user's credits.
+
+Accounts layer on top: `/v1/auth/signup` **claims** the install's row rather than inserting a new
+one, email is verified by a mailed six-digit code, and `/v1/auth/login` takes a password OR a
+code — the code path being the closest thing this product has to a password reset.
 
 ### 3.3 Theme and layout
 
@@ -209,6 +224,12 @@ Accessibility rules that are enforced, not aspirational:
   `#868697` (4.75:1).
 - **Reduce Motion is handled by Reanimated already** — every animation defaults to
   `ReduceMotion.System`. The only thing to check on a new animation is where it *stops*.
+  `AnalyzingOverlay` is the one place needing `useReducedMotion()` explicitly: its beam froze
+  parked at the card's bottom edge and read as a rendering bug.
+- **Keyboard handling needs both halves.** `automaticallyAdjustKeyboardInsets` is iOS-only, and
+  under the edge-to-edge display SDK 54+/RN 0.86 enforce the Android window no longer resizes on
+  keyboard open — so `adjustResize` stopped working and Android had none. `useKeyboardInset()` is
+  the Android half. `bio.tsx` and `account.tsx` both need it.
 
 ---
 
@@ -313,8 +334,12 @@ Hono, deployed as a Vercel function, against Railway MySQL via Drizzle.
 | Route | Auth | What it does |
 |---|---|---|
 | `GET /healthz` | — | liveness; **touches no database** |
-| `POST /v1/auth/device` | — | mint or resume an install id, return a 24h JWT |
-| `GET /v1/config` | optional | remote config |
+| `POST /v1/auth/device` | — | mint or resume an install id, return a 30-day JWT |
+| `POST /v1/auth/otp` | — | mail a 6-digit code. 409 `EMAIL_TAKEN` / 404 `NO_ACCOUNT` |
+| `POST /v1/auth/signup` | JWT | claim this install's row; requires a verified code |
+| `POST /v1/auth/login` | — | password **or** code (XOR). `WRONG_PASSWORD` / `ACCOUNT_LOCKED` |
+| `POST /v1/auth/logout` | JWT | bump `token_epoch` — kills every token on every device |
+| `GET /v1/config` | — | remote config. The one route with no limiter |
 | `POST /v1/ai/lab` | JWT | chat screenshot → replies / vibe / roast |
 | `POST /v1/ai/profile` | JWT | 1–3 profile screenshots → report |
 | `POST /v1/ai/bio` | JWT | interests + vibe → 3 bios |
@@ -322,12 +347,22 @@ Hono, deployed as a Vercel function, against Railway MySQL via Drizzle.
 | `GET /v1/feed` | optional | the day's Discover lines, generated once and cached in MySQL |
 | `GET /v1/user/credits` | JWT | the truth about the balance |
 | `POST /v1/user/pro` | JWT | verify entitlement against RevenueCat, re-issue the token |
+| `DELETE /v1/user/me` | JWT | ⚠ deletes only the `users` row — see §5.5 |
+| `POST /v1/webhooks/revenuecat` | HMAC | renewals and cancellations; RevenueCat has no JWT |
+| `GET /terms` · `/privacy` | — | registered above every `use()` so a reviewer can reach them |
 
 Middleware is registered on `app` **before** the matching `route()`. Hono dispatches in
 registration order, so `auth.use('*', …)` chained onto a sub-app lands after its handlers and
 silently never runs.
 
-Rate limits: 20/IP on auth, 10/user on AI, 30/user on the rest.
+Rate limits: `/v1/auth/*` uses **`dbRateLimit`** (a shared MySQL token bucket) so it survives
+horizontal scaling — an in-process Map hands every warm lambda a fresh allowance. Tightest
+first: `/otp` 4 @ 0.02/s · `/signup` 5 @ 0.01/s · `/login` 8 @ 0.05/s · `/v1/auth/*` 20 @ 0.2/s.
+`/v1/ai/*` (10/user) and `/v1/user/*` (30/user) stay in-process on purpose — the real gate there
+is the database-backed credit cap.
+
+Every request carries a correlation id (`rid`) on every log line, via `AsyncLocalStorage` in
+`lib/logger.ts`. Taken from an inbound `x-request-id` when present, and echoed on the response.
 
 ### 5.2 Credits
 
@@ -353,7 +388,46 @@ three analyses.
 half-configured. Google issues both `AIza…` and `AQ.…` formats; both go in the `x-goog-api-key`
 header, never the URL — a key in a URL lands in access logs.
 
-### 5.4 The two deployment traps
+### 5.4 Accounts, codes, and what the server admits
+
+Signup and login are fronted by a mailed six-digit code (`email_otps`, migration 0005). Three
+properties make six digits safe, and **all three are load-bearing**: a code is single-use
+(the DELETE's own predicate is the check, so there is no read-then-write window), it dies
+after 5 wrong guesses, and it expires in ten minutes. Requesting a new code *replaces* the
+old one, so resending buys no extra guesses either. Lengthening the code would buy less than
+any of them.
+
+**The endpoints now say whether an account exists, and that reversal was deliberate.**
+`/v1/auth/otp` used to answer `{ok:true}` for a signup into a taken address *without sending
+anything* — so the commonest signup mistake produced "check your email" and a code that
+never existed. Four codes replaced it: `EMAIL_TAKEN`, `NO_ACCOUNT`, `WRONG_PASSWORD`,
+`ACCOUNT_LOCKED`. `account.tsx` branches on the code and moves the user to the correct tab
+with what they typed intact; the error string alone would barely be an improvement.
+Enumeration is bounded by the IP bucket (~1 probe/50s per address), the lockout, and the fact
+that knowing an address is real makes neither the password nor the mailbox easier to guess.
+
+**Two limiters bound OTP email, and both are needed.** `RESEND_COOLDOWN_MS` (60s) sets the
+minimum gap to one address; `MAX_SENDS_PER_WINDOW` (10/24h, migration 0007) caps the total.
+The cooldown alone never capped anything — rotate IPs, pace to 60 seconds, and you deliver
+1,440 emails a day to one victim's inbox on our bill. Both refusals are silent.
+
+⚠️ `email_otps` rows are swept on `created_at`, **not** `expires_at` — the row carries the
+send counter, and dropping it ten minutes after issue reset the daily cap every ten minutes.
+The *code* still dies on the dot; `verifyOtp` has `expires_at > now` in its predicate.
+
+### 5.5 Known gap: account deletion is incomplete
+
+`DELETE /v1/user/me` runs one statement against `users`. That was accurate at migration
+0003 and stopped being true at 0004: there are no foreign keys, so `credit_events.user_id`
+survives 90 days and `idempotency.id` (`<user_id>:<key>`) up to 15 minutes. The route's own
+comment still claims "the user row IS the user's data".
+
+There is also **no in-app delete button** — it was removed from `account.tsx` by request,
+while signup is mandatory. App Store Review 5.1.1(v) and GDPR Art. 17 both apply. Both halves
+are deliberate deferrals, not oversights; fix is three statements in a transaction (or
+`ON DELETE CASCADE`) plus restoring the button.
+
+### 5.6 The two deployment traps
 
 **TLS to Railway MySQL needs a pinned CA and `checkServerIdentity` skipped.** Getting
 the CA bundled in `backend/src/db/railway-ca.ts` (a certificate is not a credential, so it lives
@@ -414,7 +488,8 @@ snapshot, not a parse of Zustand's persisted JSON:
   down. Without that ordering the app pushes its own stale MMKV count over the accurate one the
   service just wrote, and bubble replies look free forever.
 - It carries the **install id**, never a token: the bubble fires days after the app was last
-  opened, by which point a 24h JWT is dead.
+  opened, by which point even a 30-day JWT may be dead — and `/v1/auth/logout` revokes every
+  token an account holds by bumping `token_epoch`.
 
 `ScreenClassifier`'s veto lists matter more than its positive signals. A wrong positive means
 the bubble never shows — annoying. A wrong veto means the bubble shows over someone's private
@@ -533,9 +608,12 @@ into autolinked packages). `npm ci` before `eas build` if a build behaves oddly.
 ## 10. Checks
 
 ```bash
-npx tsc --noEmit                                        # must pass
+npm run checks                                          # tsc + eslint + limits — the gate
+npx eslint src modules                                  # must be 0 errors
 node src/state/limits.selfcheck.ts                      # swipe allowance + store keys
 node src/theme/contrast.selfcheck.ts                    # palette vs WCAG AA
+cd backend && npm run check                             # tsc + 6 pure selfchecks
+cd backend && npm run check:db                          # 4 selfchecks against a real DB
 cd backend && npx tsc --noEmit
 cd backend && node --env-file=.env --import tsx src/ai/gateway.selfcheck.ts   # 1 live Gemini call
 cd backend && node --env-file=.env --import tsx src/vercel.selfcheck.ts       # serverless POST body
@@ -619,3 +697,8 @@ The failure modes that have actually cost time, and what they look like from the
 | Bubble replies never cost a credit | the app pushed a stale snapshot over the server's | `refreshCredits()` runs before `configureChat()` |
 | Discover shows yesterday's items after a change | the cache tag wasn't bumped | bump `vN` in `discover.tsx` |
 | Persisted state vanishes on reload | not listed in `partialize` | `useRizzStore.ts` |
+| Locked out after 2 of 3 free analyses | `analysisCount` double-counted — `reportCredits` **and** a local `incrementAnalysis()` | the `isLiveApi` guard in `useRizzStore.ts` |
+| White screen, no way back | a render throw with no boundary | `ErrorBoundary` exported by that exact name from both layouts |
+| Signup says "check your email", no mail arrives | the address already has an account | `/v1/auth/otp` must return 409 `EMAIL_TAKEN`, not `{ok:true}` |
+| Discover swipes vanish faster than swiping | `seen` keyed by index and reset on filter change | it is a `Set<string>` of ids in `discover.tsx`; never clear it |
+| Credits never refresh on iOS | `refreshCredits()` folded back behind the bubble's `isSupported` guard | it needs its own effect in `_layout.tsx` |

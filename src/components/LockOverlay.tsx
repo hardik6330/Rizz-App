@@ -46,9 +46,9 @@ export function LockOverlay({ onUnlock, onRestore }: LockOverlayProps) {
           </LinearGradient>
         </View>
 
-        <Text style={styles.title}>That's all the free heat</Text>
+        <Text style={styles.title}>That&apos;s all the free heat</Text>
         <Text style={styles.body}>
-          You've torched your 10 free swipes. Unlock the full arsenal — unlimited lines, unlimited
+          You&apos;ve torched your 10 free swipes. Unlock the full arsenal — unlimited lines, unlimited
           reads, zero mercy.
         </Text>
 

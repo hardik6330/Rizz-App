@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import type { FeedItem, ProfileScanResult, SavedItem } from '@/types';
 import { nextScanHistory, nextSwipeState, todayKey } from './limits';
-import { onAccountChanged, onCreditsChanged } from './session';
+import { isLiveApi, onAccountChanged, onCreditsChanged } from './session';
 import { zustandStorage } from './storage';
 
 /**
@@ -107,7 +107,39 @@ export const useRizzStore = create<RizzState>()(
       removeScan: (id) =>
         set((state) => ({ scanHistory: state.scanHistory.filter((scan) => scan.id !== id) })),
 
-      incrementAnalysis: () => set((state) => ({ analysisCount: state.analysisCount + 1 })),
+      /**
+       * Count one analysis locally. **Only when there is no server to ask.**
+       *
+       * ## The bug this closes
+       *
+       * There were two writers to `analysisCount` and both fired on every live
+       * analysis, so a free user was locked out after TWO of their three free
+       * analyses:
+       *
+       *   1. `callApi` receives `{ result, credits }` and calls `reportCredits`,
+       *      which sets `analysisCount` to the server's number — and that number
+       *      ALREADY includes the charge for the request that just returned.
+       *   2. The screen then awaited that same call and added its own +1.
+       *
+       *   analysis 1 → server says 1 → set to 1 → +1 → 2
+       *   analysis 2 → server says 2 → set to 2 → +1 → 3 → out of credits
+       *
+       * It hid because the local increment is CORRECT offline: with no API there
+       * is no envelope, so this is the only counter there is. It only
+       * double-counts against a live server — which is the configuration that
+       * ships, and the one nobody runs while developing against mock data.
+       *
+       * The guard lives here rather than at the three call sites (Lab, Bio,
+       * Profile Scan, plus the chat-usage drain in _layout) for the same reason
+       * `useOutOfCredits` is one selector: three copies of a freemium rule is
+       * three chances for it to drift, and this one drifted silently for money.
+       *
+       * `reportCredits` is the sole writer whenever `isLiveApi`. `refreshCredits`
+       * on launch and resume is the backstop if a response ever arrives without
+       * a credits envelope.
+       */
+      incrementAnalysis: () =>
+        set((state) => (isLiveApi ? state : { analysisCount: state.analysisCount + 1 })),
 
       // Free swipes are a DAILY allowance — see state/limits.ts.
       incrementSwipe: () =>

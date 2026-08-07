@@ -19,7 +19,7 @@ export function EmptyVault({ onBrowse }: EmptyVaultProps) {
       </View>
       <Text style={styles.title}>Your vault is empty</Text>
       <Text style={styles.body}>
-        Save the lines that hit different —{'\n'}they'll live here forever.
+        Save the lines that hit different —{'\n'}they&apos;ll live here forever.
       </Text>
       <HapticPressable onPress={onBrowse} accessibilityLabel="Browse the Discovery feed" style={styles.cta}>
         <Ionicons name="flame" size={15} color={palette.violetBright} />
