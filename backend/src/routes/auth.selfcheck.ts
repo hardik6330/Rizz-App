@@ -103,6 +103,54 @@ try {
     'H-4: the subscription is still resolvable by rc_app_user_id',
   );
 
+  // ── 5. The account-existence answers ──────────────────────────────────────
+  //
+  // `/otp` and `/login` used to answer identically whether or not an address had
+  // an account, which is why a signup into a taken address produced "check your
+  // email" and no email. Four codes now say which case it is, and the CLIENT
+  // branches on them — account.tsx moves the user to the other tab on
+  // EMAIL_TAKEN / NO_ACCOUNT — so a rename here is a silently broken screen.
+  //
+  // Through the full `app`, not the `auth` router: the codes are written by
+  // `onError`, which only exists on the app. Under the IP buckets too (otp 4,
+  // login 8), so this stays at two calls each.
+  const { app } = await import('../app.ts');
+  const post = async (path: string, body: unknown) => {
+    const res = await app.request(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = (await res.json()) as { error?: { code: string } };
+    return { status: res.status, code: json.error?.code };
+  };
+
+  const taken = 'target@example.test';
+  const unknown = `nobody-${randomUUID()}@example.test`;
+
+  assert.deepEqual(
+    await post('/v1/auth/otp', { email: taken, purpose: 'signup' }),
+    { status: 409, code: 'EMAIL_TAKEN' },
+    'signup code for an address that already has an account',
+  );
+  assert.deepEqual(
+    await post('/v1/auth/otp', { email: unknown, purpose: 'login' }),
+    { status: 404, code: 'NO_ACCOUNT' },
+    'recovery code for an address with no account',
+  );
+  assert.deepEqual(
+    await post('/v1/auth/login', { email: unknown, password: 'whatever-long-enough' }),
+    { status: 404, code: 'NO_ACCOUNT' },
+    'login with an unknown email',
+  );
+  // The seeded row has a NULL password_hash, so `verifyPassword` rejects — which
+  // is the wrong-password path, and it must not leak back into NO_ACCOUNT.
+  assert.deepEqual(
+    await post('/v1/auth/login', { email: taken, password: 'definitely-not-it' }),
+    { status: 401, code: 'WRONG_PASSWORD' },
+    'login with the wrong password',
+  );
+
   console.log('auth.selfcheck: ok');
 } finally {
   // One statement per id: a parameterised `IN` would bind the whole list as a

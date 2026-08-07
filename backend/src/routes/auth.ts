@@ -11,7 +11,9 @@ import { FREE_ANALYSIS_LIMIT } from '../lib/limits.ts';
 import { log } from '../lib/logger.ts';
 import { sendOtpEmail } from '../lib/mailer.ts';
 import { issueOtp, type OtpPurpose, verifyOtp } from '../lib/otp.ts';
-import { dummyHash, hashPassword, verifyPassword } from '../lib/password.ts';
+// `dummyHash` is gone from here: it existed only to make a missing email take as
+// long as a wrong password, and /login now names that case outright.
+import { hashPassword, verifyPassword } from '../lib/password.ts';
 import { requireAccount, requireAuth } from '../middleware/auth.ts';
 
 /**
@@ -202,20 +204,22 @@ const codeField = z
 const OtpBody = z.object({ email: emailField, purpose: z.enum(['signup', 'login']) });
 
 /**
- * Mail a code. **Always answers `{ ok: true }`.**
+ * Mail a code, or say why one is not coming.
  *
- * The uniform answer is the whole security design of this endpoint, and it is
- * worth spelling out because a "helpful" error here undoes it: a `purpose` of
- * `signup` against a taken address, or `login` against an unknown one, sends
- * nothing and still returns ok. Telling the caller which happened turns this
- * into a free account-existence oracle — point it at a leaked address list and
- * it sorts them into "has a RizzCoach account" and "does not", which is exactly
- * the list a credential-stuffer wants, and which /login goes to some trouble
- * (the dummy scrypt) to avoid handing out.
+ * **This used to always answer `{ ok: true }`.** The uniform answer stopped this
+ * being an account-existence oracle, and it was the right call on paper. In the
+ * product it meant the single commonest signup mistake — using the address you
+ * already have an account with — produced a screen that said "check your email"
+ * and a code that was never sent. The user has no way to discover that, and no
+ * wording covers it: "if that address has an account" reads as reassurance, not
+ * as a warning that nothing happened.
  *
- * The cooldown inside `issueOtp` is likewise silent. A resend the server
- * swallowed and a resend it honoured look identical, and the user has a live
- * code in their inbox either way.
+ * So the two dead-end cases now fail loudly, and the client uses the CODE to
+ * move the user to the other tab with what they typed still in the field. See
+ * `Errors.emailTaken` for what still bounds enumeration.
+ *
+ * The cooldown inside `issueOtp` is still silent — a resend the server swallowed
+ * and one it honoured look identical, and the user has a live code either way.
  *
  * Unauthenticated on purpose. The recovery path has to work on a phone that has
  * been signed out, wiped, or is not the phone the account was made on — and
@@ -232,11 +236,9 @@ auth.post('/otp', async (c) => {
   const taken = ((rows as unknown as [Array<{ id: string }>])[0]?.[0] ?? null) != null;
 
   // Nothing to verify: signing up into an address that is already an account, or
-  // recovering one that does not exist. Silent no-op — see above.
-  if (purpose === 'signup' ? taken : !taken) {
-    log.info('auth.otp.noop', { purpose });
-    return c.json({ ok: true });
-  }
+  // recovering one that does not exist. Named, not swallowed — see above.
+  if (purpose === 'signup' && taken) throw Errors.emailTaken();
+  if (purpose === 'login' && !taken) throw Errors.noAccount();
 
   const code = await issueOtp(email, purpose as OtpPurpose);
   // null = cooldown; a code is already in flight, so this really is a no-op.
@@ -350,12 +352,13 @@ auth.post('/signup', requireAuth, async (c) => {
   } catch (err) {
     if (err instanceof ApiError) throw err;
     if ((err as { code?: string }).code === 'ER_DUP_ENTRY') {
-      // Usernames are public, so naming the clash is helpful. Emails are not:
-      // "that email is in use" is an account-existence oracle, so it gets the
-      // same vague message as anything else that went wrong.
+      // Both clashes are named now. The email one is only reachable if somebody
+      // claimed the address between `/otp` and here — `/otp` refuses it up front
+      // — so it is rare, and answering it vaguely would leave the user staring at
+      // "could not create the account" with a valid code and no idea why.
       throw String((err as Error).message).includes('uq_users_username')
         ? Errors.badRequest('That username is taken')
-        : Errors.badRequest('Could not create the account');
+        : Errors.emailTaken();
     }
     throw err;
   }
@@ -588,6 +591,20 @@ auth.post('/login', async (c) => {
   // Before either branch. A ban outranks any proof of identity.
   if (row?.banned_at) throw Errors.banned();
 
+  /*
+   * No such address — named, and named BEFORE either branch.
+   *
+   * This used to be folded into the wrong-password answer so the two were
+   * indistinguishable, with a dummy scrypt hash below to make them take the same
+   * time as well. `/otp` gives the same fact away now, so hiding it here only
+   * cost the user: "Invalid email or password" on a typo'd address sends people
+   * hunting for a password that was never the problem.
+   *
+   * It also removes the dummy hash: ~100ms of scrypt whose only job was closing
+   * a timing channel that is no longer a channel.
+   */
+  if (!row) throw Errors.noAccount();
+
   if (code != null) {
     /*
      * ── Recovery path ────────────────────────────────────────────────────────
@@ -601,47 +618,30 @@ auth.post('/login', async (c) => {
      * minutes at a time, indefinitely. The code's own five-attempt cap is this
      * branch's limiter, and `/otp`'s cooldown bounds how fast codes appear.
      *
-     * Verified before the row is consulted, so an address with no account and an
-     * address with a wrong code fail identically — `/otp` never issued a code for
-     * the former, so `verifyOtp` cannot succeed for it, and neither reveals which
-     * case it was.
+     * The row was checked above, so this only ever answers a code question: the
+     * code is wrong, expired, already spent, or was never issued. All four get
+     * one message — telling them apart helps nobody type it correctly.
      */
     if (!(await verifyOtp(email, 'login', code))) throw Errors.badRequest(BAD_CODE);
-    // Only reachable if `/otp` found this address, so the row is all but
-    // guaranteed. Deleted in between is the exception, and it is not a code
-    // problem — same generic answer as a wrong password.
-    if (!row) throw Errors.invalidCredentials();
     log.info('auth.login.code');
   } else {
-    if (row?.locked_until != null && row.locked_until > now) throw Errors.rateLimited();
+    // Its own code, not the generic 429: a rate limit reads as "the app is busy",
+    // and the message has to carry the way out (the emailed code) as well as the
+    // wait, because this is the state a user who forgot their password lands in.
+    if (row.locked_until != null && row.locked_until > now) throw Errors.accountLocked();
 
-    /*
-     * Hash even when there is no such user.
-     *
-     * A missing row returns in ~1ms and a real one in ~100ms, and that difference
-     * is an account-existence oracle no amount of careful error copy can cover.
-     * The dummy costs one scrypt on a path that is already rate limited.
-     */
-    const ok = row
-      ? await verifyPassword(password!, row.password_hash)
-      : await verifyPassword(password!, await dummyHash());
-
-    // `!row` is folded in here rather than returned early above, so a missing
-    // email and a wrong password take the same path and the same time.
-    if (!ok || !row) {
-      if (row) {
-        const { failed, lockedUntil } = nextFailureState(row, now);
-        await db.execute(sql`
-          UPDATE users
-             SET failed_logins = ${failed},
-                 locked_until  = ${lockedUntil}
-           WHERE id = ${row.id}
-        `);
-        if (lockedUntil != null) log.warn('auth.locked', { failed });
-      }
-      // ONE message for both branches. "No such user" tells an attacker which
-      // half of the guess to keep.
-      throw Errors.invalidCredentials();
+    if (!(await verifyPassword(password!, row.password_hash))) {
+      const { failed, lockedUntil } = nextFailureState(row, now);
+      await db.execute(sql`
+        UPDATE users
+           SET failed_logins = ${failed},
+               locked_until  = ${lockedUntil}
+         WHERE id = ${row.id}
+      `);
+      if (lockedUntil != null) log.warn('auth.locked', { failed });
+      // Locked by THIS attempt: say so now rather than letting the user discover
+      // it on the next try, when the message would look like it changed at random.
+      throw lockedUntil != null ? Errors.accountLocked() : Errors.wrongPassword();
     }
   }
 

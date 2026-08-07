@@ -204,13 +204,18 @@ async function postSession(path: string, body: unknown, token?: string): Promise
 /**
  * Ask the server to email a six-digit code.
  *
- * **Always resolves on a 2xx, and the server always sends 2xx.** A `signup`
- * request for an address that already has an account, and a `login` request for
- * one that has none, both come back exactly like a real send — otherwise this
- * endpoint would sort any list of email addresses into "has a RizzCoach account"
- * and "does not". So the UI must say "if that address has an account, the code
- * is on its way", never "we sent it", and the only real failure the caller can
- * see is the network or a mailer that is down.
+ * **A 2xx now means a code really was sent**, which it did not use to: the
+ * endpoint answered ok whether or not it mailed anything, so the UI could only
+ * ever say "if that address has an account, the code is on its way". The two
+ * cases it was hiding are the two commonest mistakes on this screen — signing up
+ * with an address that already has an account, and asking for a recovery code
+ * for one that has none — and both left the user waiting on an inbox for a mail
+ * that was never sent.
+ *
+ * They now reject with `EMAIL_TAKEN` / `NO_ACCOUNT`, and account.tsx switches
+ * tabs on those codes rather than just printing the message. The trade is that
+ * the endpoint can be used to test whether an address has an account; see
+ * `Errors.emailTaken` in the backend for what bounds that.
  *
  * Unauthenticated on purpose: recovery has to work on a phone that has been
  * signed out or wiped, where there may be no usable token at all.

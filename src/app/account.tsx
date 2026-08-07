@@ -114,12 +114,11 @@ export default function AccountScreen() {
   /**
    * Pre-filled on LOGIN only, and blank on signup.
    *
-   * Handing the remembered address to the signup form is a dead end now that
-   * codes are involved, and a silent one: `/otp` answers `{ok:true}` for an
-   * address that already has an account without sending anything — it must, or
-   * it becomes an account-existence oracle. So a user who taps Create account on
-   * a pre-filled field gets "check your email" and then waits forever for a code
-   * that was never sent. Blank makes them type an address they actually mean.
+   * The remembered address is by definition one that already has an account, so
+   * on the signup tab it can only ever be wrong. That used to be a SILENT dead
+   * end — `/otp` answered ok without sending, so the user got "check your email"
+   * and waited forever — and `EMAIL_TAKEN` has since fixed the silence. Still
+   * blank here, because the best version of that error is the one nobody sees.
    */
   const [email, setEmail] = useState(mode === 'login' ? remembered ?? '' : '');
   const [password, setPassword] = useState('');
@@ -238,6 +237,29 @@ export default function AccountScreen() {
     wantsCode && step === 'form' ? 'mail-outline' : isSignup ? 'sparkles' : 'log-in-outline';
 
   /**
+   * The address is real, but it is on the wrong tab.
+   *
+   * `EMAIL_TAKEN` on signup and `NO_ACCOUNT` on login are the same mistake seen
+   * from either side, and the fix is always "you wanted the other tab". Moving
+   * there for the user is the whole point of the server naming these cases: the
+   * error text alone leaves them to find a tab they have already scrolled past,
+   * and re-type an address they just typed.
+   *
+   * `setMode`, not `switchMode` — that one clears the form and would take the
+   * email with it, which is the one thing that must survive this.
+   *
+   * Returns whether it moved, so the caller knows the code step is off the table.
+   */
+  const nudgeMode = useCallback((code: string) => {
+    if (code !== 'EMAIL_TAKEN' && code !== 'NO_ACCOUNT') return false;
+    setMode(code === 'EMAIL_TAKEN' ? 'login' : 'signup');
+    setUseCode(false);
+    setStep('form');
+    setCode('');
+    return true;
+  }, []);
+
+  /**
    * Send (or resend) the code, and move to the code step.
    *
    * Shared by the CTA and the Resend button. `announce` is set only by Resend:
@@ -245,10 +267,9 @@ export default function AccountScreen() {
    * resend leaves the user on the same screen looking at the same field, and a
    * button that appears to do nothing is a button people tap five times.
    *
-   * Note the copy: **"if that address has an account"**, never "we sent it". The
-   * server answers identically whether or not it actually mailed anything, on
-   * purpose — see `requestOtp` — and promising a delivery it may not have made
-   * would be the app claiming knowledge the server deliberately withheld.
+   * The copy is now a plain "Code sent" — a 2xx from `/otp` means the mail
+   * really went out. It used to be hedged ("if that address has an account")
+   * because the server answered ok either way; it no longer does.
    */
   const sendCode = useCallback(
     async (announce = false) => {
@@ -260,19 +281,16 @@ export default function AccountScreen() {
         haptic.success();
         setStep('code');
         if (!announce) return;
-        toast.show(
-          isSignup
-            ? 'Code sent — check your inbox and spam'
-            : 'If that address has an account, the code is on its way',
-        );
+        toast.show('Code sent — check your inbox and spam');
       } catch (err) {
         haptic.warning();
+        if (err instanceof AuthError) nudgeMode(err.code);
         setError(err instanceof AuthError ? err.message : 'Could not send the code — try again');
       } finally {
         setBusy(false);
       }
     },
-    [email, isSignup, toast],
+    [email, isSignup, nudgeMode, toast],
   );
 
   const submit = useCallback(async () => {
@@ -350,13 +368,17 @@ export default function AccountScreen() {
       toast.show(isSignup ? 'Account created — your credits are safe now' : 'Welcome back');
     } catch (err) {
       haptic.warning();
+      // Same tab nudge as `sendCode`. Reachable here on the password login path,
+      // which never touches /otp, and on a signup whose address was claimed in
+      // the seconds between the code being sent and this submit.
+      if (err instanceof AuthError) nudgeMode(err.code);
       // The server writes these for the user and never quotes what was typed.
       setError(err instanceof AuthError ? err.message : 'Something went wrong — try again');
     }
     // Not `finally`: that also runs on the early return above, which is the one
     // path that must stay busy. A rejected login still lands here.
     setBusy(false);
-  }, [busy, code, email, isOnboarding, isSignup, password, sendCode, step, toast, useCode, username, wantsCode]);
+  }, [busy, code, email, isOnboarding, isSignup, nudgeMode, password, sendCode, step, toast, useCode, username, wantsCode]);
 
   /**
    * Confirm sign-out in the app's own dark sheet, not `Alert.alert`.
