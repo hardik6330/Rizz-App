@@ -598,7 +598,10 @@ export default function AccountScreen() {
                   setCode('');
                   setError(null);
                 }}
-                onResend={() => void sendCode(true)}
+                onResend={() => {
+                  setCode('');
+                  void sendCode(true);
+                }}
               />
             ) : (
               <CredentialFields
