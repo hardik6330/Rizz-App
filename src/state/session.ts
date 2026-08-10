@@ -59,6 +59,15 @@ export interface Credits {
   is_pro: boolean;
   analysis_count: number;
   credits_remaining: number | null;
+  /**
+   * The onboarding answers as the server has them — a raw JSON string, or absent.
+   *
+   * Only `GET /v1/user/credits` carries it; the per-response envelope from
+   * `/v1/ai/*` does not, so this is `undefined` on most calls and the store must
+   * treat absent as "no opinion" rather than "cleared". See the adopt rule in
+   * `useRizzStore`.
+   */
+  coach?: string | null;
 }
 
 interface SessionUser extends Credits {
@@ -531,6 +540,24 @@ export async function clearVaultItems(): Promise<boolean> {
     const res = await fetch(apiUrl('/v1/user/vault'), {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${await accessToken()}` },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Save or update onboarding coach profile on backend DB. */
+export async function saveCoachProfile(coach: { apps: string[]; struggle: string; style: string }): Promise<boolean> {
+  if (!isLiveApi) return true;
+  try {
+    const res = await fetch(apiUrl('/v1/user/coach'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${await accessToken()}`,
+      },
+      body: JSON.stringify(coach),
     });
     return res.ok;
   } catch {

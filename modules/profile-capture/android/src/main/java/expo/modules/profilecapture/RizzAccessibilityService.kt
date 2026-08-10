@@ -114,11 +114,8 @@ class RizzAccessibilityService : AccessibilityService() {
      * still on a profile generates none: the window has not changed, so no
      * WINDOW_STATE_CHANGED, and the content is static, so no CONTENT_CHANGED. The
      * bubble stayed gone until they happened to scroll.
-     *
-     * Delayed because rootInActiveWindow is routinely null for the first few
-     * hundred milliseconds after a bind — asking immediately just returns nothing.
      */
-    main.postDelayed({ reclassifyCurrentWindow("connect") }, RECONNECT_SETTLE_MS)
+    scheduleReclassify("connect")
 
     /*
      * The other moment we are looking at a screen we were never told about: the
@@ -148,8 +145,13 @@ class RizzAccessibilityService : AccessibilityService() {
   private val screenReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
       when (intent?.action) {
-        Intent.ACTION_USER_PRESENT -> reclassifyCurrentWindow("unlock")
-        Intent.ACTION_SCREEN_OFF -> hideBubble()
+        Intent.ACTION_USER_PRESENT -> scheduleReclassify("unlock")
+        // Cancel any in-flight retry too, or a bind that happened moments before
+        // the screen went off keeps asking about a window nobody is looking at.
+        Intent.ACTION_SCREEN_OFF -> {
+          main.removeCallbacks(reclassifyRetry)
+          hideBubble()
+        }
       }
     }
   }
@@ -168,33 +170,87 @@ class RizzAccessibilityService : AccessibilityService() {
      */
     overlay?.hide()
     overlay = null
+    main.removeCallbacks(reclassifyRetry)
+    main.removeCallbacks(presenceCheck)
     runCatching { unregisterReceiver(screenReceiver) }
     chatExecutor.shutdownNow()
     super.onDestroy()
   }
 
   /**
+   * Ask about the current window, and KEEP asking until the window answers.
+   *
+   * **This is the "sometimes the bubble comes back, sometimes it doesn't" bug.**
+   * It used to be a single `postDelayed(reclassify, 400ms)`. `rootInActiveWindow`
+   * is null for a variable stretch after a bind — a few hundred ms on a fast
+   * device, well over a second on a cold, throttled one that has just lost the
+   * app's process — and a null read returns without doing anything and without
+   * trying again. Whether the bubble reappeared after the app was swiped away
+   * came down to whether one fixed 400ms guess happened to land after the window
+   * was readable. That is exactly a coin flip, and it is why the same phone shows
+   * the bubble one time and not the next.
+   *
+   * So: retry until the window is READABLE, not until it says yes. A readable
+   * window that classifies to nothing — the launcher, a feed, an unsupported app
+   * — is a real answer and stops the retries; only "I cannot see anything yet"
+   * schedules another. Bounded, so a service bound while the screen is off does
+   * not poll for ever.
+   *
+   * The two callers are the two moments we are looking at a screen nobody told us
+   * about: a rebind after process death, and an unlock onto whatever was already
+   * open. Neither generates an accessibility event.
+   */
+  private fun scheduleReclassify(reason: String) {
+    main.removeCallbacks(reclassifyRetry)
+    reclassifyReason = reason
+    reclassifyAttempts = 0
+    main.postDelayed(reclassifyRetry, RECLASSIFY_RETRY_MS)
+  }
+
+  private var reclassifyReason = "connect"
+  private var reclassifyAttempts = 0
+
+  private val reclassifyRetry = object : Runnable {
+    override fun run() {
+      if (reclassifyCurrentWindow(reclassifyReason)) return
+      if (++reclassifyAttempts < RECLASSIFY_MAX_ATTEMPTS) {
+        main.postDelayed(this, RECLASSIFY_RETRY_MS)
+      } else {
+        Log.w(TAG, "reclassify($reclassifyReason) gave up — no readable window")
+      }
+    }
+  }
+
+  /**
    * The body of [onAccessibilityEvent] without the event — for the moments we have
    * to ask rather than be told. Safe to call from any of them; it is the same
    * decision, made against `rootInActiveWindow` instead of an event.
+   *
+   * @return true once the window could be READ and a decision was made (bubble
+   * shown, or hidden because this screen does not want one). False means the
+   * window was not available yet and the caller should ask again — see
+   * [scheduleReclassify].
    */
-  private fun reclassifyCurrentWindow(reason: String) {
-    if (!ENABLED) return
-    val root = rootInActiveWindow ?: return
-    val pkg = root.packageName?.toString() ?: return
+  private fun reclassifyCurrentWindow(reason: String): Boolean {
+    if (!ENABLED) return true
+    val root = rootInActiveWindow ?: return false
+    val pkg = root.packageName?.toString() ?: return false
     if (pkg !in ScreenClassifier.SUPPORTED) {
       hideBubble()
-      return
+      return true
     }
     val signals = try {
       collect(root, pkg)
     } catch (e: Exception) {
+      // A stale tree mid-transition throws here, and the next attempt usually
+      // succeeds — so this is "ask again", not "give up".
       Log.w(TAG, "tree walk failed ($reason)", e)
-      return
+      return false
     }
     val result = ScreenClassifier.classify(signals)
-    Log.i(TAG, "reclassify($reason) → ${result.kind}")
+    Log.i(TAG, "reclassify($reason, try ${reclassifyAttempts + 1}) → ${result.kind}")
     if (result.kind != ScreenKind.NONE) showBubble(pkg, signals, result) else hideBubble()
+    return true
   }
 
   override fun onInterrupt() {
@@ -726,11 +782,20 @@ class RizzAccessibilityService : AccessibilityService() {
     private const val DEBOUNCE_MS = 400L
 
     /**
-     * Grace before asking `rootInActiveWindow` after a bind or an unlock. It is
-     * routinely null immediately after either, and a null read is indistinguishable
-     * from "nothing to show" — so asking too early silently does nothing.
+     * Gap between attempts at reading the current window after a bind or an
+     * unlock. `rootInActiveWindow` is routinely null immediately after either, and
+     * a null read is indistinguishable from "nothing to show" — so a single
+     * attempt at a fixed delay is a guess, and it was the wrong guess often enough
+     * to look like the bubble came back at random. See [scheduleReclassify].
      */
-    private const val RECONNECT_SETTLE_MS = 400L
+    private const val RECLASSIFY_RETRY_MS = 400L
+
+    /**
+     * ~5s of asking. Long enough to cover a cold rebind on a slow device after the
+     * app's process was killed; short enough that a service bound behind a locked
+     * screen stops rather than polling until the battery notices.
+     */
+    private const val RECLASSIFY_MAX_ATTEMPTS = 12
 
     /** displayMetrics lag the rotation by a frame or two. See onConfigurationChanged. */
     private const val ROTATION_SETTLE_MS = 250L

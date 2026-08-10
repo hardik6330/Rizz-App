@@ -12,6 +12,7 @@ import {
   onAccountChanged,
   onAccountDeleted,
   onCreditsChanged,
+  saveCoachProfile,
   saveVaultItem,
 } from './session';
 import { zustandStorage } from './storage';
@@ -198,7 +199,10 @@ export const useRizzStore = create<RizzState>()(
 
       setOnboarded: () => set({ hasOnboarded: true }),
 
-      setCoach: (coach) => set({ coach }),
+      setCoach: (coach) => {
+        void saveCoachProfile(coach);
+        set({ coach });
+      },
     }),
     {
       name: 'rizzcoach-store',
@@ -253,9 +257,39 @@ export const useRizzStore = create<RizzState>()(
  * server-side (`POST /v1/user/pro`); trusting the device would make the credit
  * gate decorative.
  */
-onCreditsChanged(({ is_pro, analysis_count }) => {
+onCreditsChanged(({ is_pro, analysis_count, coach }) => {
   useRizzStore.setState({ isPro: is_pro, analysisCount: analysis_count });
+  adoptCoach(coach);
 });
+
+/**
+ * Take the server's onboarding answers — but ONLY when this device has none.
+ *
+ * This is what makes the answers survive a reinstall: MMKV is empty on a fresh
+ * install, so the launch that follows the login pulls them back and the setup
+ * screen never appears. Everything else the account owns already worked this
+ * way; personalisation was the one thing that silently did not.
+ *
+ * **The device wins whenever it has an opinion**, and that asymmetry is load
+ * bearing in two directions. Answers just given while offline must not be
+ * overwritten by an older row on the next resume. And `coach` is absent from
+ * every response except `/v1/user/credits`, so treating a missing value as
+ * "cleared" would wipe the profile on the next analysis and drop the user back
+ * into onboarding — the failure would look random, because it would depend on
+ * which request happened to land last.
+ */
+function adoptCoach(raw: string | null | undefined): void {
+  if (!raw || useRizzStore.getState().coach) return;
+  try {
+    // Written by this app, but parsed defensively all the same: a build that
+    // renamed an answer would otherwise put a value nothing maps into the store,
+    // and from there into a prompt.
+    const parsed = JSON.parse(raw) as CoachProfile;
+    if (parsed?.style && parsed?.struggle) useRizzStore.setState({ coach: parsed });
+  } catch {
+    // Unparseable means no personalisation, not a broken launch.
+  }
+}
 
 /** Signup, login, sign-out and delete all land here. See `account` above. */
 onAccountChanged((account) => {

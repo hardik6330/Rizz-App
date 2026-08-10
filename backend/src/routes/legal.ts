@@ -188,7 +188,13 @@ you can delete them.</p>
   <li><strong>Usage counters</strong> — how many analyses you have run, to enforce
       the free limit;</li>
   <li><strong>Subscription status</strong> and its expiry, plus an identifier from
-      our payment provider.</li>
+      our payment provider;</li>
+  <li><strong>Your setup answers</strong> — the three multiple-choice answers you
+      gave when you first opened the app: which apps you message on, what you find
+      hardest, and how you like to write. We keep them so your suggestions sound
+      the same on a new phone as they did on your old one, and so the one-tap
+      reply button can use them too. They are choices from a fixed list — there is
+      no free text — and you can change them at any time by answering again.</li>
 </ul>
 <p>Plus two things you create by acting in the app, so they survive you changing
 or reinstalling your phone:</p>
@@ -212,6 +218,10 @@ our side.</p>
 <p>Results are kept only where you asked for them to be — a scan you ran, a line
 you saved. Nothing is stored as a side effect of using the app, and we never keep
 a suggestion you did not save.</p>
+<p>The one thing about you that we do keep is the set of multiple-choice answers
+from the setup screen, listed above. Those are preferences you chose about how you
+want us to write — not a record of anyone you talked to, or of anything you
+analysed.</p>
 </div>
 <p>For a few minutes after a request we hold its answer in a short-lived technical
 cache, so that a retry or a dropped connection returns the result you already paid

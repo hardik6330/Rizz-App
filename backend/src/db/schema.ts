@@ -7,10 +7,17 @@ import { bigint, char, date, double, index, int, json, mediumtext, mysqlEnum, my
  * NEVER add: images, transcripts, replies, reports, or saved items.
  *
  * PII is now a NARROW, deliberate exception rather than a flat prohibition:
- * `email` and `username` on `users`, and nothing else, added with accounts in
- * migration 0001. That was a real trade — this schema held zero PII before it —
- * so the rule is now "the two account columns, and never a third". Anything
- * derived from what a user analysed still has nowhere to live here.
+ * `email` and `username` on `users`, added with accounts in migration 0001, plus
+ * `coach_json` — the three onboarding preference enums — added in 0010. That is
+ * the whole list, and each one was a real trade against a schema that started
+ * with zero PII.
+ *
+ * **The rule the list enforces: nothing derived from what a user ANALYSED.** No
+ * screenshot, no transcript, no reply, no report, no bio, not a summary of one.
+ * A preference the user chose about how to be written for is a different kind of
+ * thing from a record of who they were talking to, and only the second kind is
+ * what this schema exists to not hold. Adding a fourth column means arguing that
+ * distinction in writing, in the migration, the way 0010 does.
  */
 
 /** One row per install; an account may later be attached to it. */
@@ -57,6 +64,21 @@ export const users = mysqlTable(
     analysisCount: int('analysis_count', { unsigned: true }).notNull().default(0),
     dailyCallCount: int('daily_call_count', { unsigned: true }).notNull().default(0),
     dailyCallDate: date('daily_call_date', { mode: 'string' }),
+
+    /**
+     * The three onboarding answers as JSON — `{ apps, struggle, style }`.
+     *
+     * Written opportunistically by the AI routes that already receive it, so
+     * there is no endpoint to call and no client change to keep in step. Read by
+     * `/v1/ai/chat`, which is the one engine whose caller (the native bubble)
+     * cannot send it. See migration 0010 for why it is here at all.
+     *
+     * A STRING, not drizzle's `json()`: it is read whole and handed to
+     * `coachParts()`, never queried into, and the value is re-validated against
+     * the zod enums on the way out — so the column type buys nothing that the
+     * parse does not already have to do.
+     */
+    coachJson: varchar('coach_json', { length: 255 }),
 
     bannedAt: bigint('banned_at', { mode: 'number' }),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),

@@ -30,7 +30,44 @@ user.get('/credits', async (c) => {
     analysis_count: analysisCount,
     credits_remaining: isPro ? null : remaining,
     limits: { free_analysis: FREE_ANALYSIS_LIMIT },
+    /*
+     * The stored onboarding answers, raw, so a reinstall can get its
+     * personalisation back on the launch that follows the login.
+     *
+     * It rides here rather than on its own endpoint because this is already the
+     * "what does the server actually think about me" call, made on launch and on
+     * every resume — and `requireAuth` has already read the column, so it costs
+     * a key in the JSON and nothing else.
+     *
+     * The client only ADOPTS it when it has none of its own; the device wins
+     * otherwise. Answers just given offline must not be overwritten by an older
+     * row, and a null here must never wipe a local profile and re-trigger the
+     * setup screen.
+     */
+    coach: c.get('coachJson'),
   });
+});
+
+const CoachProfileBody = z.object({
+  apps: z.array(z.string()).max(10),
+  struggle: z.string().min(1).max(64),
+  style: z.string().min(1).max(64),
+});
+
+/** Store / update user's coach profile onboarding answers. */
+user.post('/coach', async (c) => {
+  const { sub } = c.get('user');
+  const body = CoachProfileBody.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) throw Errors.badRequest('Invalid coach profile payload');
+
+  const jsonStr = JSON.stringify(body.data);
+  await db.execute(sql`
+    UPDATE users
+       SET coach_json = ${jsonStr}
+     WHERE id = ${sub}
+  `);
+
+  return c.json({ ok: true });
 });
 
 /**

@@ -642,6 +642,30 @@ snapshot, not a parse of Zustand's persisted JSON:
   opened, by which point even a 30-day JWT may be dead — and `/v1/auth/logout` revokes every
   token an account holds by bumping `token_epoch`.
 
+### 6.1 The bubble outlives the app, and how
+
+The service runs **in the app's process**, so swiping RizzCoach out of recents kills it and the
+bubble's window dies with the process. Two things bring it back, and both are load-bearing:
+
+1. **`ENABLED` is persisted** (`setEnabledPersisted` → prefs, restored in `onServiceConnected`).
+   The in-memory flag dies with the process, and the system rebinds the service with no JS
+   running to switch it back on.
+2. **`scheduleReclassify()` re-asks about the current window, with retries.** No accessibility
+   event fires for a window that was already open, so a user sitting still on a profile would
+   otherwise see nothing until they scrolled. This retries every 400ms up to ~5s and stops on
+   the first **readable** window — not the first *positive* one, so the launcher answering "not
+   a profile" ends it. It was one fixed 400ms attempt, and `rootInActiveWindow` is null for a
+   variable stretch after a bind: whether the bubble returned was a coin flip on timing, which
+   is what "sometimes it shows, sometimes it doesn't" was.
+
+**What this cannot fix:** MIUI, ColorOS and FuntouchOS kill the service on swipe-away and never
+rebind it. Nothing in the app can recover from that — the user has to re-enable it in Settings
+or exempt the app from battery optimisation. `diagnose()` exists to tell that case apart from
+"the user turned it off", because they need different copy. A foreground service would hold the
+process open, but it costs a permanent notification, `FOREGROUND_SERVICE_SPECIAL_USE` on API
+34+, and a second thing to justify at Play review next to `canTakeScreenshot` — deliberately
+not taken.
+
 `ScreenClassifier`'s veto lists matter more than its positive signals. A wrong positive means
 the bubble never shows — annoying. A wrong veto means the bubble shows over someone's private
 DMs — that is the one that loses the user.

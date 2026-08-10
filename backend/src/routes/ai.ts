@@ -121,6 +121,55 @@ const Coach = z
   .optional()
   .catch(undefined);
 
+/**
+ * Remember the answers on the account, so they survive a reinstall and so
+ * `/v1/ai/chat` — whose caller is native and cannot send them — has something to
+ * read. See migration 0010.
+ *
+ * Opportunistic: written as a side effect of the requests that already carry it,
+ * rather than by an endpoint the client has to remember to call. Three engines
+ * send it on every analysis, so the row converges on the truth without a sync
+ * protocol, and a user who changes an answer has it stored again on their next
+ * analysis.
+ *
+ * The `<>` predicate is what keeps this from being a write per request: the
+ * answers change roughly never, so after the first one MySQL matches no rows and
+ * does no work. And it NEVER fails the request — a personalisation that did not
+ * persist is not a reason to lose an analysis the user has already been charged
+ * for, so the error is logged and swallowed.
+ */
+async function rememberCoach(userId: string, coach: unknown): Promise<void> {
+  if (!coach) return;
+  const json = JSON.stringify(coach);
+  // The column is VARCHAR(255) and the enums cannot reach it — but a silent
+  // truncation would store JSON that no longer parses, so bail rather than write.
+  if (json.length > 255) return;
+  await db
+    .execute(sql`
+      UPDATE users SET coach_json = ${json}
+       WHERE id = ${userId} AND (coach_json IS NULL OR coach_json <> ${json})
+    `)
+    .catch((err) => log.error('coach.save_failed', err));
+}
+
+/**
+ * The stored answers, validated. For the engines whose caller cannot send them.
+ *
+ * Re-validated against the same zod enums as the wire input rather than trusted:
+ * the row was written by an earlier build of the app, and a value that has since
+ * been renamed must degrade to "no preferences" instead of reaching a prompt as
+ * a string nothing maps. `Coach` carries `.catch(undefined)`, so the only thing
+ * that can throw here is `JSON.parse`.
+ */
+function storedCoach(raw: string | null): z.infer<typeof Coach> {
+  if (!raw) return undefined;
+  try {
+    return Coach.parse(JSON.parse(raw));
+  } catch {
+    return undefined;
+  }
+}
+
 // ── POST /v1/ai/lab ──────────────────────────────────────────────────────────
 const LabBody = z.object({
   image: Image,
@@ -134,6 +183,7 @@ ai.post('/lab', async (c) => {
   const body = LabBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) throw Errors.badRequest('image and mode are required');
   const { image, mode, temperature, coach } = body.data;
+  await rememberCoach(sub, coach);
 
   const data = await charged(sub, async () => {
     const { data } = await generate<Record<string, unknown>>({
@@ -168,6 +218,7 @@ ai.post('/profile', async (c) => {
   const { images, mode, ui_text, coach } = body.data;
 
   const shots = images.length > 1 ? `these ${images.length} screenshots` : 'this screenshot';
+  await rememberCoach(sub, coach);
 
   await chargeCredit(sub);
   let data: { isProfile: boolean; id?: string; profileName?: string };
@@ -234,6 +285,7 @@ ai.post('/bio', async (c) => {
   const body = BioBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) throw Errors.badRequest('interests and vibe are required');
   const { interests, vibe, current_bio, coach } = body.data;
+  await rememberCoach(sub, coach);
 
   const data = await charged(sub, async () => {
     const { data } = await generate<Record<string, unknown>>({
@@ -423,11 +475,28 @@ ai.post('/chat', async (c) => {
   if (!body.success) throw Errors.badRequest('transcript is required');
   const { transcript, tone } = body.data;
 
+  /*
+   * The ONE engine that reads the answers from the row instead of the body.
+   *
+   * `GeminiChatClient.kt` posts `transcript` and `tone` and nothing else, and it
+   * cannot reach the store to learn more — so this is the whole reason
+   * `coach_json` is a column rather than a value the client keeps to itself.
+   * It costs nothing here: `requireAuth` already read the row.
+   *
+   * It also means the bubble — the surface that writes an entire message on its
+   * own, with no chance for the user to pick between options — personalises on a
+   * deploy rather than on a store release.
+   */
+  const coach = storedCoach(c.get('coachJson'));
+
   const data = await charged(sub, async () => {
     const { data } = await generate<{ reply: string }>({
       engine: 'chat',
       system: chatPrompt(tone),
-      parts: [{ text: `Here is the chat so far:\n\n${transcript}\n\nWrite the best reply for me to send.` }],
+      parts: [
+        { text: `Here is the chat so far:\n\n${transcript}\n\nWrite the best reply for me to send.` },
+        ...coachParts(coach),
+      ],
       schema: CHAT_SCHEMA,
       maxOutputTokens: 512,
     });

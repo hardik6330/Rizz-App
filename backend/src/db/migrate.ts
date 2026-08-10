@@ -85,6 +85,7 @@ const PROBES: { when: number; tag: string; applied: () => Promise<boolean> }[] =
   { when: 1777000000000, tag: '0007_otp_send_cap', applied: () => columnExists('email_otps', 'sends') },
   { when: 1778000000000, tag: '0008_profile_scans', applied: () => tableExists('profile_scans') },
   { when: 1779000000000, tag: '0009_saved_items', applied: () => tableExists('saved_items') },
+  { when: 1780000000000, tag: '0010_coach_profile', applied: () => columnExists('users', 'coach_json') },
 ];
 
 /** The newest migration whose effects are already present, or null for a fresh DB. */

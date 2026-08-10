@@ -15,6 +15,21 @@ declare module 'hono' {
      * count WITHOUT a second SELECT — see `withCredits` in routes/ai.ts.
      */
     credits: { isPro: boolean; analysisCount: number };
+    /**
+     * The stored onboarding answers, RAW — the JSON string off the row, or null.
+     *
+     * Ridden along on the row `requireAuth` was already reading rather than
+     * fetched where it is used, because the one route that needs it
+     * (`/v1/ai/chat`, whose caller is native and cannot send it) would otherwise
+     * pay a second SELECT on a `connectionLimit: 1` pool immediately before a
+     * 3–15s Gemini call. An extra column on a lookup already happening is free;
+     * an extra round trip there is not.
+     *
+     * Left unparsed on purpose. Validating it against the zod enums is the AI
+     * routes' job — this middleware has no business knowing the shape, and
+     * nothing else reads it.
+     */
+    coachJson: string | null;
   }
 }
 
@@ -55,7 +70,7 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
   }
 
   const rows = await db.execute(sql`
-    SELECT ${proNow()} AS is_pro, banned_at, token_epoch, analysis_count
+    SELECT ${proNow()} AS is_pro, banned_at, token_epoch, analysis_count, coach_json
       FROM users WHERE id = ${claims.sub} LIMIT 1
   `);
   const row = (rows as unknown as [
@@ -64,6 +79,7 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
       banned_at: number | null;
       token_epoch: number;
       analysis_count: number;
+      coach_json: string | null;
     }>,
   ])[0]?.[0];
 
@@ -79,6 +95,7 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
 
   c.set('user', { sub: claims.sub, pro: row.is_pro === 1, ep: row.token_epoch, dev: claims.dev });
   c.set('credits', { isPro: row.is_pro === 1, analysisCount: row.analysis_count });
+  c.set('coachJson', row.coach_json);
   await next();
 };
 

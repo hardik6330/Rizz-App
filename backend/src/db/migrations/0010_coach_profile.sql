@@ -1,0 +1,39 @@
+-- The three onboarding answers, kept on the account.
+--
+-- ## Why this exists, given the "never a third PII column" rule in schema.ts
+--
+-- That rule's target is content: nothing derived from what a user ANALYSED gets
+-- a home here, and that still holds — no screenshot, no transcript, no report
+-- text. This is three preference enums the user chose on a setup screen about
+-- how they want to be written for. It is an amendment to the rule, made
+-- deliberately, not an erosion of it.
+--
+-- ## What it buys
+--
+-- 1. The answers survive a reinstall. Everything else the account owns already
+--    does (credits, vault, scan history); personalisation was the one thing that
+--    did not, because it lived only in MMKV. The failure was silent — the app
+--    works, the output just quietly goes back to generic.
+--
+-- 2. The native chat bubble can be personalised WITHOUT A STORE RELEASE.
+--    `GeminiChatClient.kt` cannot reach the store, so every other route to it
+--    (more fields through `configureChat`, or posting `coach` from Kotlin) is a
+--    native change: version bump, rebuild, review. A column the server can look
+--    up by user id is a deploy.
+--
+-- ## Shape
+--
+-- One JSON string, not three columns. Nothing queries or filters on it — it is
+-- read whole, on one code path, and handed to a prompt builder. Three typed
+-- columns would buy an index nobody wants and cost a migration every time a
+-- question changes. VARCHAR(255) is far more than the enum payload can reach and
+-- caps what a compromised client could park on the row.
+--
+-- Nullable, with no default: an install that predates the onboarding, or a user
+-- who somehow has no answers, reads NULL and gets the un-personalised prompt.
+-- That is the same degradation as sending no `coach` at all.
+--
+-- Deletion needs no new code: this is a column on `users`, and account deletion
+-- already drops that row inside its transaction (routes/user.ts).
+ALTER TABLE users
+  ADD COLUMN coach_json VARCHAR(255) NULL;

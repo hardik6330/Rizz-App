@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { BackHandler, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -63,6 +63,7 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const { gutter } = useLayout();
   const setCoach = useRizzStore((s) => s.setCoach);
+  const coach = useRizzStore((s) => s.coach);
 
   const [step, setStep] = useState(0);
   const [apps, setApps] = useState<CoachApp[]>([]);
@@ -97,13 +98,28 @@ export default function OnboardingScreen() {
     setStep(2);
   };
 
+  /**
+   * **The only exit, and it is not called here.** Answering writes the store; the
+   * store having answers is what closes the screen.
+   *
+   * Because the other way to acquire answers is the server: a reinstall logs in,
+   * `/v1/user/credits` returns the stored profile, and `adoptCoach` fills the
+   * store while this screen is already on its way up — the launch push fires on a
+   * 400ms timer and the round trip does not always beat it. Closing on the store
+   * rather than on the tap means that user gets the screen dismissed out from
+   * under them instead of being asked three questions they already answered on
+   * their old phone.
+   */
+  useEffect(() => {
+    if (coach) router.back();
+  }, [coach]);
+
   const finish = (style: CoachStyle) => {
     haptic.success();
     // `struggle` cannot be null here — step 2 is only reachable through
     // `pickStruggle` — but the store type does not know that, and a fallback is
     // cheaper than a non-null assertion that a future re-order would make a lie.
     setCoach({ apps, struggle: struggle ?? 'opening', style });
-    router.back();
   };
 
   return (
