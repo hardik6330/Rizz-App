@@ -179,6 +179,7 @@ ai.post('/profile', async (c) => {
   } else {
     // Save scan summary to profile_scans (no raw images persisted)
     const scanId = data.id ?? `scan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    data.id = scanId;
     const title = data.profileName ? `${data.profileName}'s Profile` : `${mode === 'self' ? 'My' : 'Target'} Profile Scan`;
     await db.execute(sql`
       INSERT INTO profile_scans (id, user_id, mode, title, summary_json, created_at)

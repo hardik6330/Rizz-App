@@ -139,7 +139,7 @@ async function analyzeViaApi(
     // because it comes off a screen an attacker may control.
     ui_text: uiText,
   });
-  return { ...parsed, id: uid(), createdAt: Date.now(), mode };
+  return { ...parsed, id: parsed.id ?? uid(), createdAt: Date.now(), mode };
 }
 
 // ---------------------------------------------------------------------------
