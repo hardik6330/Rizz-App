@@ -62,8 +62,6 @@ export const users = mysqlTable(
 
     // Mirrors src/state/limits.ts. Same rule, second caller — never a fork.
     analysisCount: int('analysis_count', { unsigned: true }).notNull().default(0),
-    dailyCallCount: int('daily_call_count', { unsigned: true }).notNull().default(0),
-    dailyCallDate: date('daily_call_date', { mode: 'string' }),
 
     /**
      * The three onboarding answers as JSON — `{ apps, struggle, style }`.
@@ -127,7 +125,7 @@ export const creditEvents = mysqlTable(
   'credit_events',
   {
     id: bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
-    userId: char('user_id', { length: 36 }).notNull(),
+    userId: char('user_id', { length: 36 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
     /** +1 charge, -1 refund. */
     delta: tinyint('delta').notNull(),
     /** Fixed vocabulary, never user content — same rule as lib/logger.ts. */
@@ -227,7 +225,7 @@ export const profileScans = mysqlTable(
   'profile_scans',
   {
     id: varchar('id', { length: 64 }).primaryKey(),
-    userId: char('user_id', { length: 36 }).notNull(),
+    userId: char('user_id', { length: 36 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
     mode: mysqlEnum('mode', ['self', 'them']).notNull(),
     title: varchar('title', { length: 128 }),
     summaryJson: json('summary_json').notNull(),
@@ -241,7 +239,7 @@ export const savedItems = mysqlTable(
   'saved_items',
   {
     id: varchar('id', { length: 64 }).primaryKey(),
-    userId: char('user_id', { length: 36 }).notNull(),
+    userId: char('user_id', { length: 36 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
     category: varchar('category', { length: 32 }).notNull(),
     text: mediumtext('text').notNull(),
     note: varchar('note', { length: 255 }),
