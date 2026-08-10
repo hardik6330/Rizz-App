@@ -380,6 +380,9 @@ export async function deleteAccount(): Promise<void> {
   // The account is gone — remembering its address would offer a login that
   // cannot succeed.
   kv.remove(LAST_EMAIL_KEY);
+  void import('@/state/useRizzStore').then(({ useRizzStore }) => {
+    useRizzStore.setState({ scanHistory: [] });
+  });
   onAccount?.(null);
 }
 

@@ -278,15 +278,19 @@ export default function ProfileScreen() {
         void import('@/state/session').then(({ fetchScans }) => {
           void fetchScans().then((scans) => {
             if (scans.length > 0) {
-              scans.forEach((item) => {
-                addScan({
-                  id: item.id,
-                  mode: item.mode,
-                  isProfile: true,
-                  name: item.title,
-                  createdAt: item.createdAt,
-                  ...item.summary,
-                });
+              const formattedScans = scans.map((item) => ({
+                id: item.id,
+                mode: item.mode,
+                isProfile: true,
+                name: item.title,
+                createdAt: item.createdAt,
+                ...item.summary,
+              }));
+              useRizzStore.setState((state) => {
+                // Merge DB scans with existing MMKV items by unique ID
+                const map = new Map();
+                [...formattedScans, ...state.scanHistory].forEach((s) => map.set(s.id, s));
+                return { scanHistory: Array.from(map.values()).slice(0, 20) };
               });
             }
           });
