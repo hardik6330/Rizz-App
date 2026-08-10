@@ -1,3 +1,4 @@
+import { coachPayload } from '@/state/useRizzStore';
 import type { ProfileCapture, ProfileScanInput, ProfileScanResult, ScanMode } from '@/types';
 import { uid, wait } from '@/utils/misc';
 import { callApi, imagePayload, isLiveApi } from './api';
@@ -138,6 +139,7 @@ async function analyzeViaApi(
     // server fences it into the user turn — never the system instruction —
     // because it comes off a screen an attacker may control.
     ui_text: uiText,
+    coach: coachPayload(),
   });
   const res = parsed as { id?: string };
   return { ...parsed, id: res.id ?? uid(), createdAt: Date.now(), mode };

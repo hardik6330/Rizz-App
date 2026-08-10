@@ -219,8 +219,30 @@ export default function RootLayout() {
   useEffect(() => {
     void identify();
   }, [account]);
+  /**
+   * First launch, step 2 of 3: the three setup questions.
+   *
+   * `coach == null` is the flag — see the note on it in `useRizzStore`. Gated on
+   * `accountStepDone` so the modals queue rather than race, exactly like the
+   * analyzer step below, and it comes BEFORE the analyzer because the analyzer
+   * screen is a permission ask and this one is what tells a new user what the app
+   * is for at all.
+   *
+   * Unlike the analyzer there is no "shown once" flag: the answers ARE the flag,
+   * so a user who somehow escapes without answering is asked again next launch.
+   */
+  const coach = useRizzStore((s) => s.coach);
+  const coachStepDone = coach != null;
+
   /** Did the gate actually run this session? Gates the landing below. */
   const onboardedThisSession = useRef(false);
+
+  useEffect(() => {
+    if (!accountStepDone || coachStepDone) return;
+    onboardedThisSession.current = true;
+    const t = setTimeout(() => router.push('/onboarding'), 400);
+    return () => clearTimeout(t);
+  }, [accountStepDone, coachStepDone]);
   useEffect(() => {
     if (accountStepDone) {
       // Nothing to gate — this IS the app, so show it.
@@ -250,14 +272,14 @@ export default function RootLayout() {
   }, [accountStepDone]);
 
   /**
-   * First launch, step 2 of 2: walk the user through enabling the analyzer. The
+   * First launch, step 3 of 3: walk the user through enabling the analyzer. The
    * feature is invisible until accessibility is granted, and accessibility has no
    * permission prompt — it can only be reached by hand in Settings — so without
    * this the headline feature is undiscoverable.
    *
-   * Waits on `accountStepDone` so the two modals queue instead of racing: both
-   * effects run on the same mount, and pushing analyzer while account is
-   * animating in leaves the user on whichever won.
+   * Waits on `accountStepDone` AND `coachStepDone` so the three modals queue
+   * instead of racing: the effects run on the same mount, and pushing analyzer
+   * while another is animating in leaves the user on whichever won.
    *
    * Shown once. `hasOnboarded` is set on dismissal whether or not they granted
    * anything: nagging every launch is worse than letting them find it in Profile
@@ -265,11 +287,11 @@ export default function RootLayout() {
    */
   const hasOnboarded = useRizzStore((s) => s.hasOnboarded);
   useEffect(() => {
-    if (!isSupported || hasOnboarded || !accountStepDone) return;
+    if (!isSupported || hasOnboarded || !accountStepDone || !coachStepDone) return;
     onboardedThisSession.current = true;
     const t = setTimeout(() => router.push('/analyzer'), 400);
     return () => clearTimeout(t);
-  }, [hasOnboarded, accountStepDone]);
+  }, [hasOnboarded, accountStepDone, coachStepDone]);
 
   /**
    * Land on Profile Scan when first-run finishes, not on the Lab.
@@ -285,12 +307,12 @@ export default function RootLayout() {
    */
   useEffect(() => {
     if (!onboardedThisSession.current) return;
-    if (!accountStepDone) return;
-    // On iOS/web there is no analyzer step, so the account step is the whole run.
+    if (!accountStepDone || !coachStepDone) return;
+    // On iOS/web there is no analyzer step, so account + setup is the whole run.
     if (isSupported && !hasOnboarded) return;
     onboardedThisSession.current = false;
     router.navigate('/profile');
-  }, [accountStepDone, hasOnboarded]);
+  }, [accountStepDone, coachStepDone, hasOnboarded]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -328,6 +350,16 @@ export default function RootLayout() {
           <Stack.Protected guard={accountStepDone}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="vault" options={{ presentation: 'modal' }} />
+            {/*
+              gestureEnabled off for the same reason as the account gate: the
+              setup answers are what every engine personalises from, and an iOS
+              swipe-dismiss would leave a user with none of them and no way back
+              to the questions. Android's hardware back is handled in the screen.
+            */}
+            <Stack.Screen
+              name="onboarding"
+              options={{ presentation: 'modal', gestureEnabled: false }}
+            />
             <Stack.Screen name="analyzer" options={{ presentation: 'modal' }} />
             <Stack.Screen
               name="paywall"

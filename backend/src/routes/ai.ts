@@ -3,7 +3,17 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { generate, imagePart } from '../ai/gateway.ts';
-import { BIO_PROMPT, FEED_PROMPT, PROFILE_PROMPTS, chatPrompt, labPrompt } from '../ai/prompts.ts';
+import {
+  BIO_PROMPT,
+  COACH_APPS,
+  COACH_STRUGGLES,
+  COACH_STYLES,
+  FEED_PROMPT,
+  PROFILE_PROMPTS,
+  chatPrompt,
+  coachParts,
+  labPrompt,
+} from '../ai/prompts.ts';
 import { BIO_SCHEMA, CHAT_SCHEMA, FEED_SCHEMA, PROFILE_SCHEMA, labSchema } from '../ai/schemas.ts';
 import { db } from '../db/client.ts';
 import { Errors } from '../lib/errors.ts';
@@ -94,18 +104,36 @@ function withCredits(c: Parameters<typeof creditsAfter>[0], result: unknown, del
   return { result, credits: creditsEnvelope(creditsAfter(c, delta)) };
 }
 
+/**
+ * The onboarding answers, optional on every engine.
+ *
+ * Closed enums, not strings — see the note on `coachParts` in ai/prompts.ts.
+ * Anything the client sends that is not on these lists is dropped by zod before
+ * it can reach a prompt, so an old build sending a since-renamed value degrades
+ * to "no preferences" rather than 400ing a paying user's analysis.
+ */
+const Coach = z
+  .object({
+    apps: z.array(z.enum(COACH_APPS)).max(COACH_APPS.length).optional(),
+    struggle: z.enum(COACH_STRUGGLES).optional(),
+    style: z.enum(COACH_STYLES).optional(),
+  })
+  .optional()
+  .catch(undefined);
+
 // ── POST /v1/ai/lab ──────────────────────────────────────────────────────────
 const LabBody = z.object({
   image: Image,
   mode: z.enum(['rizz', 'vibe', 'roast']),
   temperature: z.number().min(0).max(2).optional(),
+  coach: Coach,
 });
 
 ai.post('/lab', async (c) => {
   const { sub } = c.get('user');
   const body = LabBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) throw Errors.badRequest('image and mode are required');
-  const { image, mode, temperature } = body.data;
+  const { image, mode, temperature, coach } = body.data;
 
   const data = await charged(sub, async () => {
     const { data } = await generate<Record<string, unknown>>({
@@ -114,6 +142,7 @@ ai.post('/lab', async (c) => {
       parts: [
         ...validImages([image]),
         { text: 'Analyze this chat screenshot and return the RizzCoach breakdown.' },
+        ...coachParts(coach),
       ],
       schema: labSchema(mode),
       temperature,
@@ -129,13 +158,14 @@ const ProfileBody = z.object({
   images: z.array(Image).min(1).max(3),
   mode: z.enum(['self', 'them']),
   ui_text: z.string().max(8192).optional(),
+  coach: Coach,
 });
 
 ai.post('/profile', async (c) => {
   const { sub } = c.get('user');
   const body = ProfileBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) throw Errors.badRequest('images[1..3] and mode are required');
-  const { images, mode, ui_text } = body.data;
+  const { images, mode, ui_text, coach } = body.data;
 
   const shots = images.length > 1 ? `these ${images.length} screenshots` : 'this screenshot';
 
@@ -163,6 +193,7 @@ ai.post('/profile', async (c) => {
               },
             ]
           : []),
+        ...coachParts(coach),
       ],
       schema: PROFILE_SCHEMA,
       temperature: 0.85,
@@ -195,13 +226,14 @@ const BioBody = z.object({
   interests: z.array(z.string().max(64)).min(1).max(12),
   vibe: z.enum(['Funny', 'Sarcastic', 'Chill', 'Ambitious']),
   current_bio: z.string().max(2000).optional(),
+  coach: Coach,
 });
 
 ai.post('/bio', async (c) => {
   const { sub } = c.get('user');
   const body = BioBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) throw Errors.badRequest('interests and vibe are required');
-  const { interests, vibe, current_bio } = body.data;
+  const { interests, vibe, current_bio, coach } = body.data;
 
   const data = await charged(sub, async () => {
     const { data } = await generate<Record<string, unknown>>({
@@ -216,6 +248,7 @@ ai.post('/bio', async (c) => {
             'Write the 3 optimized bios.',
           ].join('\n'),
         },
+        ...coachParts(coach),
       ],
       schema: BIO_SCHEMA,
       maxOutputTokens: 4096,

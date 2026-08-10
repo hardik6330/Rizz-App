@@ -164,6 +164,96 @@ export function chatPrompt(tone: string): string {
   return `${CHAT_BASE}\n\nCRITICAL TONE INSTRUCTION: The user has requested a reply with "${tone.toUpperCase()}" tone. ${guidance}`;
 }
 
+// ── Coach profile (the onboarding answers) ───────────────────────────────────
+
+/**
+ * What the user told us on first run, turned into prompt text.
+ *
+ * The point of the onboarding questions is NOT that they exist — it is that
+ * every answer changes what the model writes. A quiz whose answers are stored
+ * and never read is three taps of friction in front of the paywall for nothing,
+ * which is what most of this category ships.
+ *
+ * Everything here is a CLOSED ENUM validated by zod at the route. That is what
+ * makes it safe to hand to the model at all: there is no free-text field, so
+ * there is nothing a user can type that becomes an instruction.
+ *
+ * It rides in the USER turn (`coachParts`), never the system instruction, for
+ * two reasons. The obvious one is the same rule `ui_text` follows. The load-
+ * bearing one is `promptVersion()` in gateway.ts: it hashes the system string
+ * and memoises by it, so per-user system prompts would mint a new "version" per
+ * combination — 100+ meaningless prompt hashes in the logs and an unbounded map
+ * — and destroy the cost/quality attribution the hash exists for.
+ */
+export const COACH_APPS = ['tinder', 'bumble', 'hinge', 'instagram', 'whatsapp', 'snapchat'] as const;
+export const COACH_STRUGGLES = ['opening', 'keeping', 'asking_out', 'replying'] as const;
+export const COACH_STYLES = ['casual', 'funny', 'dry', 'flirty', 'short'] as const;
+
+export type CoachApp = (typeof COACH_APPS)[number];
+export type CoachStruggle = (typeof COACH_STRUGGLES)[number];
+export type CoachStyle = (typeof COACH_STYLES)[number];
+
+export interface CoachProfile {
+  apps?: CoachApp[];
+  struggle?: CoachStruggle;
+  style?: CoachStyle;
+}
+
+const APP_LABEL: Record<CoachApp, string> = {
+  tinder: 'Tinder',
+  bumble: 'Bumble',
+  hinge: 'Hinge',
+  instagram: 'Instagram DMs',
+  whatsapp: 'WhatsApp',
+  snapchat: 'Snapchat',
+};
+
+/** What each struggle should actually change about the output. */
+const STRUGGLE_NOTE: Record<CoachStruggle, string> = {
+  opening:
+    'They freeze on the first message. Bias toward something sendable cold that is easy to answer — never a line that needs context they do not have yet.',
+  keeping:
+    'Their conversations die after a few messages. Bias toward lines that hand the other person something to react to; avoid anything that closes the loop or can be answered with one word.',
+  asking_out:
+    'They stall before asking someone out. If the thread is warm enough to carry it, at least one option should move toward actually meeting up — concrete, low-pressure, easy to say yes to.',
+  replying:
+    'They go blank when they do not know what to say back. Keep every option short and immediately sendable — no option that needs them to think of something themselves first.',
+};
+
+/** What each style means in writing, in the model's own register. */
+const STYLE_NOTE: Record<CoachStyle, string> = {
+  casual: 'relaxed and unpolished — lowercase is fine, punctuation optional, nothing that reads as written',
+  funny: 'jokey and a bit silly, willing to go for the bit',
+  dry: 'deadpan and understated — no exclamation marks, no emoji, humour by delivery not by volume',
+  flirty: 'warm and forward, a little charged, without being explicit',
+  short: 'very few words, usually one line, never two sentences where one works',
+};
+
+/**
+ * The coach profile as user-turn parts. Empty array when we know nothing —
+ * an empty preferences block is worse than none, it invites the model to invent
+ * a user.
+ */
+export function coachParts(coach?: CoachProfile): { text: string }[] {
+  if (!coach) return [];
+  const lines: string[] = [];
+  if (coach.apps?.length) {
+    lines.push(`They are messaging on: ${coach.apps.map((app) => APP_LABEL[app]).join(', ')}.`);
+  }
+  if (coach.struggle) lines.push(STRUGGLE_NOTE[coach.struggle]);
+  if (coach.style) {
+    lines.push(
+      `Their own texting style is ${STYLE_NOTE[coach.style]}. Write in that register — match it, never upgrade it.`,
+    );
+  }
+  if (lines.length === 0) return [];
+  return [
+    {
+      text: `About the user, from their own setup answers. These are preferences about how to write for them — not facts about anything in the image:\n${lines.join('\n')}`,
+    },
+  ];
+}
+
 // ── Boot guard ───────────────────────────────────────────────────────────────
 
 /**

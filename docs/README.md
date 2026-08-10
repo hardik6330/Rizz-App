@@ -71,6 +71,7 @@ RizzCoach/
 │   │   ├── vault.tsx             saved lines (DB synced & themed delete confirmation modal)
 │   │   ├── account.tsx           signup · login · sign-out · delete account; the auth gate
 │   │   ├── analyzer.tsx          disclosure + the two-permission flow for the bubble
+│   │   ├── onboarding.tsx        the 3 setup questions — every answer feeds coachParts()
 │   │   └── +not-found.tsx
 │   │
 │   ├── components/             25 shared UI pieces
@@ -174,6 +175,18 @@ skip straight past the report and exit the app. Every such screen calls
 
 `vault` and `paywall` are full-screen modals on Android and must apply `insets.top` themselves —
 iOS sheets report 0 there.
+
+**First run is three steps, in this order, and `_layout.tsx` queues them:**
+
+| Step | Route | Flag that ends it | Skippable |
+|---|---|---|---|
+| 1 | `account.tsx` | `account != null` | no — `(tabs)` is not even declared |
+| 2 | `onboarding.tsx` | `coach != null` | no |
+| 3 | `analyzer.tsx` | `hasOnboarded` | yes, set on dismissal either way |
+
+Each waits on the previous one's flag. They are all pushes fired on the same mount, so a step
+that does not wait lands on top of whichever modal won the race. Step 3 is Android-only
+(`isSupported`), which is why the landing effect treats iOS as done after step 2.
 
 **Only routes belong in `src/app/`.** The folder *is* the router, so a helper component left
 beside a screen becomes a reachable URL. That is why the two big screens were split into
@@ -381,6 +394,24 @@ would turn a cosmetic server change into a user-facing outage. `isProfile: false
 carrying none of the report (a rejection is a valid answer), and an unknown route passes so a
 fifth engine is never blocked by a guard nobody has written. Checked by
 `contracts.selfcheck.ts` in `npm run checks`.
+
+### 4.5b The onboarding answers are prompt input, not a stored quiz
+
+The three first-run questions (`onboarding.tsx`) become `coachParts()` in `ai/prompts.ts`, which
+the Lab, Profile Scan and Bio Lab routes append to the **user turn**. Rules:
+
+- **A new question means a new branch in `coachParts` in the same change.** An answer that is
+  only stored is friction in front of the paywall that buys nothing, and nothing fails when it
+  happens — the app works, the output is just generic. `ai/prompts.selfcheck.ts` is what notices.
+- **Closed enums only, both sides.** `COACH_APPS` / `COACH_STRUGGLES` / `COACH_STYLES` are zod
+  enums on the server and a union in `src/types.ts`. That is what makes it safe to feed the
+  model at all: with no free-text field there is nothing a user can type that becomes an
+  instruction. Rename a value on one side only and the server silently drops it.
+- **User turn, never the system instruction.** Besides the `ui_text` rule, `promptVersion()`
+  hashes and memoises the system string — a per-user system prompt would mint a prompt "version"
+  per combination and destroy the cost/quality attribution the hash exists for.
+- The native chat bubble does **not** send it yet: `GeminiChatClient.kt` posts `transcript` and
+  `tone` only, and adding a field there is a rebuild, not an OTA.
 
 ### 4.6 Adding an engine
 
@@ -744,7 +775,7 @@ npx eslint src modules                                  # must be 0 errors
 node src/state/limits.selfcheck.ts                      # swipe allowance + store keys
 node src/services/contracts.selfcheck.ts                # API response guards
 node src/theme/contrast.selfcheck.ts                    # palette vs WCAG AA
-cd backend && npm run check                             # tsc + 6 pure selfchecks
+cd backend && npm run check                             # tsc + 7 pure selfchecks
 cd backend && npm run check:db                          # 4 selfchecks against a real DB
 cd backend && npx tsc --noEmit
 cd backend && node --env-file=.env --import tsx src/ai/gateway.selfcheck.ts   # 1 live Gemini call

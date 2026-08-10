@@ -211,3 +211,24 @@ export interface ProfileCapture extends ProfileScanInput {
   /** 0–1 screen-detection confidence. */
   confidence?: number;
 }
+
+/**
+ * The three first-run answers, and the only personalisation the engines get.
+ *
+ * **These values are a wire contract.** They are sent verbatim to
+ * `/v1/ai/{lab,profile,bio}` and matched against closed zod enums there — see
+ * `COACH_APPS` / `COACH_STRUGGLES` / `COACH_STYLES` in
+ * `backend/src/ai/prompts.ts`. Renaming one here without renaming it there does
+ * not fail: the server drops the unknown value and the user quietly gets generic
+ * output, which is the exact failure the onboarding exists to prevent. Change
+ * both, or neither.
+ */
+export type CoachApp = 'tinder' | 'bumble' | 'hinge' | 'instagram' | 'whatsapp' | 'snapchat';
+export type CoachStruggle = 'opening' | 'keeping' | 'asking_out' | 'replying';
+export type CoachStyle = 'casual' | 'funny' | 'dry' | 'flirty' | 'short';
+
+export interface CoachProfile {
+  apps: CoachApp[];
+  struggle: CoachStruggle;
+  style: CoachStyle;
+}

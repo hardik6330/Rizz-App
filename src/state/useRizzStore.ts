@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
-import type { FeedItem, ProfileScanResult, SavedItem } from '@/types';
+import type { CoachProfile, FeedItem, ProfileScanResult, SavedItem } from '@/types';
 import { nextScanHistory, nextSwipeState, todayKey } from './limits';
 import {
   clearVaultItems,
@@ -51,6 +51,18 @@ interface RizzState {
    */
   hasOnboarded: boolean;
   /**
+   * The first-run answers, or null while they are still unanswered.
+   *
+   * **null is what makes `/onboarding` appear** — same shape as `account` gating
+   * the auth wall. So this is also the "have they done the quiz" flag; a separate
+   * boolean alongside it would be a second source of truth for one question, and
+   * the two would eventually disagree about whether to show a modal.
+   *
+   * Read by every engine through `coachPayload()`. Cleared on account deletion,
+   * because the next person to use this install is a different person.
+   */
+  coach: CoachProfile | null;
+  /**
    * Signed-in username, or null. **The single owner of "am I signed in".**
    *
    * Lives here rather than in `session.ts` because the launch sequence gates on
@@ -71,6 +83,7 @@ interface RizzState {
   setDailyFeed: (items: FeedItem[], date: string) => void;
   setFeedback: (id: string, value: 'up' | 'down') => void;
   setOnboarded: () => void;
+  setCoach: (coach: CoachProfile) => void;
 }
 
 export const useRizzStore = create<RizzState>()(
@@ -86,6 +99,7 @@ export const useRizzStore = create<RizzState>()(
       dailyFeedDate: null,
       feedback: {},
       hasOnboarded: false,
+      coach: null,
       account: null,
 
       toggleSave: (item) =>
@@ -183,6 +197,8 @@ export const useRizzStore = create<RizzState>()(
         set((state) => ({ feedback: { ...state.feedback, [id]: value } })),
 
       setOnboarded: () => set({ hasOnboarded: true }),
+
+      setCoach: (coach) => set({ coach }),
     }),
     {
       name: 'rizzcoach-store',
@@ -216,6 +232,8 @@ export const useRizzStore = create<RizzState>()(
         feedback: state.feedback,
         // Must persist, or the first-run walkthrough reappears on every launch.
         hasOnboarded: state.hasOnboarded,
+        // Same — and it is also the personalisation every engine reads.
+        coach: state.coach,
         account: state.account,
       }),
     },
@@ -255,7 +273,7 @@ onAccountChanged((account) => {
  * Sign-out does NOT come through here — see `onAccountDeleted` in session.ts.
  */
 onAccountDeleted(() => {
-  useRizzStore.setState({ savedItems: [], scanHistory: [] });
+  useRizzStore.setState({ savedItems: [], scanHistory: [], coach: null });
 });
 
 /**
@@ -264,3 +282,16 @@ onAccountDeleted(() => {
  */
 export const useOutOfCredits = () =>
   useRizzStore((state) => !state.isPro && state.analysisCount >= FREE_ANALYSIS_LIMIT);
+
+/**
+ * The onboarding answers as an API payload, or undefined.
+ *
+ * One definition for the three engines that send it (Lab, Profile Scan, Bio Lab)
+ * — same reasoning as `useOutOfCredits`. `undefined` rather than `null` so it
+ * drops out of the JSON body entirely when unanswered, which is exactly what the
+ * optional field on the server expects.
+ *
+ * Not a hook: it is read inside an async request, not during render.
+ */
+export const coachPayload = (): CoachProfile | undefined =>
+  useRizzStore.getState().coach ?? undefined;

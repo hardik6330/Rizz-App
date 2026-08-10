@@ -1,3 +1,4 @@
+import { coachPayload } from '@/state/useRizzStore';
 import type { BioInput, BioResult } from '@/types';
 import { uid, wait } from '@/utils/misc';
 import { callApi, isLiveApi } from './api';
@@ -38,6 +39,7 @@ async function optimizeViaApi({ interests, vibe, currentBio }: BioInput): Promis
     interests,
     vibe,
     current_bio: currentBio?.trim() || undefined,
+    coach: coachPayload(),
   });
   return { ...parsed, id: uid(), createdAt: Date.now() };
 }

@@ -1,4 +1,5 @@
 import { ANALYZE_STAGES, MOCK_ANALYSES } from '@/data/mockAnalysis';
+import { coachPayload } from '@/state/useRizzStore';
 import type { AnalysisResult, EngineMode } from '@/types';
 import { uid, wait } from '@/utils/misc';
 import { callApi, imagePayload, isLiveApi } from './api';
@@ -55,6 +56,9 @@ async function analyzeViaApi(
     image: imagePayload(base64, mimeType),
     mode,
     temperature,
+    // The onboarding answers. Optional server-side, so an install that predates
+    // the quiz still analyses — it just gets the un-personalised reply set.
+    coach: coachPayload(),
   });
   return { ...parsed, id: uid(), createdAt: Date.now() };
 }

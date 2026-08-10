@@ -495,6 +495,33 @@ signal.
 (`/paywall?source=…`), so a new entry point is attributed for free and `paywall_viewed` cannot
 drift from `paywall_dismissed`. Do not instrument the `router.push` call sites.
 
+## Onboarding answers — `src/app/onboarding.tsx` → `coachParts()`
+
+**Every question in the setup flow must change the model's output, in the same change that
+adds it.** The three answers (`apps`, `struggle`, `style`) are persisted as `coach` on the
+store, sent by Lab / Profile Scan / Bio Lab via `coachPayload()`, and turned into a user-turn
+part by `coachParts()` in `backend/src/ai/prompts.ts`. A question whose answer is only stored
+is three taps of friction in front of the paywall that buys nothing — and it fails silently:
+the app works, the output is just generic. `backend/src/ai/prompts.selfcheck.ts` is the only
+thing that notices.
+
+**Closed enums on both sides, and they are a wire contract.** `COACH_APPS`,
+`COACH_STRUGGLES`, `COACH_STYLES` are zod enums on the server; `CoachApp`, `CoachStruggle`,
+`CoachStyle` in `src/types.ts` are the same strings. Renaming one side only does not 400 — the
+server drops the unknown value and the user quietly loses personalisation. Change both.
+
+**It rides in the user turn, never the system instruction.** Same rule as `ui_text`, plus one
+more: `promptVersion()` hashes and memoises the system string, so a per-user system prompt
+would mint a prompt "version" per answer combination and destroy the cost and quality
+attribution that hash exists for.
+
+`coach == null` is what makes the onboarding modal appear — there is no separate "has done the
+quiz" boolean, because two sources of truth for one question eventually disagree. It is cleared
+on account deletion; the next person on this install is a different person.
+
+The native chat bubble does not send it. `GeminiChatClient.kt` posts `transcript` and `tone`
+only, and adding a field there is a rebuild, not an OTA.
+
 ## Freemium rules
 
 - `FREE_ANALYSIS_LIMIT` (3) — **lifetime**, shared by Screenshot Scan, Bio Optimizer and
