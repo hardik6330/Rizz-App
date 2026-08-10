@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import type { FeedItem, ProfileScanResult, SavedItem } from '@/types';
 import { nextScanHistory, nextSwipeState, todayKey } from './limits';
-import { isLiveApi, onAccountChanged, onCreditsChanged } from './session';
+import { clearVaultItems, deleteVaultItem, isLiveApi, onAccountChanged, onCreditsChanged, saveVaultItem } from './session';
 import { zustandStorage } from './storage';
 
 /**
@@ -82,17 +82,25 @@ export const useRizzStore = create<RizzState>()(
       toggleSave: (item) =>
         set((state) => {
           const exists = state.savedItems.some((saved) => saved.id === item.id);
-          return {
-            savedItems: exists
-              ? state.savedItems.filter((saved) => saved.id !== item.id)
-              : [{ ...item, savedAt: Date.now() }, ...state.savedItems],
-          };
+          if (exists) {
+            void deleteVaultItem(item.id);
+            return { savedItems: state.savedItems.filter((saved) => saved.id !== item.id) };
+          } else {
+            const newItem = { ...item, savedAt: Date.now() };
+            void saveVaultItem(newItem);
+            return { savedItems: [newItem, ...state.savedItems] };
+          }
         }),
 
-      removeSaved: (id) =>
-        set((state) => ({ savedItems: state.savedItems.filter((saved) => saved.id !== id) })),
+      removeSaved: (id) => {
+        void deleteVaultItem(id);
+        set((state) => ({ savedItems: state.savedItems.filter((saved) => saved.id !== id) }));
+      },
 
-      clearVault: () => set({ savedItems: [] }),
+      clearVault: () => {
+        void clearVaultItems();
+        set({ savedItems: [] });
+      },
 
       /**
        * Keyed by id so re-adding the same report replaces it rather than

@@ -478,6 +478,67 @@ export async function deleteScan(id: string): Promise<boolean> {
   }
 }
 
+/** Pull saved vault items from backend DB. */
+export async function fetchVault(): Promise<Array<{ id: string; category: string; text: string; note?: string; savedAt: number }>> {
+  if (!isLiveApi) return [];
+  try {
+    const res = await fetch(apiUrl('/v1/user/vault'), {
+      headers: { Authorization: `Bearer ${await accessToken()}` },
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { items: Array<{ id: string; category: string; text: string; note?: string; savedAt: number }> };
+    return data.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Save or update a single vault item on backend DB. */
+export async function saveVaultItem(item: { id: string; category: string; text: string; note?: string; savedAt: number }): Promise<boolean> {
+  if (!isLiveApi) return true;
+  try {
+    const res = await fetch(apiUrl('/v1/user/vault'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${await accessToken()}`,
+      },
+      body: JSON.stringify(item),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Delete a single vault item from backend DB by ID. */
+export async function deleteVaultItem(id: string): Promise<boolean> {
+  if (!isLiveApi) return true;
+  try {
+    const res = await fetch(apiUrl(`/v1/user/vault/${id}`), {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${await accessToken()}` },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Clear all vault items from backend DB for user. */
+export async function clearVaultItems(): Promise<boolean> {
+  if (!isLiveApi) return true;
+  try {
+    const res = await fetch(apiUrl('/v1/user/vault'), {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${await accessToken()}` },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Push entitlement to the server and take the re-issued token.
  *

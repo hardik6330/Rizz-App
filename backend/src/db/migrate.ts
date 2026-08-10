@@ -83,6 +83,8 @@ const PROBES: { when: number; tag: string; applied: () => Promise<boolean> }[] =
   { when: 1775000000000, tag: '0005_email_otp', applied: () => tableExists('email_otps') },
   { when: 1776000000000, tag: '0006_otp_retention', applied: () => eventExists('ev_email_otps_gc') },
   { when: 1777000000000, tag: '0007_otp_send_cap', applied: () => columnExists('email_otps', 'sends') },
+  { when: 1778000000000, tag: '0008_profile_scans', applied: () => tableExists('profile_scans') },
+  { when: 1779000000000, tag: '0009_saved_items', applied: () => tableExists('saved_items') },
 ];
 
 /** The newest migration whose effects are already present, or null for a fresh DB. */

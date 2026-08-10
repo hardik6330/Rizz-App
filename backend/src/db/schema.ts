@@ -214,3 +214,18 @@ export const profileScans = mysqlTable(
   (t) => ({ idxUserCreated: index('idx_ps_user_created').on(t.userId, t.createdAt) }),
 );
 
+/** Saved lines / vault items per user. */
+export const savedItems = mysqlTable(
+  'saved_items',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    userId: char('user_id', { length: 36 }).notNull(),
+    category: varchar('category', { length: 32 }).notNull(),
+    text: mediumtext('text').notNull(),
+    note: varchar('note', { length: 255 }),
+    savedAt: bigint('saved_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({ idxUserSaved: index('idx_si_user_saved').on(t.userId, t.savedAt) }),
+);
+
+

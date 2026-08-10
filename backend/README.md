@@ -79,6 +79,7 @@ curl -s localhost:8787/v1/user/credits -H "Authorization: Bearer $TOKEN" | jq
 | `src/lib/logger.ts` | Takes a typed event, not a string, so a transcript has nowhere to leak into. Every line carries `rid` via `AsyncLocalStorage` |
 | `src/lib/otp.ts` | Email codes. Single-use (the DELETE predicate IS the check), 5-guess cap, 10-min expiry, 60s cooldown, 10/24h send cap |
 | `src/middleware/idempotency.ts` | ⚠ `body` holds AI-generated content — retention is **15 minutes**, not 24h. Do not lengthen |
+| `profile_scans` table | Stores profile scan summaries (migration 0008); fetched via `GET /v1/user/scans` & deleted atomically on account removal |
 
 ## Rules
 

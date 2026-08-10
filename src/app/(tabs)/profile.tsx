@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,7 +28,7 @@ import { PROFILE_LABELS, PROFILE_STAGES, analyzeProfile } from '@/services/profi
 import { isLiveApi } from '@/state/session';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type } from '@/theme/tokens';
 import type { ProfileCapture, ProfileScanResult, ProfileScore, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { timeAgo } from '@/utils/misc';
@@ -66,6 +66,7 @@ export default function ProfileScreen() {
    * app at all. Re-read on the same beats as `watching`.
    */
   const [killed, setKilled] = useState(false);
+  const [scanToDelete, setScanToDelete] = useState<ProfileScanResult | null>(null);
   const account = useRizzStore((state) => state.account);
   const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -277,26 +278,19 @@ export default function ProfileScreen() {
       if (isLiveApi) {
         void import('@/state/session').then(({ fetchScans }) => {
           void fetchScans().then((scans) => {
-            if (scans.length > 0) {
-              const formattedScans = scans.map((item) => ({
-                id: item.id,
-                mode: item.mode,
-                isProfile: true,
-                name: item.title,
-                createdAt: item.createdAt,
-                ...item.summary,
-              }));
-              useRizzStore.setState((state) => {
-                // Merge DB scans with existing MMKV items by unique ID
-                const map = new Map();
-                [...formattedScans, ...state.scanHistory].forEach((s) => map.set(s.id, s));
-                return { scanHistory: Array.from(map.values()).slice(0, 20) };
-              });
-            }
+            const formattedScans = scans.map((item) => ({
+              id: item.id,
+              mode: item.mode,
+              isProfile: true,
+              name: item.title,
+              createdAt: item.createdAt,
+              ...item.summary,
+            }));
+            useRizzStore.setState({ scanHistory: formattedScans.slice(0, 20) });
           });
         });
       }
-    }, [addScan, takePendingCapture]),
+    }, [takePendingCapture]),
   );
 
   /**
@@ -334,6 +328,13 @@ export default function ProfileScreen() {
   };
 
   const forgetScan = (entry: ProfileScanResult) => {
+    setScanToDelete(entry);
+  };
+
+  const confirmDeleteScan = () => {
+    if (!scanToDelete) return;
+    const entry = scanToDelete;
+    setScanToDelete(null);
     removeScan(entry.id);
     if (isLiveApi) {
       void import('@/state/session').then(({ deleteScan }) => {
@@ -613,6 +614,44 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {toast.element}
+
+      {/* ── Remove scan confirmation modal ──────────────────────────────── */}
+      <Modal
+        visible={scanToDelete != null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setScanToDelete(null)}
+      >
+        <Pressable
+          style={styles.scrim}
+          accessibilityLabel="Dismiss"
+          onPress={() => setScanToDelete(null)}
+        >
+          <Pressable style={styles.dialog} onPress={() => {}}>
+            <Text style={styles.dialogTitle}>Remove Scan?</Text>
+            <Text style={styles.dialogBody}>
+              Are you sure you want to remove this scan from your history? It will be deleted permanently.
+            </Text>
+            <View style={styles.dialogActions}>
+              <HapticPressable
+                onPress={() => setScanToDelete(null)}
+                accessibilityLabel="Cancel"
+                style={styles.dialogGhost}
+              >
+                <Text style={styles.dialogGhostText}>Cancel</Text>
+              </HapticPressable>
+              <HapticPressable
+                onPress={confirmDeleteScan}
+                accessibilityLabel="Confirm remove scan"
+                style={styles.dialogDanger}
+              >
+                <Text style={styles.dialogDangerText}>Remove</Text>
+              </HapticPressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1243,4 +1282,45 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
 
+  // ── Confirmation Dialog ────────────────────────────────────────────────────
+  scrim: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: 'rgba(3,3,8,0.72)',
+  },
+  dialog: {
+    alignSelf: 'stretch',
+    maxWidth: 400,
+    padding: spacing.xl,
+    gap: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: palette.surfaceHigh,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: palette.hairlineStrong,
+  },
+  dialogTitle: { ...type.h2 },
+  dialogBody: { ...type.bodyMuted, fontSize: 14 },
+  dialogActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  dialogGhost: {
+    paddingVertical: 11,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.full,
+  },
+  dialogGhostText: { fontSize: 14.5, fontWeight: '700', color: palette.textSecondary },
+  dialogDanger: {
+    paddingVertical: 11,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.full,
+    backgroundColor: 'rgba(255,92,92,0.14)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,92,92,0.4)',
+  },
+  dialogDangerText: { fontSize: 14.5, fontWeight: '700', color: palette.danger },
 });

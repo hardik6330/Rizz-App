@@ -64,11 +64,11 @@ RizzCoach/
 │   │   ├── (tabs)/
 │   │   │   ├── _layout.tsx         the four tabs, drawn by FloatingTabBar
 │   │   │   ├── index.tsx           ▸ LAB — chat screenshot → replies / vibe / roast
-│   │   │   ├── profile.tsx         ▸ PROFILE SCAN — self & them modes, tabbed report, history
+│   │   │   ├── profile.tsx         ▸ PROFILE SCAN — self & them modes, tabbed report, DB scan history & themed delete modal
 │   │   │   ├── bio.tsx             ▸ BIO OPTIMIZER — text inputs; needs useKeyboardInset
 │   │   │   └── discover.tsx        ▸ DISCOVER — daily feed, swipe limit, lock overlay
 │   │   ├── paywall.tsx           plans + purchase + restore; ALL paywall analytics live here
-│   │   ├── vault.tsx             saved lines (full-screen modal on Android)
+│   │   ├── vault.tsx             saved lines (DB synced & persistent across reinstalls)
 │   │   ├── analyzer.tsx          disclosure + the two-permission flow for the bubble
 │   │   └── +not-found.tsx
 │   │

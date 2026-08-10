@@ -10,6 +10,7 @@ import { useToast } from '@/components/Toast';
 import { HapticPressable } from '@/components/HapticPressable';
 import { VaultItem } from '@/components/VaultItem';
 import { APP_NAME } from '@/constants';
+import { fetchVault } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
@@ -29,6 +30,14 @@ export default function VaultScreen() {
   const savedItems = useRizzStore((state) => state.savedItems);
   const removeSaved = useRizzStore((state) => state.removeSaved);
   const clearVault = useRizzStore((state) => state.clearVault);
+
+  React.useEffect(() => {
+    fetchVault().then((items) => {
+      if (items.length > 0) {
+        useRizzStore.setState({ savedItems: items as SavedItem[] });
+      }
+    });
+  }, []);
 
   const items = useMemo(() => {
     const sorted = [...savedItems].sort((a, b) => b.savedAt - a.savedAt);

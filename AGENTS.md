@@ -76,6 +76,13 @@ it self-regulates: the same 40-line transcript measured thoughts=236/out=26 at 5
 thoughts=404/out=26 at 2048. Raising the cap buys more thinking, latency and cost for an
 identical answer. Measure with `usageMetadata` before changing any cap.
 
+**`profile_scans` & `saved_items` (Vault) persistence (`backend/src/routes/user.ts`, `src/state/session.ts`, `src/state/useRizzStore.ts`, `src/app/vault.tsx`):**
+- Profile scan summaries (`profile_scans`) and saved vault lines (`saved_items`) are stored in Railway MySQL and fetched via `GET /v1/user/scans` and `GET /v1/user/vault`.
+- **Zero-PII Storage**: Raw screenshots and images are NEVER persisted; only structured JSON scan summaries and user-bookmarked text lines are kept.
+- **Atomic Sync**: Server IDs are retained 1:1 on client store actions (`toggleSave`, `removeSaved`, `clearVault`) and synced with DB endpoints (`POST /v1/user/vault`, `DELETE /v1/user/vault/:id`, `DELETE /v1/user/vault`).
+- **Account Deletion Integrity**: Account deletion transaction in `backend/src/routes/user.ts` purges both `profile_scans` and `saved_items` along with user records. Client `deleteAccount()` resets local `scanHistory` and `savedItems`.
+- **Remove Scan Confirmation**: Removing a scan from history (`forgetScan` in `profile.tsx`) presents a themed confirmation dialog matching app design tokens (`scrim`, `dialog`, `dialogDanger`) before sending `DELETE /v1/user/scans/:id` and updating local state.
+
 **The silent mock fallback hides live errors.** Every engine catches failures and returns
 mock data so the app demos offline. When debugging "AI not working", check the console warn
 (`[engine] live analysis failed`) first — a live key does NOT mean you're seeing live output.

@@ -17,10 +17,10 @@ a Hono API on Vercel + Railway MySQL that holds the Gemini key.
 | Tool | Where | What it does |
 | --- | --- | --- |
 | Lab (Screenshot Scan) | `src/app/(tabs)/index.tsx` | chat screenshot → 3 replies, a vibe read, or a roast, plus an A/B response simulator |
-| Profile Scan | `src/app/(tabs)/profile.tsx` | 1–3 screenshots → a scored report on your profile, or openers for someone else's |
+| Profile Scan | `src/app/(tabs)/profile.tsx` | 1–3 screenshots → a scored report on your profile, or openers for someone else's (DB synced & persistent history) |
 | Bio Optimizer | `src/app/(tabs)/bio.tsx` | interests + a target vibe → 3 rewritten bios |
 | Discover | `src/app/(tabs)/discover.tsx` | a daily AI feed of openers, swipeable, with a swipe limit |
-| Vault | `src/app/vault.tsx` | everything you saved |
+| Vault | `src/app/vault.tsx` | everything you saved (DB synced & persistent across reinstalls) |
 | The bubble | `modules/profile-capture/` | Android accessibility service — reply inline, never leave the host app |
 | Paywall | `src/app/paywall.tsx` | RevenueCat; 3 lifetime analyses and 10 swipes/day are free |
 | Account | `src/app/account.tsx` | mandatory signup gate — email verified by a mailed 6-digit code |

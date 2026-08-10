@@ -61,12 +61,74 @@ user.delete('/me', requireAccount, async (c) => {
     await tx.execute(sql`DELETE FROM rate_limits WHERE bucket LIKE ${`%:user:${sub}`}`);
     // 4. Purge saved profile scan summaries
     await tx.execute(sql`DELETE FROM profile_scans WHERE user_id = ${sub}`);
-    // 5. Hard DELETE the parent user row
+    // 5. Purge saved vault items
+    await tx.execute(sql`DELETE FROM saved_items WHERE user_id = ${sub}`);
+    // 6. Hard DELETE the parent user row
     await tx.execute(sql`DELETE FROM users WHERE id = ${sub}`);
   });
 
   // Never the email. The event is the record; the identity is what we just erased.
   log.info('user.deleted');
+  return c.json({ ok: true });
+});
+
+/** Fetch saved vault items for the authenticated user. */
+user.get('/vault', async (c) => {
+  const { sub } = c.get('user');
+  const rows = await db.execute(sql`
+    SELECT id, category, text, note, saved_at
+      FROM saved_items
+     WHERE user_id = ${sub}
+     ORDER BY saved_at DESC
+  `);
+  const items = (rows as unknown as [Array<{ id: string; category: string; text: string; note: string | null; saved_at: number }>])[0].map((row) => ({
+    id: row.id,
+    category: row.category,
+    text: row.text,
+    note: row.note ?? undefined,
+    savedAt: row.saved_at,
+  }));
+  return c.json({ items });
+});
+
+const SaveVaultBody = z.object({
+  id: z.string().min(1).max(64),
+  category: z.string().min(1).max(32),
+  text: z.string().min(1),
+  note: z.string().max(255).optional(),
+  savedAt: z.number().optional(),
+});
+
+/** Save / update a vault item. */
+user.post('/vault', async (c) => {
+  const { sub } = c.get('user');
+  const body = SaveVaultBody.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) throw Errors.badRequest('Invalid item body');
+
+  const { id, category, text, note, savedAt } = body.data;
+  const now = savedAt ?? Date.now();
+
+  await db.execute(sql`
+    INSERT INTO saved_items (id, user_id, category, text, note, saved_at)
+    VALUES (${id}, ${sub}, ${category}, ${text}, ${note ?? null}, ${now})
+    ON DUPLICATE KEY UPDATE category = VALUES(category), text = VALUES(text), note = VALUES(note)
+  `);
+
+  return c.json({ ok: true });
+});
+
+/** Delete a saved item from vault by id. */
+user.delete('/vault/:id', async (c) => {
+  const { sub } = c.get('user');
+  const id = c.req.param('id');
+  await db.execute(sql`DELETE FROM saved_items WHERE id = ${id} AND user_id = ${sub}`);
+  return c.json({ ok: true });
+});
+
+/** Delete all saved vault items for the authenticated user. */
+user.delete('/vault', async (c) => {
+  const { sub } = c.get('user');
+  await db.execute(sql`DELETE FROM saved_items WHERE user_id = ${sub}`);
   return c.json({ ok: true });
 });
 
