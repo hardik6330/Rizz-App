@@ -266,7 +266,17 @@ export async function signUp(input: {
   password: string;
   code: string;
 }): Promise<SessionUser> {
-  const user = await postSession('/v1/auth/signup', input, await accessToken());
+  let user: SessionUser;
+  try {
+    user = await postSession('/v1/auth/signup', input, await accessToken());
+  } catch (err) {
+    if (err instanceof AuthError && err.code === 'UNAUTHORIZED') {
+      // The device token expired or was revoked. Refresh it once and retry.
+      user = await postSession('/v1/auth/signup', input, await accessToken(true));
+    } else {
+      throw err;
+    }
+  }
   // After the await, so a rejected signup never claims to be this device's account.
   kv.set(LAST_EMAIL_KEY, input.email);
   return user;

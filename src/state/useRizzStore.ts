@@ -8,6 +8,7 @@ import {
   clearVaultItems,
   deleteScan,
   deleteVaultItem,
+  fetchVault,
   isLiveApi,
   onAccountChanged,
   onAccountDeleted,
@@ -294,6 +295,13 @@ function adoptCoach(raw: string | null | undefined): void {
 /** Signup, login, sign-out and delete all land here. See `account` above. */
 onAccountChanged((account) => {
   useRizzStore.setState({ account });
+  if (account != null) {
+    void fetchVault().then((items) => {
+      if (items && items.length > 0) {
+        useRizzStore.setState({ savedItems: items as SavedItem[] });
+      }
+    });
+  }
 });
 
 /**
