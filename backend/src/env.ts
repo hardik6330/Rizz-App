@@ -61,12 +61,6 @@ const Env = z.object({
   PORT: z.coerce.number().default(8787),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
-  /** Global kill switch. false → every /ai/* 503s and clients serve mock seeds. */
-  AI_ENABLED: z
-    .enum(['true', 'false'])
-    .default('true')
-    .transform((v) => v === 'true'),
-
   /** Point at Cloudflare AI Gateway to get retries + cost logging for free. */
   GEMINI_BASE_URL: z.string().url().default('https://generativelanguage.googleapis.com/v1beta'),
 

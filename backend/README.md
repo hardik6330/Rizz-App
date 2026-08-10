@@ -38,8 +38,9 @@ PEM text or a path to it.
 Managed MySQL signs with a **CA that Node does not trust**, so without a pinned CA a correct
 config still fails on the handshake. Two flavours, and they fail differently:
 
-- **Aiven / PlanetScale / DO** issue a per-project CA with a real hostname on the leaf.
-  `HANDSHAKE_SSL_ERROR` until you download it (Aiven: service → *CA certificate* → download).
+- **Per-project CA providers** (PlanetScale, DO, and others) issue their own CA with a real
+  hostname on the leaf. Expect `HANDSHAKE_SSL_ERROR` until you download it from the service's
+  dashboard and pass it as `DATABASE_CA`.
 - **Railway** proxies MySQL's own auto-generated cert, so there is nothing to download —
   `self-signed certificate in certificate chain`. Dump the issuing CA off the live handshake:
   `openssl s_client -starttls mysql -connect <host>:<port> -showcerts`.

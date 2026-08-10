@@ -258,10 +258,6 @@ onAccountDeleted(() => {
   useRizzStore.setState({ savedItems: [], scanHistory: [] });
 });
 
-/** Reactive "is this line saved" selector. */
-export const useIsSaved = (id: string) =>
-  useRizzStore((state) => state.savedItems.some((saved) => saved.id === id));
-
 /**
  * Free AI credits exhausted. One definition shared by Lab, Bio Optimizer and
  * Profile Scan so the gate can never drift between them.

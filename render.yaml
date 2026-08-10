@@ -16,9 +16,13 @@ services:
   - type: web
     name: rizzcoach-api
     runtime: node
-    # Closest Render region to the Aiven MySQL service in Bangalore. Latency to
-    # the database dominates request time here — every AI call does 2-3 round
-    # trips before Gemini is even called.
+    # Latency to the database dominates request time here — every AI call does
+    # 2-3 round trips before Gemini is even called — so this region must be the
+    # closest one to wherever the database actually lives.
+    #
+    # ⚠️ `singapore` was chosen for a database that no longer exists. The DB is
+    # RAILWAY now — re-check this against its region before deploying here, or
+    # every request pays a transcontinental round trip 2-3 times over.
     region: singapore
     plan: starter
     # `npm ci`, not `npm install` — a local `expo run:android` writes build/ and

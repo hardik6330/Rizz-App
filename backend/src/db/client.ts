@@ -20,15 +20,16 @@ export const pool = mysql.createPool({
   /*
    * 10 for a long-lived process, 1 on Vercel.
    *
-   * Serverless multiplies this by every warm instance, and Aiven's smaller plans
-   * cap max_connections in the low tens — so a pool of 10 exhausts the database
-   * at ~3 concurrent instances and every further request fails to connect, not
-   * slowly but immediately. Vercel sets VERCEL=1 itself; nothing to configure.
+   * Serverless multiplies this by every warm instance, and a small managed MySQL
+   * plan caps max_connections in the low tens — so a pool of 10 exhausts the
+   * database at ~3 concurrent instances and every further request fails to
+   * connect, not slowly but immediately. The ceiling is the plan's, not the
+   * vendor's. Vercel sets VERCEL=1 itself; nothing to configure.
    */
   connectionLimit: process.env.VERCEL ? 1 : 10,
   enableKeepAlive: true,
   /*
-   * Fail fast. A blocked Aiven allowlist drops packets rather than refusing them,
+   * Fail fast. A blocked IP allowlist drops packets rather than refusing them,
    * so without this the connect hangs until Vercel kills the function at 60s and
    * logs a timeout instead of the real error — and the client, having waited a
    * minute, quietly serves mock data.

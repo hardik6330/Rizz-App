@@ -100,8 +100,6 @@ export interface GenerateOptions {
 }
 
 export async function generate<T>(opts: GenerateOptions): Promise<{ data: T; usage: Usage }> {
-  if (!env.AI_ENABLED) throw Errors.aiUnavailable();
-
   const prompt = promptVersion(opts.system);
   const started = Date.now();
   const url = `${env.GEMINI_BASE_URL}/models/${MODEL}:generateContent`;

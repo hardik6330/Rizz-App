@@ -95,7 +95,7 @@ RizzCoach/
 │   │   ├── engine.ts             Lab       →  POST /v1/ai/lab
 │   │   ├── profileEngine.ts      Profile   →  POST /v1/ai/profile
 │   │   ├── bioEngine.ts          Bio       →  POST /v1/ai/bio
-│   │   ├── feedEngine.ts         Discover  →  GET  /v1/feed
+│   │   ├── feedEngine.ts         Discover  →  POST /v1/ai/feed
 │   │   ├── analytics.ts          track() over a FIXED event union — never free-form
 │   │   ├── purchases.ts          RevenueCat
 │   │   └── widgetBridge.ts       iOS home-screen widget (no-ops without the module)
@@ -131,11 +131,11 @@ RizzCoach/
 │       │   ├── prompts.ts          every system prompt + the safety-rail boot guard
 │       │   ├── schemas.ts          responseSchema per engine (uppercase OpenAPI)
 │       │   └── gateway.selfcheck.ts    ✓ one tiny LIVE call
-│       ├── routes/               auth.ts · ai.ts · user.ts · config.ts · webhooks.ts · legal.ts
+│       ├── routes/               auth.ts · ai.ts · user.ts · webhooks.ts · legal.ts
 │       │   └── auth.selfcheck.ts     ✓ install claim + the four account-existence codes
 │       ├── middleware/           auth.ts · credits.ts · rateLimit.ts · idempotency.ts
 │       │   └── credits.selfcheck.ts    ✓ runnable
-│       ├── db/                   schema.ts · client.ts · migrate.ts · migrations/ (0000–0009)
+│       ├── db/                   schema.ts · client.ts · railway-ca.ts · migrate.ts · migrations/ (0000–0009)
 │       ├── lib/                  logger (rid) · errors · jwt · limits · revenuecat · otp · mailer
 │       │   └── otp.selfcheck.ts      ✓ single-use · attempt cap · expiry · daily send cap
 │       └── vercel.selfcheck.ts   ✓ the ONLY check that exercises vercel.ts
@@ -300,7 +300,7 @@ only **a request body and mock seeds**:
 | `engine.ts` | `POST /v1/ai/lab` | chat screenshot |
 | `profileEngine.ts` | `POST /v1/ai/profile` | two modes, one result shape |
 | `bioEngine.ts` | `POST /v1/ai/bio` | |
-| `feedEngine.ts` | `GET /v1/feed` | generated once per day, globally |
+| `feedEngine.ts` | `POST /v1/ai/feed` | generated once per day, globally |
 
 All of them go through `callApi` in `services/api.ts`. **Never hand-roll a fetch.** `isLiveApi`
 is true when `EXPO_PUBLIC_API_URL` is set; false means every engine serves mock seeds and the
@@ -405,12 +405,11 @@ Hono, deployed as a Vercel function, against Railway MySQL via Drizzle.
 | `POST /v1/auth/signup` | JWT | claim this install's row; requires a verified code |
 | `POST /v1/auth/login` | — | password **or** code (XOR). `WRONG_PASSWORD` / `ACCOUNT_LOCKED` |
 | `POST /v1/auth/logout` | JWT | bump `token_epoch` — kills every token on every device |
-| `GET /v1/config` | — | remote config. The one route with no limiter |
 | `POST /v1/ai/lab` | JWT | chat screenshot → replies / vibe / roast |
 | `POST /v1/ai/profile` | JWT | 1–3 profile screenshots → report |
 | `POST /v1/ai/bio` | JWT | interests + vibe → 3 bios |
 | `POST /v1/ai/chat` | JWT | transcript → one reply (called by the Android bubble) |
-| `GET /v1/feed` | optional | the day's Discover lines, generated once and cached in MySQL |
+| `POST /v1/ai/feed` | JWT | the day’s Discover lines, generated once and cached in MySQL |
 | `GET /v1/user/credits` | JWT | the truth about the balance |
 | `GET /v1/user/vault` | JWT | saved lines, newest first |
 | `POST /v1/user/vault` | JWT | upsert one saved line — client-minted id is the PK |
@@ -507,6 +506,18 @@ The one thing that genuinely changed for the user: a `'them'` report about a rea
 persists on our servers until deleted, where it used to live only in MMKV. Keep the privacy
 policy's "generated openers" wording in step with that before shipping — see §8. Adding a *third*
 kind of table still needs this section rewritten first.
+
+### 5.4b There is no remote config, and no kill switch route
+
+`/v1/config` was **deleted**. It returned `ai_enabled`, `min_supported_version` and `flags`; no
+client ever polled it, `min_supported_version` was a hardcoded string with zero readers and
+`flags` was permanently `{}`. An endpoint whose every field is fiction is worse than no endpoint.
+
+`AI_ENABLED` went with it. Stopping Gemini spend is now a **code change and a deploy** — there
+is no env var to flip. If that turns out to matter at 3am, the cheapest honest version is one
+guard back in `ai/gateway.ts`, not a config route nobody reads.
+
+**There is no force-upgrade and no remote flag system.** Do not assume either exists.
 
 ### 5.5 Account deletion
 
@@ -650,6 +661,10 @@ corrupts GA4's revenue model.
 Firebase is **opt-in**, gated on `GOOGLE_SERVICES_JSON` in `app.config.ts`. Unset means no
 plugins, the app builds exactly as before, and `analytics.ts` no-ops because the native module is
 absent.
+
+`report_feedback` (👍/👎 on a scan report) is the only quality signal the product collects. It
+carries the engine and the verdict only — never the report, its id, or its mode. The store also
+keeps the rating locally, which is what re-lights the icon on a report reopened from history.
 
 `bubble_shown` / `bubble_tapped` are logged from Kotlin, and they are why this app uses Firebase
 at all: the bubble's lifecycle runs in a process with no JS context, and these are the two most

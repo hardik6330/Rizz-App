@@ -40,6 +40,17 @@ export type AnalyticsEvent =
   | { name: 'paywall_dismissed'; source: PaywallSource; converted: boolean }
   /** `mock` is true when RevenueCat had a stub key and Pro was granted for free. */
   | { name: 'pro_purchased'; plan: string; mock: boolean }
+  /**
+   * A user rated a generated report 👍/👎. The only quality signal this product
+   * gets — nothing else tells us whether the output was any good.
+   *
+   * Carries the engine and the verdict and NOTHING else. Not the report id, not
+   * the mode, not a word of the report: the rule above is not relaxed for the one
+   * event where the content would be most interesting to have. If a future
+   * version needs the text, it needs a consented, deletable store for it — not
+   * this pipe.
+   */
+  | { name: 'report_feedback'; engine: EngineName; value: 'up' | 'down' }
   /** The accessibility funnel — the app's biggest drop-off, and entirely invisible today. */
   | { name: 'a11y_prompt_seen' }
   | { name: 'a11y_settings_opened' }
@@ -98,9 +109,6 @@ function getCrashlytics(): FirebaseCrashlytics | null {
   }
   return crashlytics;
 }
-
-/** True in a build where Firebase actually initialised. Useful in a debug screen. */
-export const isAnalyticsLive = (): boolean => getAnalytics() != null;
 
 /**
  * Record an event. Fire-and-forget and never throws — a rejected logEvent must

@@ -7,6 +7,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { CircleIconButton } from '@/components/CircleIconButton';
 import { HapticPressable } from '@/components/HapticPressable';
 import { ProUpsellCard } from '@/components/ProUpsellCard';
+import { track } from '@/services/analytics';
 import { PROFILE_LABELS } from '@/services/profileEngine';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
@@ -79,9 +80,22 @@ export function ScanReport({
 
   const feedback = useRizzStore((s) => s.feedback[result.id]);
   const setFeedback = useRizzStore((s) => s.setFeedback);
+  /**
+   * Records the rating AND reports it. Both halves are needed.
+   *
+   * The store write is what lights the icon on a report the user reopens later;
+   * on its own it was the whole feature, which made the toast — "Thanks —
+   * noted!" — untrue. Nobody was noted. A thumbs-down sat in MMKV on one phone
+   * until the app was uninstalled, so the single quality signal this product can
+   * collect was being thrown away at the moment it was given.
+   *
+   * `track` carries the engine and the verdict only; see the union's own note on
+   * why the report itself is not attached.
+   */
   const sendFeedback = (value: 'up' | 'down') => {
     haptic.light();
     setFeedback(result.id, value);
+    track({ name: 'report_feedback', engine: 'profile', value });
     onFeedback();
   };
 

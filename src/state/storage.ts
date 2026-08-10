@@ -48,7 +48,7 @@ const backend = createBackend();
 /**
  * The memory fallback is a DEV convenience and a production data-loss bug.
  *
- * Nothing read `storageKind`, so the fallback was silent — and silent means the
+ * Nothing read the backend kind, so the fallback was silent — and silent means the
  * install id never persists, which means `/v1/auth/device` mints a brand-new
  * anonymous `users` row on **every single launch**. Each one carries its own
  * free-analysis allowance, so the failure mode is unbounded row growth and
@@ -70,9 +70,6 @@ if (backend.kind === 'memory') {
       '          Every launch will create a new anonymous account on the server. Use a dev build.',
   );
 }
-
-/** 'mmkv' in dev/production builds, 'memory' in Expo Go / web. */
-export const storageKind = backend.kind;
 
 /**
  * Raw key-value access, for state that is not UI state.

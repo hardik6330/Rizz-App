@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useCallback } from 'react';
 
+import type { PaywallSource } from '@/services/analytics';
 import { useOutOfCredits } from '@/state/useRizzStore';
 import { haptic } from '@/utils/haptics';
 
@@ -25,9 +26,6 @@ import { haptic } from '@/utils/haptics';
  * `paywall.tsx` logs the event, so a call site that forgets it is a blind spot
  * in the funnel rather than a visible bug.
  */
-/** Every entry point the paywall is attributed to. Keep in step with `paywall.tsx`. */
-export type PaywallSource = 'out_of_credits' | 'upsell_card' | 'swipe_limit' | 'manual';
-
 export function useCreditGate(): (source: PaywallSource) => boolean {
   const outOfCredits = useOutOfCredits();
 

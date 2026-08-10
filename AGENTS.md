@@ -464,6 +464,15 @@ string literal; a variable argument fails the whole bundle with "Invalid call at
 is why there are two near-identical functions instead of one helper — same constraint
 `widgetBridge.ts` works within.
 
+**`report_feedback` is the only quality signal this product collects.** The 👍/👎 on a scan
+report used to write to MMKV and stop there — the icon lit up, the toast said "Thanks —
+noted!", and nobody was noted. It now also fires `track({ name: 'report_feedback', engine,
+value })`. The store write stays: it is what re-lights the icon on a report reopened from
+history. **The event carries the engine and the verdict and nothing else** — not the report
+id, not the mode, not a word of the output. The rule above is not relaxed for the one event
+where the content would be most useful to have; a version that needs the text needs a
+consented, deletable store, not this pipe.
+
 **`bubble_shown` / `bubble_tapped` are logged from Kotlin, and that is why this app uses
 Firebase at all.** The bubble's entire lifecycle runs inside the accessibility service, in a
 process where there is no JS context to call — the service runs whether or not the RN app is

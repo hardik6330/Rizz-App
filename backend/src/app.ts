@@ -14,7 +14,6 @@ import { idempotent } from './middleware/idempotency.ts';
 import { dbRateLimit, rateLimit } from './middleware/rateLimit.ts';
 import { ai } from './routes/ai.ts';
 import { auth } from './routes/auth.ts';
-import { config } from './routes/config.ts';
 import { legal } from './routes/legal.ts';
 import { user } from './routes/user.ts';
 import { webhooks } from './routes/webhooks.ts';
@@ -140,7 +139,6 @@ app.use('/v1/auth/otp', dbRateLimit({ scope: 'otp', capacity: 4, refillPerSec: 0
 app.use('/v1/auth/*', dbRateLimit({ scope: 'auth', capacity: 20, refillPerSec: 0.2, by: 'ip' }));
 app.route('/v1/auth', auth);
 
-app.route('/v1/config', config);
 
 /*
  * Webhooks are authenticated by SIGNATURE, not by JWT — RevenueCat has no token

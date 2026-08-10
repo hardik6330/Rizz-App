@@ -12,7 +12,7 @@ import type { FeedItem } from '@/types';
  * config plugin applied — in Expo Go this quietly no-ops.
  */
 
-export function getDailyOpener(): FeedItem {
+function getDailyOpener(): FeedItem {
   const openers = FEED_ITEMS.filter((item) => item.category === 'Opener');
   const dayIndex = Math.floor(Date.now() / 86_400_000); // days since epoch
   return openers[dayIndex % openers.length];

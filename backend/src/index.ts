@@ -51,7 +51,6 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
     url: `http://localhost:${info.port}`,
     port: info.port,
     env: env.NODE_ENV,
-    aiEnabled: env.AI_ENABLED,
     // Loud, because entitlement is being taken on trust while this is false.
     revenueCat: env.REVENUECAT_SECRET_KEY ? 'verified' : 'MOCK (accepts client claim)',
   });

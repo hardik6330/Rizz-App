@@ -207,16 +207,31 @@ try {
 
   // ── H-8 · CORS answers an allowed origin and refuses an unknown one ─────────
   {
-    const allowed = await app.request('/v1/config', {
-      headers: { Origin: 'https://rizz-app-five.vercel.app' },
-    });
+    /*
+     * An OPTIONS preflight, not a GET.
+     *
+     * This used to GET `/v1/config`, which is gone. The replacement cannot be
+     * `/healthz` — cors() is mounted on `/v1/*` only, so that path never reaches
+     * it — and it must not be a real `/v1/*` GET either: every one of those is
+     * behind requireAuth, or mints a row, or spends a credit.
+     *
+     * A preflight is answered by the cors() middleware itself and never reaches
+     * a handler, which makes it the only probe that tests CORS and nothing else.
+     */
+    const preflight = (origin: string) =>
+      app.request('/v1/user/credits', {
+        method: 'OPTIONS',
+        headers: { Origin: origin, 'Access-Control-Request-Method': 'GET' },
+      });
+
+    const allowed = await preflight('https://rizz-app-five.vercel.app');
     assert.equal(
       allowed.headers.get('access-control-allow-origin'),
       'https://rizz-app-five.vercel.app',
       'H-8: the known origin is echoed back',
     );
 
-    const evil = await app.request('/v1/config', { headers: { Origin: 'https://evil.example' } });
+    const evil = await preflight('https://evil.example');
     assert.equal(
       evil.headers.get('access-control-allow-origin'),
       null,
