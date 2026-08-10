@@ -199,3 +199,18 @@ export const rcEvents = mysqlTable(
   },
   (t) => ({ idxCreated: index('idx_rc_created').on(t.createdAt) }),
 );
+
+/** Profile scans summary storage per user (no raw images saved). */
+export const profileScans = mysqlTable(
+  'profile_scans',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    userId: char('user_id', { length: 36 }).notNull(),
+    mode: mysqlEnum('mode', ['self', 'them']).notNull(),
+    title: varchar('title', { length: 128 }),
+    summaryJson: json('summary_json').notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({ idxUserCreated: index('idx_ps_user_created').on(t.userId, t.createdAt) }),
+);
+

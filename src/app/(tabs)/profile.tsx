@@ -274,7 +274,25 @@ export default function ProfileScreen() {
         setKilled(serviceKilled());
       }
       takePendingCapture();
-    }, [takePendingCapture]),
+      if (isLiveApi) {
+        void import('@/state/session').then(({ fetchScans }) => {
+          void fetchScans().then((scans) => {
+            if (scans.length > 0) {
+              scans.forEach((item) => {
+                addScan({
+                  id: item.id,
+                  mode: item.mode,
+                  isProfile: true,
+                  name: item.title,
+                  createdAt: item.createdAt,
+                  ...item.summary,
+                });
+              });
+            }
+          });
+        });
+      }
+    }, [addScan, takePendingCapture]),
   );
 
   /**
@@ -313,6 +331,11 @@ export default function ProfileScreen() {
 
   const forgetScan = (entry: ProfileScanResult) => {
     removeScan(entry.id);
+    if (isLiveApi) {
+      void import('@/state/session').then(({ deleteScan }) => {
+        void deleteScan(entry.id);
+      });
+    }
     toast.show('Removed from history');
   };
 

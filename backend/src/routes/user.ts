@@ -51,9 +51,50 @@ user.get('/credits', async (c) => {
 // holds this install id — not that they are the person whose account it is.
 user.delete('/me', requireAccount, async (c) => {
   const { sub } = c.get('user');
-  await db.execute(sql`DELETE FROM users WHERE id = ${sub}`);
+  
+  await db.transaction(async (tx) => {
+    // 1. Purge audit ledger credit events
+    await tx.execute(sql`DELETE FROM credit_events WHERE user_id = ${sub}`);
+    // 2. Purge cached idempotent responses scoped to this user
+    await tx.execute(sql`DELETE FROM idempotency WHERE id LIKE ${`${sub}:%`}`);
+    // 3. Purge user-scoped rate limit buckets
+    await tx.execute(sql`DELETE FROM rate_limits WHERE bucket LIKE ${`%:user:${sub}`}`);
+    // 4. Purge saved profile scan summaries
+    await tx.execute(sql`DELETE FROM profile_scans WHERE user_id = ${sub}`);
+    // 5. Hard DELETE the parent user row
+    await tx.execute(sql`DELETE FROM users WHERE id = ${sub}`);
+  });
+
   // Never the email. The event is the record; the identity is what we just erased.
   log.info('user.deleted');
+  return c.json({ ok: true });
+});
+
+/** Fetch past profile scan reports for the authenticated user. */
+user.get('/scans', async (c) => {
+  const { sub } = c.get('user');
+  const rows = await db.execute(sql`
+    SELECT id, mode, title, summary_json, created_at
+      FROM profile_scans
+     WHERE user_id = ${sub}
+     ORDER BY created_at DESC
+     LIMIT 20
+  `);
+  const scans = (rows as unknown as [Array<{ id: string; mode: string; title: string; summary_json: unknown; created_at: number }>])[0].map((row) => ({
+    id: row.id,
+    mode: row.mode,
+    title: row.title,
+    summary: typeof row.summary_json === 'string' ? JSON.parse(row.summary_json) : row.summary_json,
+    createdAt: row.created_at,
+  }));
+  return c.json({ scans });
+});
+
+/** Delete a single scan report by id. */
+user.delete('/scans/:id', async (c) => {
+  const { sub } = c.get('user');
+  const id = c.req.param('id');
+  await db.execute(sql`DELETE FROM profile_scans WHERE id = ${id} AND user_id = ${sub}`);
   return c.json({ ok: true });
 });
 

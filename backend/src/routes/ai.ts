@@ -140,9 +140,9 @@ ai.post('/profile', async (c) => {
   const shots = images.length > 1 ? `these ${images.length} screenshots` : 'this screenshot';
 
   await chargeCredit(sub);
-  let data: { isProfile: boolean };
+  let data: { isProfile: boolean; id?: string; profileName?: string };
   try {
-    ({ data } = await generate<{ isProfile: boolean }>({
+    ({ data } = await generate<{ isProfile: boolean; id?: string; profileName?: string }>({
       engine: `profile.${mode}`,
       system: PROFILE_PROMPTS[mode],
       parts: [
@@ -174,7 +174,17 @@ ai.post('/profile', async (c) => {
 
   // Rejected work does not burn a credit — mirrors profile.tsx. The refund is
   // why this passes delta 0: charged then given back nets to no movement.
-  if (!data.isProfile) await refundCredit(sub, 'not_a_profile');
+  if (!data.isProfile) {
+    await refundCredit(sub, 'not_a_profile');
+  } else {
+    // Save scan summary to profile_scans (no raw images persisted)
+    const scanId = data.id ?? `scan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const title = data.profileName ? `${data.profileName}'s Profile` : `${mode === 'self' ? 'My' : 'Target'} Profile Scan`;
+    await db.execute(sql`
+      INSERT INTO profile_scans (id, user_id, mode, title, summary_json, created_at)
+      VALUES (${scanId}, ${sub}, ${mode}, ${title}, ${JSON.stringify(data)}, ${Date.now()})
+    `).catch((err) => log.error('profile_scan.save_failed', err));
+  }
 
   return c.json(withCredits(c, data, data.isProfile ? 1 : 0));
 });

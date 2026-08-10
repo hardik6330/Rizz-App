@@ -20,6 +20,7 @@ import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
 import {
   AuthError,
+  deleteAccount,
   isLiveApi,
   lastAccountEmail,
   logIn,
@@ -408,6 +409,28 @@ export default function AccountScreen() {
     logOut();
   };
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const confirmDelete = () => {
+    haptic.light();
+    setConfirmingDelete(true);
+  };
+  const doDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      haptic.success();
+      setConfirmingDelete(false);
+      toast.show('Account deleted');
+    } catch {
+      haptic.warning();
+      setConfirmingDelete(false);
+      toast.show('Could not delete your account — try again');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   /**
    * Sign-out re-arms the mandatory gate.
    *
@@ -471,7 +494,7 @@ export default function AccountScreen() {
             spring in on their way into the app. The form stays put instead, CTA
             still spinning (see `finally` in submit). */}
         {signedInAs != null && !isOnboarding ? (
-          <SignedIn username={signedInAs} onSignOut={confirmSignOut} />
+          <SignedIn username={signedInAs} onSignOut={confirmSignOut} onDelete={confirmDelete} />
         ) : !isLiveApi ? (
           <View style={styles.notice}>
             <Text style={styles.noticeText}>
@@ -705,23 +728,6 @@ export default function AccountScreen() {
               </>
             )}
 
-            {isSignup && step === 'form' && (
-              /*
-               * Shown BEFORE the button, not after a failure. There is still no
-               * password RESET — a mailed code logs you in, it does not give you
-               * a new password — so a user who loses theirs keeps their account
-               * but is on the code path for ever. Worth knowing up front, while
-               * they can still save it. Rewrite this the day /auth/reset ships.
-               */
-              <View style={styles.warning}>
-                <Ionicons name="key-outline" size={15} color={palette.gold} style={styles.warningIcon} />
-                <Text style={styles.warningText}>
-                  <Text style={styles.warningStrong}>Save your password. </Text>
-                  There&apos;s no reset — if you lose it, you can still get in with a code emailed to
-                  this address, so use one you&apos;ll keep.
-                </Text>
-              </View>
-            )}
 
             {error != null && (
               <View style={styles.error} accessibilityLiveRegion="polite">
@@ -802,27 +808,65 @@ export default function AccountScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* ── Delete account confirmation ──────────────────────────────────── */}
+      <Modal
+        visible={confirmingDelete}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => !deleting && setConfirmingDelete(false)}
+      >
+        <Pressable
+          style={styles.scrim}
+          accessibilityLabel="Dismiss"
+          onPress={() => !deleting && setConfirmingDelete(false)}
+        >
+          <Pressable style={styles.dialog} onPress={() => {}}>
+            <Text style={styles.dialogTitle}>Delete your account?</Text>
+            <Text style={styles.dialogBody}>
+              This is permanent. Your credits, Pro status, saved lines and all account data will be
+              gone — there is no undo.
+            </Text>
+            <View style={styles.dialogActions}>
+              <HapticPressable
+                onPress={() => setConfirmingDelete(false)}
+                disabled={deleting}
+                accessibilityLabel="Cancel"
+                style={styles.dialogGhost}
+              >
+                <Text style={styles.dialogGhostText}>Cancel</Text>
+              </HapticPressable>
+              <HapticPressable
+                onPress={() => void doDelete()}
+                disabled={deleting}
+                accessibilityLabel="Confirm delete account"
+                style={styles.dialogDanger}
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color={palette.danger} />
+                ) : (
+                  <Text style={styles.dialogDangerText}>Delete account</Text>
+                )}
+              </HapticPressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
       {toast.element}
     </View>
   );
 }
 
-/**
- * ⚠️ There is no in-app delete here, by request. This is a KNOWN store risk.
- *
- * App Store Review 5.1.1(v) requires an app that lets a user CREATE an account
- * to let them delete it from inside the app, and Play requires a deletion path
- * too. Signup is mandatory in this product, so every install creates an account
- * — which makes this a certain rejection rather than a risk, unless a web
- * deletion page is linked from somewhere the reviewer can find it.
- *
- * The server side is intact and has no caller: `DELETE /v1/user/me` in
- * routes/user.ts, and `deleteAccount()` in state/session.ts. Restoring the
- * button is a row here plus a branch in the confirm dialog above — a few lines,
- * not a feature. Removed twice now; if it comes back a third time, link the web
- * page instead so this stops being a decision.
- */
-function SignedIn({ username, onSignOut }: { username: string; onSignOut: () => void }) {
+function SignedIn({
+  username,
+  onSignOut,
+  onDelete,
+}: {
+  username: string;
+  onSignOut: () => void;
+  onDelete: () => void;
+}) {
   return (
     <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.signedIn}>
       <View style={styles.avatar}>
@@ -839,6 +883,11 @@ function SignedIn({ username, onSignOut }: { username: string; onSignOut: () => 
       <HapticPressable onPress={onSignOut} accessibilityLabel="Sign out" style={styles.secondary}>
         <Ionicons name="log-out-outline" size={16} color={palette.textSecondary} />
         <Text style={styles.secondaryText}>Sign out</Text>
+      </HapticPressable>
+
+      <HapticPressable onPress={onDelete} accessibilityLabel="Delete account" style={styles.deleteBtn}>
+        <Ionicons name="trash-outline" size={16} color={palette.danger} />
+        <Text style={styles.deleteBtnText}>Delete account</Text>
       </HapticPressable>
     </Animated.View>
   );
@@ -990,6 +1039,19 @@ const styles = StyleSheet.create({
     borderColor: palette.hairlineStrong,
   },
   secondaryText: { fontSize: 14.5, fontWeight: '700', color: palette.textSecondary },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    alignSelf: 'stretch',
+    paddingVertical: 14,
+    borderRadius: radii.full,
+    backgroundColor: 'rgba(255,92,92,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,92,92,0.3)',
+  },
+  deleteBtnText: { fontSize: 14.5, fontWeight: '700', color: palette.danger },
 
   // ── Sign-out confirmation ──────────────────────────────────────────────────
   scrim: {

@@ -432,6 +432,43 @@ export async function refreshCredits(): Promise<void> {
   }
 }
 
+export interface SavedScanItem {
+  id: string;
+  mode: 'self' | 'them';
+  title: string;
+  summary: any;
+  createdAt: number;
+}
+
+/** Pull saved profile scan reports from the backend DB. */
+export async function fetchScans(): Promise<SavedScanItem[]> {
+  if (!isLiveApi) return [];
+  try {
+    const res = await fetch(apiUrl('/v1/user/scans'), {
+      headers: { Authorization: `Bearer ${await accessToken()}` },
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { scans: SavedScanItem[] };
+    return data.scans ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Delete a scan report from the backend DB by ID. */
+export async function deleteScan(id: string): Promise<boolean> {
+  if (!isLiveApi) return true;
+  try {
+    const res = await fetch(apiUrl(`/v1/user/scans/${id}`), {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${await accessToken()}` },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Push entitlement to the server and take the re-issued token.
  *
