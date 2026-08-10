@@ -3,15 +3,15 @@ import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CircleIconButton } from '@/components/CircleIconButton';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ScanReport } from '@/components/ScanReport';
 import { GlowDropZone } from '@/components/GlowDropZone';
 import { HapticPressable } from '@/components/HapticPressable';
-import { ProUpsellCard } from '@/components/ProUpsellCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { StagedLoader } from '@/components/StagedLoader';
 import { useToast } from '@/components/Toast';
@@ -28,11 +28,13 @@ import { PROFILE_LABELS, PROFILE_STAGES, analyzeProfile } from '@/services/profi
 import { isLiveApi } from '@/state/session';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
-import { palette, radii, spacing, type } from '@/theme/tokens';
-import type { ProfileCapture, ProfileScanResult, ProfileScore, ScanMode } from '@/types';
+import { palette, radii, spacing } from '@/theme/tokens';
+import type { ProfileCapture, ProfileScanResult, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { timeAgo } from '@/utils/misc';
 import { useBackToIdle } from '@/utils/useBackToIdle';
+import { useCreditGate } from '@/utils/useCreditGate';
+import { useStagedProgress } from '@/utils/useStagedProgress';
 
 type Phase = 'idle' | 'working' | 'done';
 type Pick = { uri: string; base64: string; mimeType: string };
@@ -55,7 +57,7 @@ export default function ProfileScreen() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [images, setImages] = useState<Pick[]>([]);
   const [result, setResult] = useState<ProfileScanResult | null>(null);
-  const [stage, setStage] = useState(0);
+
   const [watching, setWatching] = useState(false);
   /**
    * Granted in Settings, but the service is not bound — the OS killed it.
@@ -68,7 +70,10 @@ export default function ProfileScreen() {
   const [killed, setKilled] = useState(false);
   const [scanToDelete, setScanToDelete] = useState<ProfileScanResult | null>(null);
   const account = useRizzStore((state) => state.account);
-  const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { stage, start: startStages, stop: stopStages } = useStagedProgress(
+    PROFILE_STAGES.self.length,
+    850,
+  );
 
   const labels = PROFILE_LABELS[mode];
   const tint = mode === 'self' ? palette.cyan : palette.violet;
@@ -81,20 +86,10 @@ export default function ProfileScreen() {
   const removeScan = useRizzStore((state) => state.removeScan);
 
   const outOfCredits = useOutOfCredits();
-
-  useEffect(
-    () => () => {
-      if (stageTimer.current) clearInterval(stageTimer.current);
-    },
-    [],
-  );
+  const creditGate = useCreditGate();
 
   const addImages = useCallback(async () => {
-    if (outOfCredits) {
-      haptic.warning();
-      router.push('/paywall?source=out_of_credits');
-      return;
-    }
+    if (creditGate('out_of_credits')) return;
     const remaining = MAX_IMAGES - images.length;
     if (remaining <= 0) return;
 
@@ -114,7 +109,7 @@ export default function ProfileScreen() {
 
     haptic.medium();
     setImages((prev) => [...prev, ...next].slice(0, MAX_IMAGES));
-  }, [images.length, outOfCredits]);
+  }, [images.length, creditGate]);
 
   const removeImage = (uri: string) => {
     haptic.light();
@@ -135,13 +130,8 @@ export default function ProfileScreen() {
 
     haptic.medium();
     setResult(null);
-    setStage(0);
     setPhase('working');
-
-    if (stageTimer.current) clearInterval(stageTimer.current);
-    stageTimer.current = setInterval(() => {
-      setStage((current) => Math.min(current + 1, PROFILE_STAGES[activeMode].length - 1));
-    }, 850);
+    startStages(PROFILE_STAGES[activeMode].length);
 
     try {
       const scanResult = await analyzeProfile(input);
@@ -188,9 +178,9 @@ export default function ProfileScreen() {
       toast.show('The engine choked — try again');
       setPhase('idle');
     } finally {
-      if (stageTimer.current) clearInterval(stageTimer.current);
+      stopStages();
     }
-  }, [addScan, images, incrementAnalysis, mode, toast]);
+  }, [addScan, images, incrementAnalysis, mode, toast, startStages, stopStages]);
 
   /**
    * Pick up a capture from the accessibility bubble.
@@ -333,14 +323,9 @@ export default function ProfileScreen() {
 
   const confirmDeleteScan = () => {
     if (!scanToDelete) return;
-    const entry = scanToDelete;
+    // `removeScan` deletes the server row too — do not add a second call here.
+    removeScan(scanToDelete.id);
     setScanToDelete(null);
-    removeScan(entry.id);
-    if (isLiveApi) {
-      void import('@/state/session').then(({ deleteScan }) => {
-        void deleteScan(entry.id);
-      });
-    }
     toast.show('Removed from history');
   };
 
@@ -615,299 +600,14 @@ export default function ProfileScreen() {
 
       {toast.element}
 
-      {/* ── Remove scan confirmation modal ──────────────────────────────── */}
-      <Modal
+      <ConfirmDialog
         visible={scanToDelete != null}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => setScanToDelete(null)}
-      >
-        <Pressable
-          style={styles.scrim}
-          accessibilityLabel="Dismiss"
-          onPress={() => setScanToDelete(null)}
-        >
-          <Pressable style={styles.dialog} onPress={() => {}}>
-            <Text style={styles.dialogTitle}>Remove Scan?</Text>
-            <Text style={styles.dialogBody}>
-              Are you sure you want to remove this scan from your history? It will be deleted permanently.
-            </Text>
-            <View style={styles.dialogActions}>
-              <HapticPressable
-                onPress={() => setScanToDelete(null)}
-                accessibilityLabel="Cancel"
-                style={styles.dialogGhost}
-              >
-                <Text style={styles.dialogGhostText}>Cancel</Text>
-              </HapticPressable>
-              <HapticPressable
-                onPress={confirmDeleteScan}
-                accessibilityLabel="Confirm remove scan"
-                style={styles.dialogDanger}
-              >
-                <Text style={styles.dialogDangerText}>Remove</Text>
-              </HapticPressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </View>
-  );
-}
-
-const TAB_KEYS = [
-  { key: 'quick', emoji: '🏆' },
-  { key: 'photo', emoji: '📸' },
-  { key: 'comp', emoji: '🏅' },
-] as const;
-type TabKey = (typeof TAB_KEYS)[number]['key'];
-
-interface ScanReportProps {
-  result: ProfileScanResult;
-  mode: ScanMode;
-  onReset: () => void;
-  isLineSaved: (index: number) => boolean;
-  onCopyLine: (text: string) => void;
-  onToggleSaveLine: (line: string, index: number) => void;
-  onFeedback: () => void;
-  showUpsell: boolean;
-}
-
-function ScanReport({
-  result,
-  mode,
-  onReset,
-  isLineSaved,
-  onCopyLine,
-  onToggleSaveLine,
-  onFeedback,
-  showUpsell,
-}: ScanReportProps) {
-  const { width, gutter } = useLayout();
-  const [tab, setTab] = useState<TabKey>('quick');
-  // Peek the next card. Must track the live gutter — on a tablet the gutter is
-  // most of the screen, and the old `spacing.xl * 2` made these cards wider
-  // than the column they sit in.
-  const cardWidth = width - gutter * 2 - spacing.md;
-
-  const labels = PROFILE_LABELS[mode];
-  const tint = mode === 'self' ? palette.cyan : palette.violet;
-  /** Short on the pill, full in the section heading — three long labels truncate. */
-  const tabLabels: Record<TabKey, string> = {
-    quick: labels.tabs.quick,
-    photo: labels.tabs.photo,
-    comp: labels.tabs.comp,
-  };
-  const sectionTitles: Record<TabKey, string> = {
-    quick: labels.quickWin,
-    photo: labels.photo,
-    comp: labels.competition,
-  };
-
-  const feedback = useRizzStore((s) => s.feedback[result.id]);
-  const setFeedback = useRizzStore((s) => s.setFeedback);
-  const sendFeedback = (value: 'up' | 'down') => {
-    haptic.light();
-    setFeedback(result.id, value);
-    onFeedback();
-  };
-
-  const dateLabel = new Date(result.createdAt).toLocaleDateString(undefined, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-
-  return (
-    <View style={styles.report}>
-      {/* Profile header */}
-      <Animated.View entering={FadeInDown.springify().damping(17)} style={styles.reportHeader}>
-        <View style={styles.avatar}>
-          <Ionicons name="person" size={22} color={palette.textTertiary} />
-        </View>
-        <View style={styles.reportHeaderText}>
-          <Text style={styles.reportName}>{result.name ?? labels.fallbackName}</Text>
-          {result.tagline != null && <Text style={styles.reportTagline}>{result.tagline}</Text>}
-        </View>
-        {/* Fixed-width neighbours either side: never let the date push them off. */}
-        <Text style={styles.reportDate} numberOfLines={1} maxFontSizeMultiplier={1.2}>
-          {dateLabel}
-        </Text>
-        <CircleIconButton icon="refresh" size={38} onPress={onReset} accessibilityLabel="Scan a new profile" />
-      </Animated.View>
-
-      <Text style={styles.summary}>{result.summary}</Text>
-
-      {/* Scores — two generic slots, named by the active mode. */}
-      <ScoreBlock emoji="🔥" label={labels.scoreA} tint={palette.ember} score={result.swipeStopper} />
-      <ScoreBlock emoji="🎯" label={labels.scoreB} tint={palette.pink} score={result.intentClarity} />
-
-      {/* The read */}
-      <View style={styles.section}>
-        <View style={styles.sectionHead}>
-          <Text style={styles.sectionEmoji}>📸</Text>
-          <Text style={styles.sectionTitle}>{labels.workingAndFix}</Text>
-        </View>
-        {result.workingAndFix.map((para, i) => (
-          <Text key={i} style={styles.para}>
-            {para}
-          </Text>
-        ))}
-      </View>
-
-      {/* Bio lines ('self') / openers ('them') — both copy+save to the vault. */}
-      <View style={styles.section}>
-        <View style={styles.sectionHead}>
-          <Text style={styles.sectionEmoji}>💬</Text>
-          <Text style={styles.sectionTitle}>{labels.lines}</Text>
-        </View>
-        <Text style={styles.hint}>{labels.linesHint}</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          snapToInterval={cardWidth + spacing.md}
-          decelerationRate="fast"
-          contentContainerStyle={styles.lineRow}
-        >
-          {result.bioLines.map((line, i) => (
-            <View key={i} style={[styles.lineCard, { width: cardWidth }]}>
-              <Text style={styles.lineText}>{line}</Text>
-              <View style={styles.lineActions}>
-                <CircleIconButton
-                  icon={isLineSaved(i) ? 'bookmark' : 'bookmark-outline'}
-                  active={isLineSaved(i)}
-                  activeColor={palette.mint}
-                  onPress={() => onToggleSaveLine(line, i)}
-                  accessibilityLabel={isLineSaved(i) ? 'Remove from vault' : 'Save to vault'}
-                />
-                <CircleIconButton
-                  icon="copy-outline"
-                  onPress={() => onCopyLine(line)}
-                  accessibilityLabel="Copy bio line"
-                />
-              </View>
-            </View>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Tabbed tips */}
-      <View style={styles.tabRow}>
-        {TAB_KEYS.map((t) => {
-          const active = t.key === tab;
-          return (
-            <HapticPressable
-              key={t.key}
-              feedback="none"
-              accessibilityRole="tab"
-              accessibilityLabel={tabLabels[t.key]}
-              accessibilityState={{ selected: active }}
-              onPress={() => {
-                haptic.selection();
-                setTab(t.key);
-              }}
-              style={[styles.tabPill, active && styles.tabPillActive]}
-            >
-              <Text style={styles.tabEmoji}>{t.emoji}</Text>
-              <Text
-                style={[styles.tabLabel, active && { color: palette.textPrimary }]}
-                numberOfLines={1}
-                maxFontSizeMultiplier={1.2}
-              >
-                {tabLabels[t.key]}
-              </Text>
-            </HapticPressable>
-          );
-        })}
-      </View>
-
-      <Animated.View key={tab} entering={FadeInDown.duration(240)} style={styles.section}>
-        {/* The active pill already names the section; repeating it verbatim below
-            just cost a line of vertical space. Only show the fuller heading when it
-            actually says more than the pill does. */}
-        {sectionTitles[tab] !== tabLabels[tab] && (
-          <View style={styles.sectionHead}>
-            <Text style={styles.sectionEmoji}>
-              {TAB_KEYS.find((t) => t.key === tab)?.emoji}
-            </Text>
-            <Text style={styles.sectionTitle}>{sectionTitles[tab]}</Text>
-          </View>
-        )}
-        {tab === 'quick' ? (
-          <Text style={styles.para}>{result.quickWin}</Text>
-        ) : (
-          (tab === 'photo' ? result.photoTuneUp : result.competition).map((tip, i) => (
-            <Bullet key={i} text={tip} tint={tint} />
-          ))
-        )}
-      </Animated.View>
-
-      {/* Disclaimer */}
-      <View style={styles.disclaimerRow}>
-        <Text style={styles.disclaimerEmoji}>✨</Text>
-        <Text style={styles.disclaimer}>
-          <Text style={styles.disclaimerBold}>Disclaimer: </Text>
-          {labels.disclaimer}
-        </Text>
-      </View>
-
-      {/* Feedback */}
-      <View style={styles.feedbackRow}>
-        <CircleIconButton
-          icon={feedback === 'up' ? 'thumbs-up' : 'thumbs-up-outline'}
-          active={feedback === 'up'}
-          activeColor={palette.mint}
-          onPress={() => sendFeedback('up')}
-          accessibilityLabel="Helpful"
-        />
-        <CircleIconButton
-          icon={feedback === 'down' ? 'thumbs-down' : 'thumbs-down-outline'}
-          active={feedback === 'down'}
-          activeColor={palette.danger}
-          onPress={() => sendFeedback('down')}
-          accessibilityLabel="Not helpful"
-        />
-      </View>
-
-      {showUpsell && <ProUpsellCard onPress={() => router.push('/paywall?source=upsell_card')} />}
-    </View>
-  );
-}
-
-function ScoreBlock({
-  emoji,
-  label,
-  tint,
-  score,
-}: {
-  emoji: string;
-  label: string;
-  tint: string;
-  score: ProfileScore;
-}) {
-  const pct = Math.max(0, Math.min(score.score, 10)) * 10;
-  return (
-    <Animated.View entering={FadeInDown.springify().damping(17)} style={styles.section}>
-      <View style={styles.scoreHead}>
-        <Text style={styles.sectionEmoji}>{emoji}</Text>
-        <Text style={styles.sectionTitle}>{label}</Text>
-        <View style={styles.spacer} />
-        <Text style={[styles.scoreValue, { color: tint }]}>{score.score}/10</Text>
-      </View>
-      <View style={styles.meterTrack}>
-        <View style={[styles.meterFill, { width: `${pct}%`, backgroundColor: tint }]} />
-      </View>
-      <Text style={styles.para}>{score.note}</Text>
-    </Animated.View>
-  );
-}
-
-function Bullet({ text, tint }: { text: string; tint: string }) {
-  return (
-    <View style={styles.bulletRow}>
-      <View style={[styles.bulletDot, { backgroundColor: tint }]} />
-      <Text style={styles.bulletText}>{text}</Text>
+        title="Remove scan?"
+        body="This deletes the scan from your history for good. There is no undo."
+        confirmLabel="Remove"
+        onConfirm={confirmDeleteScan}
+        onCancel={() => setScanToDelete(null)}
+      />
     </View>
   );
 }
@@ -1081,246 +781,4 @@ const styles = StyleSheet.create({
   },
 
   // --- Report ---
-  report: {
-    gap: spacing.lg,
-  },
-  reportHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: palette.surfaceHigh,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: palette.hairlineStrong,
-  },
-  reportHeaderText: {
-    flex: 1,
-    gap: 2,
-  },
-  reportName: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    color: palette.textPrimary,
-  },
-  reportTagline: {
-    fontSize: 12.5,
-    color: palette.textSecondary,
-  },
-  reportDate: {
-    fontSize: 11.5,
-    color: palette.textTertiary,
-  },
-  summary: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: '600',
-    color: palette.textPrimary,
-  },
-  section: {
-    gap: spacing.sm,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.hairline,
-  },
-  sectionHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  sectionEmoji: {
-    fontSize: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    color: palette.textPrimary,
-  },
-  para: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: palette.textSecondary,
-  },
-  scoreHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  scoreValue: {
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  spacer: {
-    flex: 1,
-  },
-  meterTrack: {
-    height: 7,
-    borderRadius: radii.full,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    overflow: 'hidden',
-  },
-  meterFill: {
-    height: '100%',
-    borderRadius: radii.full,
-  },
-  hint: {
-    fontSize: 12,
-    color: palette.textTertiary,
-    textAlign: 'center',
-  },
-  lineRow: {
-    gap: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  lineCard: {
-    backgroundColor: palette.surface,
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: palette.hairlineStrong,
-    padding: spacing.lg,
-    gap: spacing.md,
-    justifyContent: 'space-between',
-  },
-  lineText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: palette.textPrimary,
-  },
-  lineActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing.sm,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  tabPill: {
-    flex: 1,
-    // A flex child's default minWidth lets its content force the pill wider than
-    // its share of the row. 0 lets it actually shrink.
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    borderRadius: radii.full,
-    // Belt and braces: nothing escapes the pill even if a label is long.
-    overflow: 'hidden',
-    backgroundColor: palette.surface,
-    borderWidth: 1,
-    borderColor: palette.hairline,
-  },
-  tabPillActive: {
-    backgroundColor: palette.surfaceHigh,
-    borderColor: palette.hairlineStrong,
-  },
-  tabEmoji: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  tabLabel: {
-    // React Native defaults flexShrink to 0 (unlike the web), so without this the
-    // label refuses to shrink and spills outside the pill — numberOfLines cannot
-    // ellipsize text that was never given a bounded width.
-    flexShrink: 1,
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: palette.textSecondary,
-  },
-  bulletRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  bulletDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    marginTop: 8,
-    backgroundColor: palette.cyan,
-  },
-  bulletText: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 21,
-    color: palette.textSecondary,
-  },
-  disclaimerRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.hairline,
-  },
-  disclaimerEmoji: {
-    fontSize: 13,
-  },
-  disclaimer: {
-    flex: 1,
-    fontSize: 12.5,
-    lineHeight: 18,
-    fontStyle: 'italic',
-    color: palette.textTertiary,
-  },
-  disclaimerBold: {
-    fontWeight: '800',
-    color: palette.textSecondary,
-  },
-  feedbackRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.lg,
-  },
-
-  // ── Confirmation Dialog ────────────────────────────────────────────────────
-  scrim: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-    backgroundColor: 'rgba(3,3,8,0.72)',
-  },
-  dialog: {
-    alignSelf: 'stretch',
-    maxWidth: 400,
-    padding: spacing.xl,
-    gap: spacing.md,
-    borderRadius: radii.lg,
-    backgroundColor: palette.surfaceHigh,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: palette.hairlineStrong,
-  },
-  dialogTitle: { ...type.h2 },
-  dialogBody: { ...type.bodyMuted, fontSize: 14 },
-  dialogActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  dialogGhost: {
-    paddingVertical: 11,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.full,
-  },
-  dialogGhostText: { fontSize: 14.5, fontWeight: '700', color: palette.textSecondary },
-  dialogDanger: {
-    paddingVertical: 11,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.full,
-    backgroundColor: 'rgba(255,92,92,0.14)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,92,92,0.4)',
-  },
-  dialogDangerText: { fontSize: 14.5, fontWeight: '700', color: palette.danger },
 });

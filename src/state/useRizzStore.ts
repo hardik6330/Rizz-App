@@ -4,7 +4,16 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import type { FeedItem, ProfileScanResult, SavedItem } from '@/types';
 import { nextScanHistory, nextSwipeState, todayKey } from './limits';
-import { clearVaultItems, deleteVaultItem, isLiveApi, onAccountChanged, onCreditsChanged, saveVaultItem } from './session';
+import {
+  clearVaultItems,
+  deleteScan,
+  deleteVaultItem,
+  isLiveApi,
+  onAccountChanged,
+  onAccountDeleted,
+  onCreditsChanged,
+  saveVaultItem,
+} from './session';
 import { zustandStorage } from './storage';
 
 /**
@@ -112,8 +121,21 @@ export const useRizzStore = create<RizzState>()(
           scanHistory: nextScanHistory(state.scanHistory, result, SCAN_HISTORY_LIMIT),
         })),
 
-      removeScan: (id) =>
-        set((state) => ({ scanHistory: state.scanHistory.filter((scan) => scan.id !== id) })),
+      /**
+       * Deletes the server row too — same rule as `removeSaved`, and for the
+       * same reason it lives HERE rather than at the call site.
+       *
+       * `profile.tsx` used to call `deleteScan()` itself, so the sync was a
+       * property of one screen rather than of the action: a second caller of
+       * `removeScan` would drop the local copy and leave the row on the server
+       * forever, with nothing to notice it. Both writes belong to whoever owns
+       * the list. `deleteScan` no-ops offline and swallows its own failures, so
+       * there is nothing to guard here.
+       */
+      removeScan: (id) => {
+        void deleteScan(id);
+        set((state) => ({ scanHistory: state.scanHistory.filter((scan) => scan.id !== id) }));
+      },
 
       /**
        * Count one analysis locally. **Only when there is no server to ask.**
@@ -220,6 +242,20 @@ onCreditsChanged(({ is_pro, analysis_count }) => {
 /** Signup, login, sign-out and delete all land here. See `account` above. */
 onAccountChanged((account) => {
   useRizzStore.setState({ account });
+});
+
+/**
+ * Account deleted — drop the local copy of everything it owned.
+ *
+ * `setState`, deliberately, and not `clearVault()` / `removeScan()`: those actions
+ * mirror to the API, and by the time this fires the token is already gone and the
+ * rows were deleted server-side in one transaction. Calling them would fire 401s
+ * at a user that no longer exists.
+ *
+ * Sign-out does NOT come through here — see `onAccountDeleted` in session.ts.
+ */
+onAccountDeleted(() => {
+  useRizzStore.setState({ savedItems: [], scanHistory: [] });
 });
 
 /** Reactive "is this line saved" selector. */

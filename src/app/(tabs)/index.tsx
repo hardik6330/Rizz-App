@@ -30,6 +30,8 @@ import type { AnalysisResult, EngineMode, ReplyOption } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { shareText } from '@/utils/misc';
 import { useBackToIdle } from '@/utils/useBackToIdle';
+import { useCreditGate } from '@/utils/useCreditGate';
+import { useStagedProgress } from '@/utils/useStagedProgress';
 
 type Phase = 'idle' | 'analyzing' | 'done';
 
@@ -44,8 +46,7 @@ export default function LabScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   /** One result per mode — switching modes must not re-ask for what we have. */
   const [results, setResults] = useState<Partial<Record<EngineMode, AnalysisResult>>>({});
-  const [stage, setStage] = useState(0);
-  const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { stage, start: startStages, stop: stopStages } = useStagedProgress(ANALYZE_STAGES.length, 850);
   /** The picked screenshot, kept so mode switches and rerolls can re-ask. */
   const shot = useRef<EngineInput | null>(null);
   /** A credit is spent per screenshot, not per analysis — see chargeOnce below. */
@@ -58,13 +59,7 @@ export default function LabScreen() {
   const toggleSave = useRizzStore((state) => state.toggleSave);
 
   const outOfCredits = useOutOfCredits();
-
-  const stopStageTimer = () => {
-    if (stageTimer.current) {
-      clearInterval(stageTimer.current);
-      stageTimer.current = null;
-    }
-  };
+  const creditGate = useCreditGate();
 
   /** Run one mode against the held screenshot. `onFail` restores the prior view. */
   const runAnalysis = useCallback(
@@ -72,12 +67,8 @@ export default function LabScreen() {
       const input = shot.current;
       if (!input) return;
 
-      setStage(0);
       setPhase('analyzing');
-      stopStageTimer();
-      stageTimer.current = setInterval(() => {
-        setStage((current) => Math.min(current + 1, ANALYZE_STAGES.length - 1));
-      }, 850);
+      startStages();
 
       try {
         const analysis = await analyzeScreenshot(input, targetMode, temperature);
@@ -101,18 +92,14 @@ export default function LabScreen() {
           shot.current = null;
         }
       } finally {
-        stopStageTimer();
+        stopStages();
       }
     },
-    [incrementAnalysis, toast],
+    [incrementAnalysis, toast, startStages, stopStages],
   );
 
   const pickScreenshot = useCallback(async () => {
-    if (outOfCredits) {
-      haptic.warning();
-      router.push('/paywall?source=out_of_credits');
-      return;
-    }
+    if (creditGate('out_of_credits')) return;
 
     const picked = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -128,7 +115,7 @@ export default function LabScreen() {
     charged.current = false;
     shot.current = { base64: asset.base64 ?? '', mimeType: asset.mimeType ?? 'image/jpeg' };
     void runAnalysis(mode);
-  }, [outOfCredits, mode, runAnalysis]);
+  }, [creditGate, mode, runAnalysis]);
 
   /** Switching modes analyses on demand — free, the screenshot already paid. */
   const changeMode = (next: EngineMode) => {

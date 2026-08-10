@@ -5,17 +5,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CodeStep, CredentialFields } from '@/components/AuthFields';
 import { CircleIconButton } from '@/components/CircleIconButton';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
 import {
@@ -31,7 +30,7 @@ import {
 } from '@/state/session';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
-import { palette, radii, spacing, type as typography } from '@/theme/tokens';
+import { palette, radii, spacing } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 import { useKeyboardInset } from '@/utils/useKeyboardInset';
 
@@ -386,9 +385,12 @@ export default function AccountScreen() {
    *
    * The native dialog renders in the platform's light-ish grey with ALL-CAPS
    * buttons, so the one screen where the user is about to do something they
-   * cannot undo is the one screen that stops looking like this app. Nothing else
-   * in the app raises an Alert, so this stays a local component rather than a
-   * shared `<Confirm>` nobody else would call.
+   * cannot undo is the one screen that stops looking like this app.
+   *
+   * This started as a local component on the grounds that nothing else would
+   * ever call it. Four more destructive confirmations later — clear the vault,
+   * remove a saved line, forget a scan, delete the account — it is
+   * `components/ConfirmDialog.tsx`, and this screen is just a caller.
    */
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   const confirmSignOut = () => {
@@ -586,146 +588,36 @@ export default function AccountScreen() {
             )}
 
             {step === 'code' ? (
-              <>
-                <Field
-                  label="6-DIGIT CODE"
-                  value={code}
-                  // Digits only, and never longer than six. Pasting from a mail
-                  // client drags whitespace and the odd stray character in with
-                  // it, and the server takes exactly six digits or nothing.
-                  onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="123456"
-                  keyboardType="number-pad"
-                  // The whole reason iOS offers to fill this from the
-                  // notification without the user opening the mail at all.
-                  textContentType="oneTimeCode"
-                  autoComplete="one-time-code"
-                  autoFocus
-                  maxLength={6}
-                  onSubmitEditing={() => void submit()}
-                  returnKeyType="go"
-                  style={styles.codeInput}
-                />
-
-                <View style={styles.codeActions}>
-                  {/* Back, not a router pop — the form is still mounted with
-                      everything typed still in it, so a wrong address costs one
-                      tap and a correction rather than the whole form again. */}
-                  <HapticPressable
-                    feedback="none"
-                    onPress={() => {
-                      setStep('form');
-                      setCode('');
-                      setError(null);
-                    }}
-                    accessibilityLabel="Change email address"
-                    style={styles.linkRow}
-                  >
-                    <Ionicons name="chevron-back" size={14} color={palette.textSecondary} />
-                    <Text style={styles.linkText}>Wrong email?</Text>
-                  </HapticPressable>
-
-                  <HapticPressable
-                    feedback="none"
-                    disabled={busy}
-                    onPress={() => void sendCode(true)}
-                    accessibilityLabel="Resend the code"
-                    style={styles.linkRow}
-                  >
-                    <Ionicons name="refresh" size={14} color={palette.textSecondary} />
-                    <Text style={styles.linkText}>Resend code</Text>
-                  </HapticPressable>
-                </View>
-              </>
+              <CodeStep
+                code={code}
+                onCode={setCode}
+                busy={busy}
+                onSubmit={() => void submit()}
+                onBack={() => {
+                  setStep('form');
+                  setCode('');
+                  setError(null);
+                }}
+                onResend={() => void sendCode(true)}
+              />
             ) : (
-              <>
-                {isSignup && (
-                  <Field
-                    label="USERNAME"
-                    value={username}
-                    onChangeText={setUsername}
-                    placeholder="yourname"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    textContentType="username"
-                    maxLength={32}
-                  />
-                )}
-
-                <Field
-                  label="EMAIL"
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="you@example.com"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="email-address"
-                  textContentType="emailAddress"
-                  maxLength={255}
-                />
-
-                {/* No password field on the recovery path — there is nothing to
-                    type there, and showing a disabled one would only suggest
-                    the user is supposed to remember something. */}
-                {!useCode && (
-                  <Field
-                    label="PASSWORD"
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder={isSignup ? 'At least 10 characters' : 'Your password'}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    secureTextEntry={!reveal}
-                    // `newPassword` lets the OS keychain offer to generate and
-                    // save one, which is still the best outcome available: a
-                    // mailed code gets you back IN, but nothing resets this.
-                    textContentType={isSignup ? 'newPassword' : 'password'}
-                    maxLength={128}
-                    onSubmitEditing={() => void submit()}
-                    returnKeyType="go"
-                    accessory={
-                      <HapticPressable
-                        feedback="none"
-                        hitSlop={10}
-                        onPress={() => setReveal((r) => !r)}
-                        accessibilityLabel={reveal ? 'Hide password' : 'Show password'}
-                      >
-                        <Ionicons
-                          name={reveal ? 'eye-off-outline' : 'eye-outline'}
-                          size={18}
-                          color={palette.textTertiary}
-                        />
-                      </HapticPressable>
-                    }
-                  />
-                )}
-
-                {/* The recovery switch, and the single most important control on
-                    this screen for anyone who has forgotten a password. Placed
-                    directly under the password field, which is where they are
-                    already looking when they realise they cannot fill it in. */}
-                {!isSignup && (
-                  <HapticPressable
-                    feedback="none"
-                    onPress={() => {
-                      haptic.selection();
-                      setUseCode((v) => !v);
-                      setError(null);
-                    }}
-                    accessibilityRole="button"
-                    style={styles.linkRow}
-                  >
-                    <Ionicons
-                      name={useCode ? 'key-outline' : 'mail-outline'}
-                      size={14}
-                      color={palette.violetBright}
-                    />
-                    <Text style={styles.linkAccent}>
-                      {useCode ? 'Use my password instead' : 'Forgot your password? Email me a code'}
-                    </Text>
-                  </HapticPressable>
-                )}
-              </>
+              <CredentialFields
+                isSignup={isSignup}
+                useCode={useCode}
+                username={username}
+                onUsername={setUsername}
+                email={email}
+                onEmail={setEmail}
+                password={password}
+                onPassword={setPassword}
+                reveal={reveal}
+                onToggleReveal={() => setReveal((r) => !r)}
+                onToggleUseCode={() => {
+                  setUseCode((v) => !v);
+                  setError(null);
+                }}
+                onSubmit={() => void submit()}
+              />
             )}
 
 
@@ -766,93 +658,26 @@ export default function AccountScreen() {
         )}
       </ScrollView>
 
-      {/* Dismissible by the scrim and by Android back — a confirm the hardware
-          back button ignores is the one people hit twice and sign out anyway. */}
-      <Modal
+      {/* Load-bearing body copy: with no reset flow, signing out without knowing
+          the password is how an account is lost for good. */}
+      <ConfirmDialog
         visible={confirmingSignOut}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => setConfirmingSignOut(false)}
-      >
-        <Pressable
-          style={styles.scrim}
-          accessibilityLabel="Dismiss"
-          onPress={() => setConfirmingSignOut(false)}
-        >
-          {/* Swallows taps so a press inside the card does not dismiss it. */}
-          <Pressable style={styles.dialog} onPress={() => {}}>
-            <Text style={styles.dialogTitle}>Sign out?</Text>
-            <Text style={styles.dialogBody}>
-              {/* Load-bearing: with no reset flow, signing out without knowing the
-                  password is how an account is lost for good. */}
-              You&rsquo;ll need your email and password to get back in. There&rsquo;s no password
-              reset yet.
-            </Text>
-            <View style={styles.dialogActions}>
-              <HapticPressable
-                onPress={() => setConfirmingSignOut(false)}
-                accessibilityLabel="Cancel"
-                style={styles.dialogGhost}
-              >
-                <Text style={styles.dialogGhostText}>Cancel</Text>
-              </HapticPressable>
-              <HapticPressable
-                onPress={doSignOut}
-                accessibilityLabel="Confirm sign out"
-                style={styles.dialogDanger}
-              >
-                <Text style={styles.dialogDangerText}>Sign out</Text>
-              </HapticPressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        title="Sign out?"
+        body="You’ll need your email and password to get back in. There’s no password reset yet."
+        confirmLabel="Sign out"
+        onConfirm={doSignOut}
+        onCancel={() => setConfirmingSignOut(false)}
+      />
 
-      {/* ── Delete account confirmation ──────────────────────────────────── */}
-      <Modal
+      <ConfirmDialog
         visible={confirmingDelete}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => !deleting && setConfirmingDelete(false)}
-      >
-        <Pressable
-          style={styles.scrim}
-          accessibilityLabel="Dismiss"
-          onPress={() => !deleting && setConfirmingDelete(false)}
-        >
-          <Pressable style={styles.dialog} onPress={() => {}}>
-            <Text style={styles.dialogTitle}>Delete your account?</Text>
-            <Text style={styles.dialogBody}>
-              This is permanent. Your credits, Pro status, saved lines and all account data will be
-              gone — there is no undo.
-            </Text>
-            <View style={styles.dialogActions}>
-              <HapticPressable
-                onPress={() => setConfirmingDelete(false)}
-                disabled={deleting}
-                accessibilityLabel="Cancel"
-                style={styles.dialogGhost}
-              >
-                <Text style={styles.dialogGhostText}>Cancel</Text>
-              </HapticPressable>
-              <HapticPressable
-                onPress={() => void doDelete()}
-                disabled={deleting}
-                accessibilityLabel="Confirm delete account"
-                style={styles.dialogDanger}
-              >
-                {deleting ? (
-                  <ActivityIndicator size="small" color={palette.danger} />
-                ) : (
-                  <Text style={styles.dialogDangerText}>Delete account</Text>
-                )}
-              </HapticPressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        title="Delete your account?"
+        body="This is permanent. Your credits, Pro status, saved lines and all account data will be gone — there is no undo."
+        confirmLabel="Delete account"
+        busy={deleting}
+        onConfirm={() => void doDelete()}
+        onCancel={() => setConfirmingDelete(false)}
+      />
       {toast.element}
     </View>
   );
@@ -893,33 +718,6 @@ function SignedIn({
   );
 }
 
-type FieldProps = React.ComponentProps<typeof TextInput> & {
-  label: string;
-  accessory?: React.ReactNode;
-};
-
-function Field({ label, accessory, ...input }: FieldProps) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel} maxFontSizeMultiplier={1.3}>
-        {label}
-      </Text>
-      <View style={styles.inputRow}>
-        <TextInput
-          {...input}
-          accessibilityLabel={label}
-          placeholderTextColor={palette.textTertiary}
-          // Merged, not replaced. `style` sits after the spread so it wins, which
-          // meant a caller passing one had it silently dropped — the code field's
-          // whole point is the tracking and the 26pt face.
-          style={[styles.input, input.style]}
-        />
-        {accessory}
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: palette.ink },
   scroll: { gap: spacing.lg },
@@ -944,19 +742,6 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: `${palette.violet}24`, borderColor: `${palette.violet}88` },
   tabLabel: { flexShrink: 1, fontSize: 13.5, fontWeight: '700', color: palette.textSecondary },
 
-  field: { gap: 7 },
-  fieldLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, color: palette.textTertiary },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.md,
-    backgroundColor: palette.surfaceHigh,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: palette.hairlineStrong,
-  },
-  input: { flex: 1, minWidth: 0, paddingVertical: 14, fontSize: 15, color: palette.textPrimary },
 
   warning: {
     flexDirection: 'row',
@@ -980,13 +765,8 @@ const styles = StyleSheet.create({
    * number rather than as six separate characters. `center` because there is
    * nothing else on the line to align to.
    */
-  codeInput: { textAlign: 'center', fontSize: 26, fontWeight: '800', letterSpacing: 10 },
-  codeActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 
   /** Text-button row: the secondary actions that are not the CTA. */
-  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
-  linkText: { fontSize: 13, fontWeight: '700', color: palette.textSecondary },
-  linkAccent: { fontSize: 13, fontWeight: '700', color: palette.violetBright },
 
   error: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   errorText: { flex: 1, fontSize: 13, lineHeight: 18, color: palette.danger },
@@ -1053,49 +833,4 @@ const styles = StyleSheet.create({
   },
   deleteBtnText: { fontSize: 14.5, fontWeight: '700', color: palette.danger },
 
-  // ── Sign-out confirmation ──────────────────────────────────────────────────
-  scrim: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-    // Darker than the app background so the card reads as lifted off it — a
-    // surface-coloured sheet on an ink scrim would just look like a panel.
-    backgroundColor: 'rgba(3,3,8,0.72)',
-  },
-  dialog: {
-    alignSelf: 'stretch',
-    maxWidth: 400,
-    padding: spacing.xl,
-    gap: spacing.md,
-    borderRadius: radii.lg,
-    backgroundColor: palette.surfaceHigh,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: palette.hairlineStrong,
-  },
-  dialogTitle: { ...typography.h2 },
-  dialogBody: { ...typography.bodyMuted, fontSize: 14 },
-  dialogActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  dialogGhost: {
-    paddingVertical: 11,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.full,
-  },
-  dialogGhostText: { fontSize: 14.5, fontWeight: '700', color: palette.textSecondary },
-  dialogDanger: {
-    paddingVertical: 11,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.full,
-    // Tinted rather than solid: destructive, but it is not the action we are
-    // steering the user toward, and a solid red fill reads as the primary CTA.
-    backgroundColor: 'rgba(255,92,92,0.14)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,92,92,0.4)',
-  },
-  dialogDangerText: { fontSize: 14.5, fontWeight: '700', color: palette.danger },
 });

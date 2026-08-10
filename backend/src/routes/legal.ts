@@ -20,9 +20,6 @@ import { Hono } from 'hono';
  */
 export const legal = new Hono();
 
-/** Bump when the substance changes. Users notice a date that never moves. */
-const UPDATED = '5 August 2026';
-
 const CONTACT = 'support@rizzcoach.app';
 
 function page(title: string, body: string): string {
@@ -40,7 +37,6 @@ function page(title: string, body: string): string {
   }
   h1 { font-size: 1.9rem; letter-spacing: -0.02em; margin: 0 0 .25rem; }
   h2 { font-size: 1.15rem; margin: 2.25rem 0 .6rem; color: #fff; }
-  .updated { color: #8A8AA0; font-size: .875rem; margin: 0 0 2rem; }
   a { color: #A78BFA; }
   ul { padding-left: 1.25rem; }
   li { margin: .35rem 0; }
@@ -54,13 +50,11 @@ function page(title: string, body: string): string {
   @media (prefers-color-scheme: light) {
     body { background: #fff; color: #1A1A24; }
     h2, strong { color: #000; }
-    .updated, footer { color: #666; }
-    footer { border-top-color: #E5E5EA; }
+    footer { color: #666; border-top-color: #E5E5EA; }
   }
 </style>
 </head><body>
 <h1>${title}</h1>
-<p class="updated">Last updated ${UPDATED}</p>
 ${body}
 <footer>
   RizzCoach · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> ·
@@ -180,11 +174,12 @@ legal.get('/privacy', (c) =>
       'Privacy Policy',
       `
 <p>This explains what RizzCoach collects, why, and what we do not collect. The
-short version: <strong>we do not store your screenshots, your conversations, or
-the suggestions we generate.</strong></p>
+short version: <strong>we never store what you give us — no screenshots, no
+images, no conversations.</strong> We do keep results you asked us to keep, and
+you can delete them.</p>
 
 <h2>1. What we store</h2>
-<p>One database row per account, containing:</p>
+<p>Your account row, containing:</p>
 <ul>
   <li><strong>Email and username</strong> — only if you create an account;</li>
   <li><strong>A password hash</strong> — scrypt, never the password itself;</li>
@@ -195,14 +190,33 @@ the suggestions we generate.</strong></p>
   <li><strong>Subscription status</strong> and its expiry, plus an identifier from
       our payment provider.</li>
 </ul>
+<p>Plus two things you create by acting in the app, so they survive you changing
+or reinstalling your phone:</p>
+<ul>
+  <li><strong>Profile Scan reports</strong> — the written report we produced, when
+      you run a scan. The screenshots it was produced from are never stored;</li>
+  <li><strong>Saved lines</strong> — a suggestion, and only when you tap save on
+      it.</li>
+</ul>
+<p>Both appear in the app (in Profile Scan's history and in your Vault), both can
+be deleted individually or all at once from there, and both are erased when you
+delete your account.</p>
 
 <h2>2. What we do NOT store</h2>
 <div class="note">
-<p>We do not keep <strong>screenshots, images, message text, bios, profile
-details, generated openers, or any analysis result</strong>. There is nowhere in
-our database for them to go. Content is sent to the AI, the answer comes back to
-your phone, and nothing about it is written down on our side.</p>
+<p>We never keep <strong>anything you give us</strong>: no screenshots, no images,
+no message text, no conversations, no bios or profile descriptions you type.
+There is nowhere in our database for them to go. They are sent to the AI, the
+answer comes back to your phone, and the content itself is never written down on
+our side.</p>
+<p>Results are kept only where you asked for them to be — a scan you ran, a line
+you saved. Nothing is stored as a side effect of using the app, and we never keep
+a suggestion you did not save.</p>
 </div>
+<p>For a few minutes after a request we hold its answer in a short-lived technical
+cache, so that a retry or a dropped connection returns the result you already paid
+a credit for instead of charging you twice. It is deleted automatically and is
+never used for anything else.</p>
 <p>We do not collect your contacts, your location, your photo library, your
 microphone, or your dating-app credentials.</p>
 
@@ -242,14 +256,17 @@ by hand</strong> in your phone's settings.</p>
 <p>We do not sell your data, and we do not share it for advertising.</p>
 
 <h2>6. How long we keep it</h2>
-<p>Your account row exists until you delete the account. Server logs are kept
-briefly for debugging and contain no message content, no email addresses and no
-usernames.</p>
+<p>Your account row, your scan reports and your saved lines exist until you delete
+them or delete your account — we do not expire them on our own, because they are
+there for you to come back to. Server logs are kept briefly for debugging and
+contain no message content, no email addresses and no usernames.</p>
 
 <h2>7. Your rights</h2>
 <p>You can ask us to access, correct, export or delete your data by writing to
 <a href="mailto:${CONTACT}">${CONTACT}</a> from your registered email address.
-Deleting your account erases the row described in section 1 permanently.</p>
+Deleting your account, from Account → Delete account in the app, permanently
+erases everything described in section 1 — the row, every scan report and every
+saved line — in a single operation.</p>
 <p>Depending on where you live you may also have rights under the GDPR, the CCPA
 or India's DPDP Act, including objecting to processing and complaining to a
 regulator.</p>
@@ -266,8 +283,8 @@ the most sensitive thing you could lose here — your conversations — is not
 something we hold.</p>
 
 <h2>10. Changes</h2>
-<p>We will update this page and the date above when practices change, and notify
-you in the app if the change is material.</p>
+<p>We will update this page when practices change, and notify you in the app if
+the change is material.</p>
 
 <h2>11. Contact</h2>
 <p><strong>[LEGAL ENTITY NAME]</strong>, <strong>[REGISTERED ADDRESS]</strong><br>

@@ -16,6 +16,7 @@
 
 import { apiUrl, accessToken, reportCredits, type Credits } from '@/state/session';
 import { reportError, track, type EngineName } from './analytics';
+import { isValidResult } from './contracts';
 
 export { isLiveApi } from '@/state/session';
 
@@ -96,6 +97,17 @@ export async function callApi<T>(path: string, body: unknown, signal?: AbortSign
     // The server's count is the truth; the local one is an optimistic cache that
     // exists so the paywall can appear without a round trip.
     if (data.credits) reportCredits(data.credits);
+
+    /*
+     * The response typechecks only because we cast it. Verify it before a
+     * renderer dereferences it — see contracts.ts for why this sits here and
+     * not in each engine. Credits are already reported above on purpose: the
+     * server charged for work it did do, and refusing to record that would
+     * hand out a free analysis every time the contract drifts.
+     */
+    if (!isValidResult(path, data.result)) {
+      throw new ApiError('SCHEMA', 'The server sent something this app cannot read', false);
+    }
 
     track({ name: 'ai_success', engine, ms: Date.now() - started });
     return data.result;

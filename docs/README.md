@@ -68,12 +68,16 @@ RizzCoach/
 │   │   │   ├── bio.tsx             ▸ BIO OPTIMIZER — text inputs; needs useKeyboardInset
 │   │   │   └── discover.tsx        ▸ DISCOVER — daily feed, swipe limit, lock overlay
 │   │   ├── paywall.tsx           plans + purchase + restore; ALL paywall analytics live here
-│   │   ├── vault.tsx             saved lines (DB synced & persistent across reinstalls)
+│   │   ├── vault.tsx             saved lines (DB synced & themed delete confirmation modal)
+│   │   ├── account.tsx           signup · login · sign-out · delete account; the auth gate
 │   │   ├── analyzer.tsx          disclosure + the two-permission flow for the bubble
 │   │   └── +not-found.tsx
 │   │
-│   ├── components/             23 shared UI pieces
+│   ├── components/             25 shared UI pieces
 │   │   ├── HapticPressable.tsx   the base touchable — everything routes through it
+│   │   ├── ConfirmDialog.tsx     ★ the ONE destructive-confirm dialog — never Alert.alert
+│   │   ├── ScanReport.tsx        the Profile Scan report — split out of profile.tsx
+│   │   ├── AuthFields.tsx        CredentialFields · CodeStep · Field — split out of account.tsx
 │   │   ├── AppErrorBoundary.tsx  ★ the crash screen — exported as `ErrorBoundary` by NAME
 │   │   ├── ScreenHeader.tsx      wordmark + credit meter + vault, on all three AI tools
 │   │   ├── GlowDropZone.tsx      the breathing screenshot drop pad
@@ -87,6 +91,7 @@ RizzCoach/
 │   │
 │   ├── services/               everything that talks outward
 │   │   ├── api.ts                ★ callApi — the ONLY path to the backend
+│   │   ├── contracts.ts          ✓ response guards, called by callApi before rendering
 │   │   ├── engine.ts             Lab       →  POST /v1/ai/lab
 │   │   ├── profileEngine.ts      Profile   →  POST /v1/ai/profile
 │   │   ├── bioEngine.ts          Bio       →  POST /v1/ai/bio
@@ -108,7 +113,10 @@ RizzCoach/
 │   │   └── contrast.selfcheck.ts ✓ runnable — WCAG AA vs tokens.ts
 │   │
 │   ├── data/                   mockAnalysis.ts · feed.ts · assets.ts   (offline seeds)
-│   ├── utils/                  useBackToIdle.ts · useKeyboardInset.ts · haptics.ts · misc.ts
+│   ├── utils/                  hooks + helpers
+│   │   ├── useCreditGate.ts      ★ the ONE free-tier block → paywall, with attribution
+│   │   ├── useStagedProgress.ts  the "thinking" stage ticker (owns the timer, nothing else)
+│   │   └── useBackToIdle.ts · useKeyboardInset.ts · haptics.ts · misc.ts
 │   ├── constants.ts            FREE_ANALYSIS_LIMIT (3) · FREE_SWIPE_LIMIT (10)
 │   └── types.ts                result shapes — must match the server schemas exactly
 │
@@ -127,7 +135,7 @@ RizzCoach/
 │       │   └── auth.selfcheck.ts     ✓ install claim + the four account-existence codes
 │       ├── middleware/           auth.ts · credits.ts · rateLimit.ts · idempotency.ts
 │       │   └── credits.selfcheck.ts    ✓ runnable
-│       ├── db/                   schema.ts · client.ts · migrate.ts · migrations/ (0000–0007)
+│       ├── db/                   schema.ts · client.ts · migrate.ts · migrations/ (0000–0009)
 │       ├── lib/                  logger (rid) · errors · jwt · limits · revenuecat · otp · mailer
 │       │   └── otp.selfcheck.ts      ✓ single-use · attempt cap · expiry · daily send cap
 │       └── vercel.selfcheck.ts   ✓ the ONLY check that exercises vercel.ts
@@ -167,6 +175,12 @@ skip straight past the report and exit the app. Every such screen calls
 `vault` and `paywall` are full-screen modals on Android and must apply `insets.top` themselves —
 iOS sheets report 0 there.
 
+**Only routes belong in `src/app/`.** The folder *is* the router, so a helper component left
+beside a screen becomes a reachable URL. That is why the two big screens were split into
+[components/](../src/components/) rather than into a folder next to themselves. Each screen
+keeps its shell — the copy and controls that read three or four flags at once — and hands off
+only the parts that read nothing but props.
+
 ### 3.2 State
 
 `useRizzStore.ts` — Zustand, persisted to MMKV. Anything that must survive a reload has to be
@@ -181,6 +195,33 @@ with `isLiveApi ? state : count + 1`. Both used to fire — the server envelope 
 post-charge count, and the screen then added its own +1 — so a free user was locked out after
 **two** of three free analyses. It hid because the local increment is correct offline, which is
 the mode everyone develops in. Full trace in `AGENTS.md`.
+
+**The vault and scan history now outlive the install.** Saved lines live in `saved_items` and
+profile-scan summaries in `profile_scans` (migrations 0009 and 0008). `state/session.ts` owns
+both sides: `fetchVault()` and `fetchScans()` hydrate on screen mount ([vault.tsx](../src/app/vault.tsx),
+[profile.tsx](../src/app/(tabs)/profile.tsx)), and the store actions mirror every write —
+`toggleSave` → `saveVaultItem`, `removeSaved` → `deleteVaultItem`, `clearVault` →
+`clearVaultItems`, `forgetScan` → `deleteScan`.
+
+Three properties are load-bearing:
+
+- **The client mints the id and the server stores it verbatim** as the primary key, so the local
+  row and the server row are the same row. `POST /v1/user/vault` is an upsert
+  (`ON DUPLICATE KEY UPDATE`) for exactly this reason — re-save is idempotent. Never regenerate
+  an id on sync; you get a duplicate the user has to delete twice.
+- **MMKV stays the optimistic copy, the DB is the durable one.** Every sync helper returns
+  `false`/`[]` rather than throwing, and returns early when `isLiveApi` is false, so the vault
+  works fully offline — at the cost of a local write that never reached the server going quiet
+  until the next fetch overwrites it.
+- **These helpers hand-roll `fetch` on purpose,** like everything else in `session.ts`: they carry
+  the raw `Authorization` header and must not depend on `callApi`, which sits *on top* of session
+  identity. That is the boundary — §4.1's "never hand-roll a fetch" governs the engines, not this
+  file.
+
+Scan history is capped at 20 by the `GET /v1/user/scans` query; the vault has no cap at all,
+which is why [vault.tsx](../src/app/vault.tsx) is the one list with explicit virtualization
+bounds. See §5.4a for what those two tables are allowed to hold — the rule is narrower than it
+looks.
 
 `state/limits.ts` owns the swipe allowance. Both the store and Discover must call
 `swipesUsedToday()` / `nextSwipeState()` — when they each derived it themselves, a cumulative
@@ -226,6 +267,15 @@ Accessibility rules that are enforced, not aspirational:
   `ReduceMotion.System`. The only thing to check on a new animation is where it *stops*.
   `AnalyzingOverlay` is the one place needing `useReducedMotion()` explicitly: its beam froze
   parked at the card's bottom edge and read as a rendering bug.
+- **Destructive actions confirm through `<ConfirmDialog>`, never `Alert.alert`.** Removing a
+  saved line, clearing the vault, forgetting a scan and deleting the account all delete a
+  *server* row, so the dialog is the only thing between a mis-tap and data that is gone. The
+  native alert renders in the OS palette — white sheet, blue text, ALL-CAPS Android buttons —
+  in the middle of a dark app, and cannot read `tokens.ts` at all. Five hand-rolled copies
+  across three screens collapsed into
+  [components/ConfirmDialog.tsx](../src/components/ConfirmDialog.tsx); pass `busy` for an async
+  confirm and it disables both buttons, spins the danger one, and stops the scrim and Android
+  back from dismissing a request that is already in flight. Add a prop rather than a sixth copy.
 - **Keyboard handling needs both halves.** `automaticallyAdjustKeyboardInsets` is iOS-only, and
   under the edge-to-edge display SDK 54+/RN 0.86 enforce the Android window no longer resizes on
   keyboard open — so `adjustResize` stopped working and Android had none. `useKeyboardInset()` is
@@ -316,6 +366,22 @@ deliberate, and it is also the single most confusing behaviour in the codebase: 
 does not mean you are seeing live output.** When debugging "the AI isn't working", check the
 console warn (`[engine] live analysis failed`) before anything else.
 
+### 4.5a The response is validated before anything renders
+
+[services/contracts.ts](../src/services/contracts.ts) is called inside `callApi`. It exists
+because [types.ts](../src/types.ts) and [schemas.ts](../backend/src/ai/schemas.ts) describe the
+same four payloads in two languages with nothing enforcing it, and `callApi<T>` only *cast* the
+answer. The server ships separately from an OTA and an installed build cannot be rolled back —
+so a renamed field arrived as `undefined` and painted blank cards, silently.
+
+A mismatch now throws `ApiError('SCHEMA')` into the mock fallback above: the user gets a
+visibly canned result and a toast instead of an empty report, and Crashlytics gets the trace.
+The guards check **only what a renderer dereferences unconditionally** — stricter than the UI
+would turn a cosmetic server change into a user-facing outage. `isProfile: false` passes
+carrying none of the report (a rejection is a valid answer), and an unknown route passes so a
+fifth engine is never blocked by a guard nobody has written. Checked by
+`contracts.selfcheck.ts` in `npm run checks`.
+
 ### 4.6 Adding an engine
 
 Two-sided change. Server: a system prompt in `ai/prompts.ts`, a `responseSchema` (uppercase
@@ -346,8 +412,13 @@ Hono, deployed as a Vercel function, against Railway MySQL via Drizzle.
 | `POST /v1/ai/chat` | JWT | transcript → one reply (called by the Android bubble) |
 | `GET /v1/feed` | optional | the day's Discover lines, generated once and cached in MySQL |
 | `GET /v1/user/credits` | JWT | the truth about the balance |
+| `GET /v1/user/vault` | JWT | saved lines, newest first |
+| `POST /v1/user/vault` | JWT | upsert one saved line — client-minted id is the PK |
+| `DELETE /v1/user/vault/:id` · `DELETE /v1/user/vault` | JWT | remove one · clear all |
+| `GET /v1/user/scans` | JWT | the last **20** profile-scan summaries |
+| `DELETE /v1/user/scans/:id` | JWT | forget one scan |
 | `POST /v1/user/pro` | JWT | verify entitlement against RevenueCat, re-issue the token |
-| `DELETE /v1/user/me` | JWT | ⚠ deletes only the `users` row — see §5.5 |
+| `DELETE /v1/user/me` | JWT + account | one transaction, six deletes — see §5.5 |
 | `POST /v1/webhooks/revenuecat` | HMAC | renewals and cancellations; RevenueCat has no JWT |
 | `GET /terms` · `/privacy` | — | registered above every `use()` so a reviewer can reach them |
 
@@ -415,17 +486,55 @@ The cooldown alone never capped anything — rotate IPs, pace to 60 seconds, and
 send counter, and dropping it ten minutes after issue reset the daily cap every ten minutes.
 The *code* still dies on the dot; `verifyOtp` has `expires_at > now` in its predicate.
 
-### 5.5 Known gap: account deletion is incomplete
+### 5.4a What the schema is now allowed to hold
 
-`DELETE /v1/user/me` runs one statement against `users`. That was accurate at migration
-0003 and stopped being true at 0004: there are no foreign keys, so `credit_events.user_id`
-survives 90 days and `idempotency.id` (`<user_id>:<key>`) up to 15 minutes. The route's own
-comment still claims "the user row IS the user's data".
+`db/schema.ts` opens with *"NEVER add: images, transcripts, replies, reports, or saved items"*.
+Migrations 0008 and 0009 add `profile_scans` and `saved_items` — reports and saved items. **The
+rule was narrowed deliberately; it was not forgotten,** and the narrowing is what keeps the
+privacy policy true:
 
-There is also **no in-app delete button** — it was removed from `account.tsx` by request,
-while signup is mandatory. App Store Review 5.1.1(v) and GDPR Art. 17 both apply. Both halves
-are deliberate deferrals, not oversights; fix is three statements in a transaction (or
-`ON DELETE CASCADE`) plus restoring the button.
+- **Nothing the user gave us is stored.** No screenshot, no image bytes, no chat transcript, no
+  bio input, ever — that half of the rule is absolute and is what `analyzer.tsx` and
+  `account.tsx` promise in those words. `profile_scans.summary_json` is the structured report,
+  and `saved_items.text` is a line the user explicitly tapped a bookmark on.
+- **Only output, and only on an explicit act.** A scan report is written because the user ran a
+  scan; a vault line is written because the user saved it. Nothing lands in either table as a
+  side effect.
+- **Deletion is real, not a retention promise.** Both tables are purged inside the
+  `DELETE /v1/user/me` transaction, and both have per-row delete routes the UI actually calls.
+
+The one thing that genuinely changed for the user: a `'them'` report about a real third party now
+persists on our servers until deleted, where it used to live only in MMKV. Keep the privacy
+policy's "generated openers" wording in step with that before shipping — see §8. Adding a *third*
+kind of table still needs this section rewritten first.
+
+### 5.5 Account deletion
+
+**This section used to describe a store-blocking gap. Both halves have shipped.**
+
+`DELETE /v1/user/me` is one transaction and six statements — `credit_events`, `idempotency`
+(`<user_id>:%`), user-scoped `rate_limits` buckets, `profile_scans`, `saved_items`, then the
+`users` row. There are still no foreign keys, so **every new user-scoped table must be added to
+that transaction by hand**; nothing fails if you forget, the rows simply outlive the account. It
+is fronted by `requireAccount`, not plain JWT: a device token proves someone holds the install
+id, not that they are the account holder. Hard DELETE, never a soft flag — the unique key on
+`email` would block the user signing up again.
+
+The in-app button is back in `account.tsx` (`SignedIn → onDelete`), behind the themed confirm
+dialog, with the control disabled while the request is in flight. App Store Review 5.1.1(v) and
+GDPR Art. 17 are satisfied.
+
+Client-side, `deleteAccount()` drops the token, the install id, the cached user, the signed-out
+flag and the remembered email — the install id goes because the row it pointed at is gone and
+keeping it 401s every request until a reinstall.
+
+`deleteAccount()` clears **both** `scanHistory` and `savedItems`. It cleared only the first
+once, so the vault's MMKV copy outlived the account and the next anonymous install on that
+device read the deleted user's saved lines. It uses `setState` rather than the store actions on
+purpose: `clearVault()` mirrors to the API, and the token is already gone by that point.
+
+⚠️ One leftover: the route's own doc comment still claims "one statement is the whole
+implementation… the user row IS the user's data". Stale — the code directly below it disagrees.
 
 ### 5.6 The two deployment traps
 
@@ -525,6 +634,13 @@ story. There is no overload that accepts arbitrary data, so the mistake has nowh
 Never add a parameter carrying message text, bios, names, openers, `uiText`, the package name of
 the app being viewed, or the install id. Same rule, same reason, in `backend/src/lib/logger.ts`.
 
+The analytics rule is unchanged. **The privacy policy's storage claim was reworded** to match
+§5.4a: never what the user gives us, only results they asked us to keep, nothing as a side
+effect, plus the few-minute idempotency cache stated outright. "Screenshots and conversations
+are never saved" stays — it is still literally true. Adding a table means moving policy sections
+1, 2, 6 and 7 together. The pages carry no "last updated" date by request, so nothing in the
+copy may refer to one.
+
 `app_open`, `first_open`, `session_start`, `screen_view` and `app_exception` are collected
 automatically by GA4 and are **reserved** — logging them by hand is silently dropped.
 `pro_purchased` is deliberately not called `purchase`: that is a GA4 commerce event expecting
@@ -611,6 +727,7 @@ into autolinked packages). `npm ci` before `eas build` if a build behaves oddly.
 npm run checks                                          # tsc + eslint + limits — the gate
 npx eslint src modules                                  # must be 0 errors
 node src/state/limits.selfcheck.ts                      # swipe allowance + store keys
+node src/services/contracts.selfcheck.ts                # API response guards
 node src/theme/contrast.selfcheck.ts                    # palette vs WCAG AA
 cd backend && npm run check                             # tsc + 6 pure selfchecks
 cd backend && npm run check:db                          # 4 selfchecks against a real DB
@@ -701,4 +818,7 @@ The failure modes that have actually cost time, and what they look like from the
 | White screen, no way back | a render throw with no boundary | `ErrorBoundary` exported by that exact name from both layouts |
 | Signup says "check your email", no mail arrives | the address already has an account | `/v1/auth/otp` must return 409 `EMAIL_TAKEN`, not `{ok:true}` |
 | Discover swipes vanish faster than swiping | `seen` keyed by index and reset on filter change | it is a `Set<string>` of ids in `discover.tsx`; never clear it |
+| The vault empties, or a delete comes back on next open | the sync helper failed silently — they all swallow errors and return `false` | is `isLiveApi` true? then `GET /v1/user/vault` by hand |
+| A saved line reappears after deleting it twice | a regenerated id — the client id IS the server PK | `toggleSave` in `useRizzStore.ts` |
+| A fresh install shows a deleted account's vault | `deleteAccount()` resets `scanHistory` only | `session.ts:384` |
 | Credits never refresh on iOS | `refreshCredits()` folded back behind the bubble's `isSupported` guard | it needs its own effect in `_layout.tsx` |

@@ -5,6 +5,7 @@ import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CircleIconButton } from '@/components/CircleIconButton';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { EmptyVault } from '@/components/EmptyVault';
 import { useToast } from '@/components/Toast';
 import { HapticPressable } from '@/components/HapticPressable';
@@ -39,6 +40,9 @@ export default function VaultScreen() {
     });
   }, []);
 
+  const [itemToDelete, setItemToDelete] = useState<SavedItem | null>(null);
+  const [isClearConfirming, setIsClearConfirming] = useState(false);
+
   const items = useMemo(() => {
     const sorted = [...savedItems].sort((a, b) => b.savedAt - a.savedAt);
     return filter === 'All' ? sorted : sorted.filter((item) => item.category === filter);
@@ -56,14 +60,28 @@ export default function VaultScreen() {
     if (outcome === 'copied') toast.show("Copied. Go get 'em.");
   };
 
-  const removeItem = (item: SavedItem) => {
+  const onRequestRemoveItem = (item: SavedItem) => {
     haptic.warning();
-    removeSaved(item.id);
+    setItemToDelete(item);
   };
 
-  const confirmClear = () => {
+  const executeRemoveItem = () => {
+    if (!itemToDelete) return;
+    haptic.warning();
+    removeSaved(itemToDelete.id);
+    setItemToDelete(null);
+    toast.show('Line removed');
+  };
+
+  const onRequestClearVault = () => {
+    haptic.warning();
+    setIsClearConfirming(true);
+  };
+
+  const executeClearVault = () => {
     haptic.warning();
     clearVault();
+    setIsClearConfirming(false);
     toast.show('Vault cleared');
   };
 
@@ -93,7 +111,7 @@ export default function VaultScreen() {
             icon="trash-outline"
             size={38}
             color={palette.danger}
-            onPress={confirmClear}
+            onPress={onRequestClearVault}
             accessibilityLabel="Clear entire vault"
           />
         )}
@@ -139,23 +157,6 @@ export default function VaultScreen() {
         ]}
         ItemSeparatorComponent={Separator}
         showsVerticalScrollIndicator={false}
-        /*
-         * Virtualization bounds, which this list had none of.
-         *
-         * The vault is the one screen with no cap on how much it holds — scan
-         * history is capped at 20, but saved items grow for as long as someone
-         * keeps tapping the bookmark. With the defaults, FlatList rendered a
-         * window sized for a list it had no measurements for, and every item is
-         * a card with its own entering animation.
-         *
-         * Modest numbers on purpose: these are text cards, so the risk is
-         * over-rendering, not blank space while scrolling. `discover.tsx` gets
-         * the aggressive treatment because its items are full-screen.
-         *
-         * No `getItemLayout` — items are variable height (a saved line can wrap
-         * to three lines or one), and a wrong fixed height there is worse than
-         * none: it desynchronises scroll position from content.
-         */
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={7}
@@ -173,9 +174,27 @@ export default function VaultScreen() {
             index={index}
             onCopy={() => void copyItem(item)}
             onShare={() => void shareItem(item)}
-            onRemove={() => removeItem(item)}
+            onRemove={() => onRequestRemoveItem(item)}
           />
         )}
+      />
+
+      <ConfirmDialog
+        visible={itemToDelete !== null}
+        title="Remove saved line?"
+        body="This deletes the line from your vault on every device. There is no undo."
+        confirmLabel="Remove"
+        onConfirm={executeRemoveItem}
+        onCancel={() => setItemToDelete(null)}
+      />
+
+      <ConfirmDialog
+        visible={isClearConfirming}
+        title="Clear entire vault?"
+        body="This permanently deletes every saved line, on every device. There is no undo."
+        confirmLabel="Clear all"
+        onConfirm={executeClearVault}
+        onCancel={() => setIsClearConfirming(false)}
       />
 
       {toast.element}

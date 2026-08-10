@@ -76,16 +76,56 @@ it self-regulates: the same 40-line transcript measured thoughts=236/out=26 at 5
 thoughts=404/out=26 at 2048. Raising the cap buys more thinking, latency and cost for an
 identical answer. Measure with `usageMetadata` before changing any cap.
 
-**`profile_scans` & `saved_items` (Vault) persistence (`backend/src/routes/user.ts`, `src/state/session.ts`, `src/state/useRizzStore.ts`, `src/app/vault.tsx`):**
-- Profile scan summaries (`profile_scans`) and saved vault lines (`saved_items`) are stored in Railway MySQL and fetched via `GET /v1/user/scans` and `GET /v1/user/vault`.
-- **Zero-PII Storage**: Raw screenshots and images are NEVER persisted; only structured JSON scan summaries and user-bookmarked text lines are kept.
-- **Atomic Sync**: Server IDs are retained 1:1 on client store actions (`toggleSave`, `removeSaved`, `clearVault`) and synced with DB endpoints (`POST /v1/user/vault`, `DELETE /v1/user/vault/:id`, `DELETE /v1/user/vault`).
-- **Account Deletion Integrity**: Account deletion transaction in `backend/src/routes/user.ts` purges both `profile_scans` and `saved_items` along with user records. Client `deleteAccount()` resets local `scanHistory` and `savedItems`.
-- **Remove Scan Confirmation**: Removing a scan from history (`forgetScan` in `profile.tsx`) presents a themed confirmation dialog matching app design tokens (`scrim`, `dialog`, `dialogDanger`) before sending `DELETE /v1/user/scans/:id` and updating local state.
+**The vault and scan history are DB-backed, and `db/schema.ts`'s "NEVER add" rule was
+narrowed to allow it.** `profile_scans` (migration 0008) holds structured scan summaries;
+`saved_items` (0009) holds lines the user bookmarked. Read that rule as it now stands:
+**nothing the user gave us is ever stored** — no screenshot, no image bytes, no transcript, no
+bio input — and only *output*, only on an *explicit* user act, may be. Nothing lands in either
+table as a side effect. That is what keeps "screenshots and conversations are never saved" true
+in `analyzer.tsx` and `account.tsx`. A third kind of user-scoped table needs docs/README.md
+§5.4a rewritten before it is added, not after.
+
+- **The client mints the id and it IS the server primary key.** `POST /v1/user/vault` upserts
+  (`ON DUPLICATE KEY UPDATE`), so re-saving is idempotent. Regenerate an id on sync and the
+  user gets a duplicate they have to delete twice.
+- **Sync helpers live in `session.ts` and hand-roll `fetch`,** like everything else there —
+  they carry the raw bearer header and must not go through `callApi`, which sits on top of
+  session identity. Each returns `false`/`[]` instead of throwing and returns early when
+  `isLiveApi` is false, so the vault works offline; the cost is that a failed write is silent
+  until the next fetch. `fetchVault()` / `fetchScans()` hydrate on screen mount.
+- **`GET /v1/user/scans` caps at 20; the vault has no cap** — which is why `vault.tsx` is the
+  one list carrying explicit `initialNumToRender` / `maxToRenderPerBatch` / `windowSize`
+  bounds, and no `getItemLayout` (saved lines are variable height; a wrong fixed height
+  desynchronises scroll from content). Do not "tidy" those props away.
+- **Every user-scoped table must be added to the `DELETE /v1/user/me` transaction by hand.**
+  There are no foreign keys. Nothing fails if you forget — the rows just outlive the account.
+- **`deleteAccount()` clears BOTH lists, and both are load-bearing.** It cleared only
+  `scanHistory` once: the server rows were gone but the MMKV copy of the vault survived, so the
+  next anonymous install on that device opened the Vault and read the deleted account's saved
+  lines. It uses `setState`, not the store actions — `clearVault()` mirrors to the API and the
+  token has already been dropped by then, so it would fire a 401 at a row that no longer exists.
+- **Both server writes belong to the STORE, not to a screen.** `removeSaved`/`clearVault`/
+  `toggleSave` and now `removeScan` each delete their own server row. `profile.tsx` used to call
+  `deleteScan()` itself, which made the sync a property of one screen: a second caller of
+  `removeScan` would drop the local copy and leave the row alive forever with nothing to notice.
+  Same failure shape as the `analysisCount` double-write. Do not add a second call at a call site.
 
 **The silent mock fallback hides live errors.** Every engine catches failures and returns
 mock data so the app demos offline. When debugging "AI not working", check the console warn
 (`[engine] live analysis failed`) first — a live key does NOT mean you're seeing live output.
+
+**`callApi` VALIDATES the response before returning it — `services/contracts.ts`.** `src/types.ts`
+and `backend/src/ai/schemas.ts` describe the same payloads in two languages, kept in step by
+hand, and the cast in `callApi<T>` enforced nothing. The backend deploys separately from an OTA
+and an installed build cannot be rolled back, so a field renamed server-side reached the
+renderers as `undefined` and painted blank cards with no error anywhere. A mismatch now throws
+`ApiError('SCHEMA')`, which lands in the mock fallback the engines already have — a visibly
+canned result plus a toast, and a Crashlytics trace. **Check only what a renderer dereferences
+unconditionally:** stricter than the UI turns a cosmetic server change into a user-facing
+failure, looser is the blank card again. Optional fields stay unchecked, `isProfile: false` must
+pass carrying none of the report, and an unknown route passes so a fifth engine is not blocked
+by a guard nobody wrote yet. Hand-written, not zod — a bundle dependency for one yes/no question.
+Guarded by `contracts.selfcheck.ts`, which is in `npm run checks`.
 
 **Key detection:** server-side only. `GEMINI_API_KEY` is validated at boot by `backend/src/env.ts`,
 which **exits** rather than starting half-configured. Google issues both `AIza…` and `AQ.…`
@@ -193,6 +233,21 @@ uninstall used to mean a brand-new user row with a fresh `analysis_count = 0`. L
 after a reinstall returns the original row. AGENTS.md previously claimed the server-side
 credit move had already fixed this — it had not, and that claim was wrong until now.
 
+**Nothing but routes may live in `src/app/`.** It is the Expo Router tree, so a helper
+component dropped beside a screen becomes a navigable route — `app/account/AuthForm.tsx`
+would be reachable at `/account/AuthForm`. The pieces split out of `account.tsx` and
+`profile.tsx` are in `components/` for that reason, not for tidiness:
+`components/AuthFields.tsx` (`CredentialFields` + `CodeStep` + `Field`) and
+`components/ScanReport.tsx`. The screens keep the shell — hero copy, tabs, error row, CTA —
+because each of those reads three or four flags at once (`isSignup`, `step`, `useCode`,
+`isOnboarding`) and passing all four down to render one line of text is not a component.
+
+**`account.tsx`'s state stays in `account.tsx`.** Splitting the fields out was worth it;
+lifting the eleven `useState`s into a `useAuthForm()` hook is NOT — the hook would return
+about twenty values the screen immediately destructures, which relocates the coupling
+instead of reducing it, and it would put the documented `setBusy(false)`-is-not-a-`finally`
+subtlety behind an indirection. Leave it.
+
 **The account gate is mandatory, and there is NO REDIRECT — the route simply does not
 exist.** `(tabs)`, `vault`, `analyzer` and `paywall` are wrapped in
 `<Stack.Protected guard={accountStepDone}>`, and a guarded screen is not hidden, it is
@@ -279,17 +334,19 @@ which also pins the NFKC normalisation — the same accented character composes 
 on iOS and Android keyboards, and without it a password set on one platform fails on the
 other, with no reset to recover from.
 
-**`DELETE /v1/user/me` is not a feature.** App Store Review 5.1.1(v) requires in-app
-account deletion, and Play requires a deletion path. It is one statement, and **that is now a known bug**: migration 0004 added
-`credit_events` (90-day retention) and `idempotency`, so the row's UUID outlives the
-account. The route's own comment still claims "the user row IS the user's data" — true at
-0003, false since 0004. Fix is three statements in a transaction, or `ON DELETE CASCADE`.
+**`DELETE /v1/user/me` is not a feature.** App Store Review 5.1.1(v) requires in-app account
+deletion, and Play requires a deletion path. Both halves now ship: the route is one
+transaction over six deletes — `credit_events`, `idempotency` (`<user_id>:%`), user-scoped
+`rate_limits`, `profile_scans`, `saved_items`, then `users` — and the Delete account button is
+back in `account.tsx` behind the themed confirm dialog, disabled while in flight. It is
+fronted by `requireAccount`, not plain JWT: a device token proves someone holds the install
+id, not that they are the account holder. Hard DELETE, never a soft flag — the unique key on
+`email` would block them signing up again.
 
-⚠️ **The Delete account BUTTON was removed from `account.tsx` by request; the route and
-`deleteAccount()` in `session.ts` are intact.** That is a known, deliberate 5.1.1(v)
-exposure, not an oversight — expect a rejection on submission until the button is restored
-or a web deletion page is linked from the listing. Do not "clean up" the unused
-`deleteAccount()` export; it is the other half of putting this back.
+⚠️ Two leftovers. The route's own comment still claims "one statement is the whole
+implementation… the user row IS the user's data" — stale since the transaction landed, and the
+code directly below it disagrees. And there are still **no foreign keys**, so a new user-scoped
+table is only deleted if someone adds it to that transaction by hand.
 
 **`email` and `username` are the ONLY PII in the schema, and that is now the rule** —
 `db/schema.ts` used to say "never any PII" and that line was traded deliberately in
@@ -527,11 +584,19 @@ project, which is what produces `DEPLOYMENT_NOT_FOUND` rather than an honest 404
 does not yet receive mail, while both documents promise it as the route for deletion and
 data requests. Neither can ship as-is.
 
-**The privacy policy's strongest claims are enforced by `db/schema.ts`, not by prose.** It
-states plainly that screenshots, message text, bios and generated openers are never stored,
-which is true because there is nowhere to put them. Add such a column and the policy
-becomes a false statement to users and to two app stores — this is the sharpest reason the
-"NEVER add: images, transcripts, replies, reports, saved items" rule is not negotiable.
+**The privacy policy's strongest claims are enforced by `db/schema.ts`, not by prose.**
+Screenshots, message text and bios are never stored, which is true because there is nowhere to
+put them — **that half is absolute and is the one that is not negotiable.** The policy was
+reworded to match migrations 0008/0009: it now says plainly that we never store what you *give*
+us, that we do keep results you asked us to keep (a scan you ran, a line you saved), that
+nothing is stored as a side effect, and that the idempotency cache holds an answer for a few
+minutes so a retry does not charge twice. Sections 1, 2, 6 and 7 all changed together — **if you
+add a table, all four have to move again.**
+
+**The pages carry no "last updated" date**, by request. Nothing in the copy may refer to one
+(section 10 said "this page and the date above" and had to be reworded when the date came out),
+and there is no version marker to bump — so a substantive edit here is invisible to a user who
+read the old version. If a reviewer or a jurisdiction asks for a date, it goes back in `page()`.
 The Android Accessibility Service is disclosed separately and specifically, which Play
 scrutinises hard; keep that section in step with what the service actually reads.
 
@@ -611,6 +676,16 @@ clips there — `LockOverlay` had to become a `ScrollView` for exactly this reas
 - Read tokens from `src/theme/tokens.ts`. Never hardcode hex or px in screens. Screen gutters
   and tab-bar clearance come from `layout.ts`, never from `spacing.xl` / a literal.
 - All touchables route through `HapticPressable` so touch feel stays consistent.
+- **Destructive actions confirm through `components/ConfirmDialog.tsx` — never `Alert.alert`,
+  never a new local `<Modal>`.** Five of them delete a *server* row: remove a saved line,
+  clear the vault, forget a scan, delete the account. The dialog is the only thing between a
+  mis-tap and data that is gone. The native alert renders in the OS palette (white sheet, blue
+  text, ALL-CAPS Android buttons) inside a dark app and cannot read `tokens.ts` at all.
+  `vault.tsx`, `profile.tsx` and `account.tsx` each carried their own copy of the same ~40
+  lines of scrim/dialog styles; that is now one component and the copies are deleted. Pass
+  `busy` for an async confirm — it disables both buttons, spins the danger one, and blocks
+  scrim-tap and Android back, because dismissing a confirmation whose request is already in
+  flight tells the user it did not happen. Extend it with a prop; do not fork it.
 - **`ErrorBoundary` is exported from BOTH `app/_layout.tsx` and `app/(tabs)/_layout.tsx`, and
   Expo Router finds it BY NAME.** Rename the export and it silently stops existing — there is
   no warning, and the symptom is the one it exists to prevent: a render throw unmounts the
@@ -625,7 +700,23 @@ clips there — `LockOverlay` had to become a `ScrollView` for exactly this reas
   vault) and `<StagedLoader stages stage badge tint />` (text-only "thinking" card). The Lab
   uses `AnalyzingOverlay` instead — it sweeps a beam over the picked image, a genuinely
   different visual.
-- Free-credit gate: `useOutOfCredits()` from the store. Don't re-derive it.
+- Free-credit gate: `useOutOfCredits()` from the store. Don't re-derive it. **To BLOCK on it,
+  call `useCreditGate()`** (`utils/useCreditGate.ts`) — `if (gate('out_of_credits')) return;`
+  does the haptic, the paywall push and the attribution. The rule was written longhand at four
+  call sites, and the last freemium rule that lived at its call sites (`analysisCount`) drifted
+  silently and cost every free user a third of their trial. `source` is a required argument, not
+  optional: it rides in as the route param `paywall.tsx` logs, so a call site that omits it is a
+  hole in the funnel rather than a visible bug.
+- **The staged "thinking" ticker is `useStagedProgress(stageCount, intervalMs)`.** All three AI
+  tools had their own `stage` state, `stageTimer` ref, interval, `clearInterval` in a `finally`
+  and unmount cleanup — five parts each, where a missed cleanup leaks a timer that calls
+  `setState` on an unmounted screen and costs nothing until it cannot be reproduced. `start()`
+  restarts rather than stacking a second interval, and takes an optional count for Profile Scan,
+  whose stage copy is per-mode and whose mode can be set by a bubble capture at run time.
+  It owns the timer and NOTHING else on purpose: the three runs genuinely differ — the Lab
+  charges once per screenshot and keeps the report up when a reroll fails, Profile Scan can come
+  back "not a profile" and must not count it — and folding those in means a hook with a flag per
+  screen. Do not grow this into a `useRunAnalysis`.
 - **Any screen that shows a result by flipping `phase` to `'done'` needs
   `useBackToIdle(phase === 'done', reset)`.** All three AI tools render the report *in
   place* rather than pushing a route, and each tab is the root of its own stack — so

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -25,7 +25,9 @@ import { palette, radii, spacing } from '@/theme/tokens';
 import type { BioOption, BioResult, BioVibe } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { useBackToIdle } from '@/utils/useBackToIdle';
+import { useCreditGate } from '@/utils/useCreditGate';
 import { useKeyboardInset } from '@/utils/useKeyboardInset';
+import { useStagedProgress } from '@/utils/useStagedProgress';
 
 type Phase = 'idle' | 'working' | 'done';
 
@@ -56,14 +58,14 @@ export default function BioScreen() {
   const [vibe, setVibe] = useState<BioVibe>('Funny');
   const [currentBio, setCurrentBio] = useState('');
   const [result, setResult] = useState<BioResult | null>(null);
-  const [stage, setStage] = useState(0);
-  const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { stage, start: startStages, stop: stopStages } = useStagedProgress(BIO_STAGES.length, 1600);
 
   const savedItems = useRizzStore((state) => state.savedItems);
   const incrementAnalysis = useRizzStore((state) => state.incrementAnalysis);
   const toggleSave = useRizzStore((state) => state.toggleSave);
 
   const outOfCredits = useOutOfCredits();
+  const creditGate = useCreditGate();
 
   const interests = useMemo(() => {
     const extras = custom
@@ -75,13 +77,6 @@ export default function BioScreen() {
 
   const canOptimize = interests.length > 0;
 
-  useEffect(
-    () => () => {
-      if (stageTimer.current) clearInterval(stageTimer.current);
-    },
-    [],
-  );
-
   const toggleInterest = (label: string) => {
     haptic.selection();
     setSelected((prev) =>
@@ -90,11 +85,7 @@ export default function BioScreen() {
   };
 
   const optimize = useCallback(async () => {
-    if (outOfCredits) {
-      haptic.warning();
-      router.push('/paywall?source=out_of_credits');
-      return;
-    }
+    if (creditGate('out_of_credits')) return;
     if (!canOptimize) {
       toast.show('Pick at least one interest');
       return;
@@ -102,13 +93,8 @@ export default function BioScreen() {
 
     haptic.medium();
     setResult(null);
-    setStage(0);
     setPhase('working');
-
-    if (stageTimer.current) clearInterval(stageTimer.current);
-    stageTimer.current = setInterval(() => {
-      setStage((current) => Math.min(current + 1, BIO_STAGES.length - 1));
-    }, 1600);
+    startStages();
 
     try {
       const bio = await optimizeBio({
@@ -125,9 +111,19 @@ export default function BioScreen() {
       toast.show('The engine choked — try again');
       setPhase('idle');
     } finally {
-      if (stageTimer.current) clearInterval(stageTimer.current);
+      stopStages();
     }
-  }, [outOfCredits, canOptimize, interests, vibe, currentBio, incrementAnalysis, toast]);
+  }, [
+    creditGate,
+    canOptimize,
+    interests,
+    vibe,
+    currentBio,
+    incrementAnalysis,
+    toast,
+    startStages,
+    stopStages,
+  ]);
 
   // useCallback so useBackToIdle's listener does not resubscribe every render.
   const reset = useCallback(() => {

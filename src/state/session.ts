@@ -380,9 +380,8 @@ export async function deleteAccount(): Promise<void> {
   // The account is gone — remembering its address would offer a login that
   // cannot succeed.
   kv.remove(LAST_EMAIL_KEY);
-  void import('@/state/useRizzStore').then(({ useRizzStore }) => {
-    useRizzStore.setState({ scanHistory: [] });
-  });
+  // Drops the local copy of the vault and the scan history — see onAccountDeleted.
+  onWipe?.();
   onAccount?.(null);
 }
 
@@ -593,6 +592,26 @@ let onAccount: ((username: string | null) => void) | undefined;
 
 export function onAccountChanged(fn: (username: string | null) => void): void {
   onAccount = fn;
+}
+
+/**
+ * Wipe the local copy of everything the account owned. Delete only — NOT sign-out.
+ *
+ * A third channel rather than a flag on `onAccountChanged`, because the two cases
+ * want opposite behaviour and `onAccount?.(null)` fires for both: signing out must
+ * LEAVE the vault and scan history alone (the rows still exist on the server and
+ * come back on the next login), while deleting must remove them (the rows are
+ * gone, and the next anonymous install on this device would otherwise open the
+ * Vault and read them).
+ *
+ * This replaces a `void import('@/state/useRizzStore')` inside `deleteAccount`,
+ * which worked but meant one relationship had two mechanisms — a callback channel
+ * in one direction and a dynamic import dodging the same cycle in the other.
+ */
+let onWipe: (() => void) | undefined;
+
+export function onAccountDeleted(fn: () => void): void {
+  onWipe = fn;
 }
 
 /**

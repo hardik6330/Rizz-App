@@ -40,9 +40,15 @@ user.get('/credits', async (c) => {
  * deletion for any app that lets a user create an account, and Play requires a
  * deletion path too. Shipping signup without this is a rejection.
  *
- * One statement is the whole implementation because the schema holds no images,
- * transcripts, reports or saved items — the user row IS the user's data. If that
- * ever stops being true, this route is the thing that has to grow.
+ * This was one statement once, when the user row genuinely WAS the user's data.
+ * It stopped being true at migration 0004 and again at 0008/0009, and the comment
+ * claiming otherwise outlived the fact by longer than it should have. There are
+ * **no foreign keys**, so nothing here cascades: every user-scoped table has to be
+ * named in the transaction below by hand. Nothing fails if you forget one — the
+ * rows simply outlive the account, which is the whole problem.
+ *
+ * Add a table, add a line. The order is deliberate: children first, the `users`
+ * row last, so a failure mid-way rolls back rather than orphaning the children.
  *
  * Hard DELETE, not a soft flag: "we kept your email but marked it inactive" is
  * not deletion, and the unique key on `email` would block them signing up again.
