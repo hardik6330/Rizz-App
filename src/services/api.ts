@@ -49,7 +49,9 @@ interface Envelope<T> {
 
 const TIMEOUT_MS = 60_000;
 
-async function post(path: string, body: unknown, token: string): Promise<Response> {
+async function post(path: string, body: unknown, token: string, signal?: AbortSignal): Promise<Response> {
+  const timeoutSignal = AbortSignal.timeout(TIMEOUT_MS);
+  const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
   return fetch(apiUrl(path), {
     method: 'POST',
     headers: {
@@ -57,9 +59,7 @@ async function post(path: string, body: unknown, token: string): Promise<Respons
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(body),
-    // A screenshot analysis takes ~3s; 60s is a hung-connection guard, not a
-    // deadline. Without it a dropped network leaves the loader spinning forever.
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: combinedSignal,
   });
 }
 
@@ -68,12 +68,12 @@ async function post(path: string, body: unknown, token: string): Promise<Respons
  * and `ai_fail` cannot drift apart across four call sites, and a fifth engine
  * gets tracking for free. The engine name is the route, so it needs no argument.
  */
-export async function callApi<T>(path: string, body: unknown): Promise<T> {
+export async function callApi<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const engine = path.replace('/v1/ai/', '') as EngineName;
   const started = Date.now();
 
   try {
-    let res = await post(path, body, await accessToken());
+    let res = await post(path, body, await accessToken(), signal);
 
     // Exactly one retry, and only on 401: the 24h token expired, or
     // `/v1/user/pro` changed the entitlement underneath it. Retrying anything

@@ -745,8 +745,8 @@ class RizzAccessibilityService : AccessibilityService() {
     private const val OVERLAY_WARN_INTERVAL_MS = 60_000L
     private const val MAX_NODES = 400
     private const val MAX_DEPTH = 25
-    private const val MAX_EDGE = 1280
-    private const val JPEG_QUALITY = 80
+    private const val MAX_EDGE = 1080
+    private const val JPEG_QUALITY = 75
     const val EXTRA_FROM_CAPTURE = "rizz_from_capture"
 
     /** How many times the chat is scrolled up to read history. */

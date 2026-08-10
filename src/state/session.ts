@@ -419,8 +419,14 @@ export async function installId(): Promise<string> {
  * Silent on failure: it is a reconciliation, not a gate. MMKV stays an optimistic
  * cache so the paywall still appears without a round trip.
  */
-export async function refreshCredits(): Promise<void> {
+let lastCreditsRefreshAt = 0;
+const REFRESH_THROTTLE_MS = 30_000;
+
+export async function refreshCredits(force = false): Promise<void> {
   if (!isLiveApi) return;
+  const now = Date.now();
+  if (!force && now - lastCreditsRefreshAt < REFRESH_THROTTLE_MS) return;
+  lastCreditsRefreshAt = now;
   try {
     const res = await fetch(apiUrl('/v1/user/credits'), {
       headers: { Authorization: `Bearer ${await accessToken()}` },
