@@ -10,6 +10,7 @@ import { signAccess } from '../lib/jwt.ts';
 import { FREE_ANALYSIS_LIMIT } from '../lib/limits.ts';
 import { log } from '../lib/logger.ts';
 import { sendOtpEmail } from '../lib/mailer.ts';
+import { sweeper } from '../lib/sweep.ts';
 import { issueOtp, type OtpPurpose, verifyOtp } from '../lib/otp.ts';
 // `dummyHash` is gone from here: it existed only to make a missing email take as
 // long as a wrong password, and /login now names that case outright.
@@ -143,6 +144,31 @@ async function sessionFor(
   };
 }
 
+/**
+ * Delete anonymous rows that never did anything.
+ *
+ * Every cleared install mints one, and only a login reclaims it — the rest are
+ * abandoned and unreachable for ever: no email to log in with, no id anyone
+ * still holds. The predicate is deliberately narrow. `analysis_count = 0` means
+ * deleting one grants nothing (a re-appearing install starts where it was), and
+ * email / rc_app_user_id / is_pro keep every row anybody paid for or can sign
+ * into.
+ *
+ * ponytail: no index on updated_at, so this is a bounded scan every 6h. Add
+ * ix_users_gc if the table ever gets big enough to feel it.
+ */
+export const anonymousGc = (now: number) => sql`
+  DELETE FROM users
+   WHERE email IS NULL
+     AND rc_app_user_id IS NULL
+     AND is_pro = 0
+     AND analysis_count = 0
+     AND updated_at < ${now - 30 * 24 * 60 * 60 * 1000}
+   LIMIT 500
+`;
+
+const sweepAnonymous = sweeper(6 * 60 * 60 * 1000, anonymousGc);
+
 auth.post('/device', async (c) => {
   const parsed = Body.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) throw Errors.badRequest('install_id and platform are required');
@@ -151,6 +177,7 @@ auth.post('/device', async (c) => {
 
   const now = Date.now();
   const id = randomUUID();
+  sweepAnonymous(now);
 
   // Upsert on install_id. The UNIQUE key makes concurrent first-launch races a
   // no-op rather than a duplicate user with a fresh set of free credits.
@@ -702,21 +729,21 @@ auth.post('/login', async (c) => {
     }
   }
 
-  // The install claim SUBSUMES the failed-login reset — see claimInstall step 3.
-  // An old client that sends no install_id still gets the reset on its own.
-  if (parsed.data.install_id) {
-    await claimInstall(row.id, parsed.data.install_id, now);
-  } else {
-    await db.execute(sql`
-      UPDATE users SET failed_logins = 0, locked_until = NULL, updated_at = ${now}
-       WHERE id = ${row.id}
-    `);
-  }
+  /*
+   * Always claim, minting an id when the client has none — a cleared install
+   * that reaches this screen before `/device` ran has nothing in MMKV to send.
+   * Logging in without one left the device holding a token for this row and no
+   * install id at all, so the next 401 fell back to `/device`, minted a fresh
+   * anonymous row, and silently demoted the user to it. That is where the blank
+   * rows come from. The claim SUBSUMES the failed-login reset — step 3.
+   */
+  const install = parsed.data.install_id ?? randomUUID();
+  await claimInstall(row.id, install, now);
 
   log.info('auth.login', { claimedInstall: parsed.data.install_id != null, viaCode: code != null });
   // Echoed so the client can persist it: on the reinstall path this may be the
   // first time this device learns which install id it now owns.
-  return c.json(await sessionFor(row, { installId: parsed.data.install_id }));
+  return c.json(await sessionFor(row, { installId: install }));
 });
 
 // ── POST /v1/auth/logout ─────────────────────────────────────────────────────

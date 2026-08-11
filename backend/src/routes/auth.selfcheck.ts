@@ -18,7 +18,7 @@ import { sql } from 'drizzle-orm';
 
 import { db, pool } from '../db/client.ts';
 import { env } from '../env.ts';
-import { claimInstall } from './auth.ts';
+import { anonymousGc, claimInstall } from './auth.ts';
 
 if (env.NODE_ENV === 'production') {
   throw new Error('refusing to write synthetic rows to a production database');
@@ -174,6 +174,39 @@ try {
     { status: 401, code: 'WRONG_PASSWORD' },
     'login with the wrong password',
   );
+
+  /*
+   * ── The anonymous GC ───────────────────────────────────────────────────────
+   *
+   * Four stale rows, one of which is genuinely dead. The other three are the
+   * ways this DELETE could eat something a user still owns, so each column of
+   * the predicate gets exactly one row that depends on it.
+   */
+  const stale = Date.now() - 60 * 24 * 60 * 60 * 1000;
+  const gc = { dead: randomUUID(), used: randomUUID(), account: randomUUID(), sub: randomUUID() };
+  written.push(...Object.values(gc));
+  const seedStale = (id: string, email: string | null, rc: string | null, count: number) =>
+    db.execute(sql`
+      INSERT INTO users (id, install_id, platform, email, rc_app_user_id, analysis_count, created_at, updated_at)
+      VALUES (${id}, ${randomUUID()}, 'android', ${email}, ${rc}, ${count}, ${stale}, ${stale})
+    `);
+  await seedStale(gc.dead, null, null, 0);
+  await seedStale(gc.used, null, null, 2);
+  await seedStale(gc.account, `gc-${randomUUID()}@example.test`, null, 0);
+  await seedStale(gc.sub, null, `rc_${randomUUID()}`, 0);
+
+  await db.execute(anonymousGc(Date.now()));
+  const alive = async (id: string) => (await installOf(id)) != null;
+  assert.equal(await alive(gc.dead), false, 'the abandoned anonymous row is collected');
+  assert.equal(await alive(gc.used), true, 'a row that spent credits is kept');
+  assert.equal(await alive(gc.account), true, 'a row with an email is kept');
+  assert.equal(await alive(gc.sub), true, 'a row with a subscription is kept');
+
+  // Fresh rows are never in range, whatever else is true of them.
+  await db.execute(sql`UPDATE users SET updated_at = ${Date.now()} WHERE id = ${gc.used}`);
+  await db.execute(sql`UPDATE users SET analysis_count = 0 WHERE id = ${gc.used}`);
+  await db.execute(anonymousGc(Date.now()));
+  assert.equal(await alive(gc.used), true, 'a row touched today is out of range');
 
   console.log('auth.selfcheck: ok');
 } finally {
