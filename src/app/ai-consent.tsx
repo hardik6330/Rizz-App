@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { HapticPressable } from '@/components/HapticPressable';
+import { HapticPressable } from '@/components/ui/HapticPressable';
 import { track, type EngineName } from '@/services/analytics';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';

@@ -1,4 +1,3 @@
-import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
@@ -7,18 +6,18 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AiNotice } from '@/components/AiNotice';
-import { ABSimulator } from '@/components/ABSimulator';
-import { AnalyzingOverlay } from '@/components/AnalyzingOverlay';
-import { CircleIconButton } from '@/components/CircleIconButton';
-import { GlowDropZone } from '@/components/GlowDropZone';
-import { ModeSelector } from '@/components/ModeSelector';
-import { ProUpsellCard } from '@/components/ProUpsellCard';
-import { ReplyCard } from '@/components/ReplyCard';
-import { RoastCard } from '@/components/RoastCard';
-import { ScreenHeader } from '@/components/ScreenHeader';
-import { useToast } from '@/components/Toast';
-import { VibeCheckCard } from '@/components/VibeCheckCard';
+import { AiNotice } from '@/components/feature/AiNotice';
+import { ABSimulator } from '@/components/feature/ABSimulator';
+import { AnalyzingOverlay } from '@/components/feature/AnalyzingOverlay';
+import { CircleIconButton } from '@/components/ui/CircleIconButton';
+import { GlowDropZone } from '@/components/ui/GlowDropZone';
+import { ModeSelector } from '@/components/ui/ModeSelector';
+import { ProUpsellCard } from '@/components/feature/ProUpsellCard';
+import { ReplyCard } from '@/components/feature/ReplyCard';
+import { RoastCard } from '@/components/feature/RoastCard';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { useToast } from '@/components/ui/Toast';
+import { VibeCheckCard } from '@/components/feature/VibeCheckCard';
 import { APP_NAME } from '@/constants';
 import { BG } from '@/data/assets';
 import { ANALYZE_STAGES } from '@/data/mockAnalysis';
@@ -28,11 +27,11 @@ import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import type { AnalysisResult, EngineMode, ReplyOption } from '@/types';
 import { haptic } from '@/utils/haptics';
-import { shareText } from '@/utils/misc';
-import { useBackToIdle } from '@/utils/useBackToIdle';
-import { useAiConsent } from '@/utils/useAiConsent';
-import { useCreditGate } from '@/utils/useCreditGate';
-import { useStagedProgress } from '@/utils/useStagedProgress';
+import { copyLine, shareText } from '@/utils/misc';
+import { useBackToIdle } from '@/hooks/useBackToIdle';
+import { useAiConsent } from '@/hooks/useAiConsent';
+import { useCreditGate } from '@/hooks/useCreditGate';
+import { useStagedProgress } from '@/hooks/useStagedProgress';
 
 type Phase = 'idle' | 'analyzing' | 'done';
 
@@ -151,11 +150,7 @@ export default function LabScreen() {
   // Android back closes the result instead of exiting the app. See useBackToIdle.
   useBackToIdle(phase === 'done', reset);
 
-  const copyText = async (text: string) => {
-    await Clipboard.setStringAsync(text);
-    haptic.success();
-    toast.show("Copied. Go get 'em.");
-  };
+  const copyText = (text: string) => copyLine(text, toast.show);
 
   const shareRoast = async () => {
     if (!result?.roast) return;

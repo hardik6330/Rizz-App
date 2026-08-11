@@ -13,7 +13,7 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && node --env-file=.env --import tsx src/critical.selfcheck.ts && node --env-file=.env --import tsx src/lib/password.selfcheck.ts && node --env-file=.env --import tsx src/lib/rcSignature.selfcheck.ts && node --env-file=.env --import tsx src/lib/coach.selfcheck.ts && node --env-file=.env --import tsx src/middleware/rateLimit.selfcheck.ts && node --env-file=.env --import tsx src/middleware/credits.selfcheck.ts && node --env-file=.env --import tsx src/ai/prompts.selfcheck.ts && node --env-file=.env --import tsx src/ai/gateway.selfcheck.ts",
-    "check:db": "node --env-file=.env --import tsx src/lib/otp.selfcheck.ts && node --env-file=.env --import tsx src/routes/auth.selfcheck.ts && node --env-file=.env --import tsx src/routes/webhooks.selfcheck.ts && node --env-file=.env --import tsx src/high.selfcheck.ts",
+    "check:db": "node --env-file=.env --import tsx src/lib/otp.selfcheck.ts && node --env-file=.env --import tsx src/routes/auth.selfcheck.ts && node --env-file=.env --import tsx src/routes/webhooks.selfcheck.ts && node --env-file=.env --import tsx src/high.selfcheck.ts && node --env-file=.env --import tsx src/vercel.selfcheck.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --import tsx src/db/migrate.ts"
   },

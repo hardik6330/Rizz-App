@@ -21,9 +21,9 @@ one. The key, every system prompt, every `responseSchema`, the model choice, the
 credit enforcement and rate limiting all live on the server now.
 
 **All AI traffic goes through `services/api.ts` (`callApi`). Never hand-roll a fetch.**
-`isLiveApi` (from `state/session.ts`) replaces `isLiveKey`: it is true when
+`isLiveApi` (from `services/auth.ts`) replaces `isLiveKey`: it is true when
 `EXPO_PUBLIC_API_URL` is set, and false means every engine serves mock seeds exactly as
-before. Identity is `state/session.ts` — an anonymous install id the **server** mints on first
+before. Identity is `services/auth.ts` — an anonymous install id the **server** mints on first
 launch, traded for a 30-day JWT (revocable — see `token_epoch` below). It is not generated on the device: RN has no `crypto` global, so
 that would mean either `expo-crypto` (native, therefore a rebuild rather than an OTA) or
 `Math.random`, and this id is the credential that owns a user's credits.
@@ -161,11 +161,16 @@ in `analyzer.tsx` and `account.tsx`. A third kind of user-scoped table needs doc
   re-run is a genuinely new report and deserves a new row. The test is whether the same bytes
   can come back from the server twice. `hydrateVault()` carries a permanent dedupe pass that
   clears the pairs already in people's vaults.
-- **Sync helpers live in `session.ts` and hand-roll `fetch`,** like everything else there —
-  they carry the raw bearer header and must not go through `callApi`, which sits on top of
-  session identity. Each returns `false` instead of throwing and returns early when
-  `isLiveApi` is false, so the vault works offline; the cost is that a failed write is silent
-  until the next fetch.
+- **Sync helpers live in `services/userApi.ts` and go through `authedFetch`,** never through
+  `callApi` (which sits on top of session identity and carries the AI envelope) and never
+  through a bare `fetch`. `authedFetch` lives in `services/auth.ts` because it is the one
+  thing allowed to mint and refresh a token; it attaches the bearer header and **retries once
+  on 401**. That retry is the reason it exists: all eight helpers used to hand-roll the fetch
+  with no refresh, so an expired token silently stopped the vault, coach answers and scan
+  history from syncing, and every failure was swallowed into the `null`/`false` callers read
+  as "offline". Each helper still returns `false` instead of throwing and still returns early
+  when `isLiveApi` is false, so the vault works offline; the remaining cost is that a failed
+  write is silent until the next fetch.
 - **The readers answer `null` for "could not ask" and `[]` for "the server says empty",
   and callers MUST honour the difference.** `fetchVault()` and `fetchScans()` return `null`
   when offline, when the token bounces and in mock mode. Both used to flatten every one of
@@ -905,7 +910,7 @@ questions is a smaller harm than an unpersonalised account and the answers upser
 on sign-out.** It is persisted and doubles as the "have they done the quiz" flag, so it used to
 outlive a sign-out — and the next account created on that device found `coachStepDone` already
 true, was never asked, and got the previous user's `style` and `struggle`. Sign-out now goes
-through `onAccountCleared` in `session.ts` alongside delete, wiping `coach`, `savedItems` and
+through `onAccountCleared` in `services/auth.ts` alongside delete, wiping `coach`, `savedItems` and
 `scanHistory` together. The old reasoning ("the rows come back from the server on the next
 login") only ever held for signing back into the SAME account; the vault leaked across accounts
 in exactly the same way, since `fetchVault` keeps local rows the server page lacks and
@@ -1180,7 +1185,7 @@ clips there — `LockOverlay` had to become a `ScrollView` for exactly this reas
   uses `AnalyzingOverlay` instead — it sweeps a beam over the picked image, a genuinely
   different visual.
 - Free-credit gate: `useOutOfCredits()` from the store. Don't re-derive it. **To BLOCK on it,
-  call `useCreditGate()`** (`utils/useCreditGate.ts`) — `if (gate('out_of_credits')) return;`
+  call `useCreditGate()`** (`hooks/useCreditGate.ts`) — `if (gate('out_of_credits')) return;`
   does the haptic, the paywall push and the attribution. The rule was written longhand at four
   call sites, and the last freemium rule that lived at its call sites (`analysisCount`) drifted
   silently and cost every free user a third of their trial. `source` is a required argument, not

@@ -110,6 +110,11 @@ const PROBES: { when: number; tag: string; applied: () => Promise<boolean> }[] =
     tag: '0011_fk_and_cleanup',
     applied: () => constraintExists('fk_saved_items_user'),
   },
+  {
+    when: 1782000000000,
+    tag: '0012_restore_daily_call',
+    applied: () => columnExists('users', 'daily_call_date'),
+  },
 ];
 
 /** The newest migration whose effects are already present, or null for a fresh DB. */

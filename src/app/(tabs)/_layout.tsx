@@ -1,8 +1,8 @@
 import { Tabs } from 'expo-router/js-tabs';
 import React from 'react';
 
-import { AppErrorBoundary } from '@/components/AppErrorBoundary';
-import { FloatingTabBar } from '@/components/FloatingTabBar';
+import { AppErrorBoundary } from '@/components/ui/AppErrorBoundary';
+import { FloatingTabBar } from '@/components/feature/FloatingTabBar';
 import { palette } from '@/theme/tokens';
 
 /**

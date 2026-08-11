@@ -13,12 +13,13 @@ import {
   isSupported,
 } from '@/../modules/profile-capture';
 
-import { AppErrorBoundary } from '@/components/AppErrorBoundary';
-import { SplashIntro } from '@/components/SplashIntro';
+import { AppErrorBoundary } from '@/components/ui/AppErrorBoundary';
+import { SplashIntro } from '@/components/feature/SplashIntro';
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { identify, initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
-import { apiBase, installId, isLiveApi, refreshCredits } from '@/state/session';
+import { apiBase, installId, isLiveApi } from '@/services/auth';
+import { refreshCredits } from '@/services/userApi';
 import { useRizzStore } from '@/state/useRizzStore';
 import { palette } from '@/theme/tokens';
 

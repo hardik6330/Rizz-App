@@ -85,6 +85,13 @@
       "when": 1781000000000,
       "tag": "0011_fk_and_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1782000000000,
+      "tag": "0012_restore_daily_call",
+      "breakpoints": true
     }
   ]
 }

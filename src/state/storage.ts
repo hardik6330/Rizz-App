@@ -74,7 +74,7 @@ if (backend.kind === 'memory') {
 /**
  * Raw key-value access, for state that is not UI state.
  *
- * `session.ts` keeps the install id and access token here rather than in the
+ * `services/auth.ts` keeps the install id and access token here rather than in the
  * zustand store: nothing renders them, so putting them in the store would wake
  * every subscriber on a token refresh, and they must not appear in `partialize`
  * alongside things a "clear my data" action is allowed to wipe.

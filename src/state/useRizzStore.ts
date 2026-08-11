@@ -5,17 +5,19 @@ import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import type { CoachProfile, FeedItem, ProfileScanResult, SavedItem } from '@/types';
 import { nextScanHistory, nextSwipeState, todayKey } from './limits';
 import {
-  clearVaultItems,
-  deleteScan,
-  deleteVaultItem,
-  fetchVault,
   isLiveApi,
   onAccountChanged,
   onAccountCleared,
   onCreditsChanged,
+} from '@/services/auth';
+import {
+  clearVaultItems,
+  deleteScan,
+  deleteVaultItem,
+  fetchVault,
   saveCoachProfile,
   saveVaultItem,
-} from './session';
+} from '@/services/userApi';
 import { zustandStorage } from './storage';
 
 /**
@@ -82,7 +84,7 @@ interface RizzState {
   /**
    * Has the user agreed that their screenshots may be sent to Google Gemini?
    *
-   * **false blocks every AI tool** — see `utils/useAiConsent.ts`. This is a
+   * **false blocks every AI tool** — see `hooks/useAiConsent.ts`. This is a
    * disclosure gate, not a feature flag and not a paywall: nothing about it
    * touches credits, plans or entitlement, and a Pro user is asked exactly like
    * a free one. The question is whether their private conversation may leave the
@@ -112,9 +114,9 @@ interface RizzState {
   /**
    * Signed-in username, or null. **The single owner of "am I signed in".**
    *
-   * Lives here rather than in `session.ts` because the launch sequence gates on
+   * Lives here rather than in `services/auth.ts` because the launch sequence gates on
    * it and has to re-render the moment it changes — a plain MMKV read cannot do
-   * that, so signing up left the app sitting on the auth wall. `session.ts`
+   * that, so signing up left the app sitting on the auth wall. `services/auth.ts`
    * pushes every change through `onAccountChanged`.
    */
   account: string | null;
@@ -466,7 +468,7 @@ export async function hydrateVault(): Promise<void> {
  * is persisted, so it used to outlive a sign-out — and `coachStepDone` in
  * `_layout.tsx` is `coach != null`, so the next account to sign up on this device
  * was never asked the three setup questions and was personalised with the
- * previous user's answers. See `onAccountCleared` in session.ts.
+ * previous user's answers. See `onAccountCleared` in services/auth.ts.
  *
  * ⚠️ Account-owned state only. `analysisCount` and `isPro` stay — they are
  * install-scoped, and wiping them here would make sign-out a way to reset the

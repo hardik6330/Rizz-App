@@ -14,14 +14,14 @@
  * they did before.
  */
 
-import { apiUrl, accessToken, reportCredits, type Credits } from '@/state/session';
+import { apiUrl, accessToken, reportCredits, type Credits } from '@/services/auth';
 // Safe direction: the store imports `session`, never this file, so there is no
 // cycle. Used only for the one-per-install activation flag below.
 import { useRizzStore } from '@/state/useRizzStore';
 import { reportError, track, type EngineName } from './analytics';
 import { isValidResult } from './contracts';
 
-export { isLiveApi } from '@/state/session';
+export { isLiveApi } from '@/services/auth';
 
 /** Server-side twin of the old `imagePart()`. Mime is re-sniffed from magic bytes there. */
 export interface ImagePayload {

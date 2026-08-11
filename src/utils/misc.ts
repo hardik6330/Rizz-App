@@ -1,6 +1,8 @@
 import { Platform, Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 
+import { haptic } from './haptics';
+
 /**
  * Share text cross-platform. RN's `Share` throws on web ("not supported"), so
  * there we use the Web Share API when present, else copy to the clipboard.
@@ -22,6 +24,22 @@ export async function shareText(message: string): Promise<'shared' | 'copied'> {
   }
   await Clipboard.setStringAsync(message);
   return 'copied';
+}
+
+/**
+ * Copy a line, buzz, and say so. The three always go together.
+ *
+ * The message is a parameter because each surface has its own voice ("Go get
+ * 'em", "Paste it in"); the clipboard call and the haptic must not drift.
+ */
+export async function copyLine(
+  text: string,
+  toast: (message: string) => void,
+  message = "Copied. Go get 'em.",
+): Promise<void> {
+  await Clipboard.setStringAsync(text);
+  haptic.success();
+  toast(message);
 }
 
 /**

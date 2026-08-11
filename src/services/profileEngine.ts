@@ -2,6 +2,7 @@ import { coachPayload } from '@/state/useRizzStore';
 import type { ProfileCapture, ProfileScanInput, ProfileScanResult, ScanMode } from '@/types';
 import { uid, wait } from '@/utils/misc';
 import { callApi, imagePayload, isLiveApi } from './api';
+import { seedRotator } from './seedRotator';
 
 /**
  * The Profile Scan engine — Gemini vision over 1–3 profile screenshots.
@@ -282,13 +283,13 @@ const MOCK_SCANS: Record<ScanMode, [ScanSeed, ...ScanSeed[]]> = {
   ],
 };
 
-const rotation: Record<ScanMode, number> = { self: 0, them: 0 };
+/** One rotator per mode — 'self' and 'them' are separate demos, not one list. */
+const nextSeed: Record<ScanMode, () => ScanSeed> = {
+  self: seedRotator(MOCK_SCANS.self),
+  them: seedRotator(MOCK_SCANS.them),
+};
 
 async function simulateScan(mode: ScanMode): Promise<ProfileScanResult> {
-  const seeds = MOCK_SCANS[mode];
   await wait(PROFILE_STAGES[mode].length * 850 + 500);
-  const seed = seeds[rotation[mode] % seeds.length];
-  rotation[mode] += 1;
-  const clone = JSON.parse(JSON.stringify(seed)) as ScanSeed;
-  return { ...clone, id: uid(), createdAt: Date.now(), mode };
+  return { ...nextSeed[mode](), id: uid(), createdAt: Date.now(), mode };
 }

@@ -5,7 +5,7 @@ import { BackHandler, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { HapticPressable } from '@/components/HapticPressable';
+import { HapticPressable } from '@/components/ui/HapticPressable';
 import { APP_NAME } from '@/constants';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';

@@ -2,6 +2,7 @@ import { coachPayload } from '@/state/useRizzStore';
 import type { BioInput, BioResult } from '@/types';
 import { uid, wait } from '@/utils/misc';
 import { callApi, isLiveApi } from './api';
+import { seedRotator } from './seedRotator';
 
 /**
  * The Bio Optimizer engine.
@@ -50,7 +51,7 @@ async function optimizeViaApi({ interests, vibe, currentBio }: BioInput): Promis
 
 type BioSeed = Omit<BioResult, 'id' | 'createdAt'>;
 
-const MOCK_BIOS: BioSeed[] = [
+const MOCK_BIOS: [BioSeed, ...BioSeed[]] = [
   {
     bios: [
       {
@@ -97,13 +98,10 @@ const MOCK_BIOS: BioSeed[] = [
   },
 ];
 
-let rotation = Math.floor(Math.random() * MOCK_BIOS.length);
+const nextSeed = seedRotator(MOCK_BIOS);
 
 async function simulateBio(): Promise<BioResult> {
   // ~7s so the staged writing animation gets its moment.
   await wait(BIO_STAGES.length * 1600 + 800);
-  const seed = MOCK_BIOS[rotation % MOCK_BIOS.length];
-  rotation += 1;
-  const clone = JSON.parse(JSON.stringify(seed)) as BioSeed;
-  return { ...clone, id: uid(), createdAt: Date.now() };
+  return { ...nextSeed(), id: uid(), createdAt: Date.now() };
 }

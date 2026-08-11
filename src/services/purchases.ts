@@ -3,7 +3,8 @@ import type { CustomerInfo, PurchasesPackage } from 'react-native-purchases';
 
 import { PRO_ENTITLEMENT_ID } from '@/constants';
 import { isLiveRevenueCatKey } from '@/state/limits';
-import { installId, isLiveApi, syncPro, userId } from '@/state/session';
+import { installId, isLiveApi, userId } from '@/services/auth';
+import { syncPro } from '@/services/userApi';
 import { setProProperty, track } from './analytics';
 import { useRizzStore } from '@/state/useRizzStore';
 import { wait } from '@/utils/misc';

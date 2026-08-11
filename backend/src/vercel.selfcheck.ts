@@ -84,7 +84,10 @@ async function invoke(req: Record<string, unknown>, stream?: Readable) {
 
 const health = await invoke({ method: 'GET', url: '/healthz' });
 assert.equal(health.status, 200, 'GET /healthz responds');
-assert.deepEqual(JSON.parse(health.body), { ok: true });
+// `ok` only, not the whole envelope: /healthz also reports `db`, so pinning the
+// exact object made this fail on a payload change that had nothing to do with
+// what this file guards — which is that the handler answers and does not hang.
+assert.equal(JSON.parse(health.body).ok, true);
 
 // A POST whose body the launcher pre-parsed. Zod rejects it, so no DB is touched
 // — but reaching a 400 at all proves the body arrived and nothing hung.

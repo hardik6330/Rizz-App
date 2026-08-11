@@ -293,7 +293,7 @@ post-charge count, and the screen then added its own +1 — so a free user was l
 the mode everyone develops in. Full trace in `AGENTS.md`.
 
 **The vault and scan history now outlive the install.** Saved lines live in `saved_items` and
-profile-scan summaries in `profile_scans` (migrations 0009 and 0008). `state/session.ts` owns
+profile-scan summaries in `profile_scans` (migrations 0009 and 0008). `services/auth.ts` + `services/userApi.ts` own
 both sides: `fetchVault()` and `fetchScans()` hydrate on screen mount ([vault.tsx](../src/app/vault.tsx),
 [profile.tsx](../src/app/(tabs)/profile.tsx)), and the store actions mirror every write —
 `toggleSave` → `saveVaultItem`, `removeSaved` → `deleteVaultItem`, `clearVault` →
@@ -309,10 +309,11 @@ Three properties are load-bearing:
   `false`/`[]` rather than throwing, and returns early when `isLiveApi` is false, so the vault
   works fully offline — at the cost of a local write that never reached the server going quiet
   until the next fetch overwrites it.
-- **These helpers hand-roll `fetch` on purpose,** like everything else in `session.ts`: they carry
-  the raw `Authorization` header and must not depend on `callApi`, which sits *on top* of session
-  identity. That is the boundary — §4.1's "never hand-roll a fetch" governs the engines, not this
-  file.
+- **These helpers go through `authedFetch`, not `callApi` and not a bare `fetch`.**
+  `authedFetch` lives in `services/auth.ts` — the one module allowed to mint and refresh a
+  token — and attaches the bearer header plus a single 401 retry. They must not depend on
+  `callApi`, which sits *on top* of session identity and carries the AI response envelope.
+  That is the boundary; §4.1's "never hand-roll a fetch" governs these too.
 
 Scan history is capped at 20 by the `GET /v1/user/scans` query; the vault has no cap at all,
 which is why [vault.tsx](../src/app/vault.tsx) is the one list with explicit virtualization
@@ -323,7 +324,7 @@ looks.
 `swipesUsedToday()` / `nextSwipeState()` — when they each derived it themselves, a cumulative
 count permanently locked free users out of a feed that refreshes daily.
 
-`state/session.ts` is identity. There is no login. The **server** mints an anonymous install id
+`services/auth.ts` is identity. There is no login. The **server** mints an anonymous install id
 on first launch, which the device keeps forever and trades for a 30-day JWT. Long tokens are safe because
 `requireAuth` re-reads the row every request and compares `token_epoch` — that check IS the
 revocation mechanism. The id is not generated on device: React Native has no `crypto` global,
@@ -995,5 +996,5 @@ The failure modes that have actually cost time, and what they look like from the
 | A delete comes back on next open | the sync WRITE failed silently — the write helpers swallow errors and return `false` | is `isLiveApi` true? then `GET /v1/user/vault` by hand |
 | The vault or scan list empties itself | a hydrate overwrote local state with a failed fetch — `fetchVault`/`fetchScans` must return `null`, not `[]`, on failure (§4.5) | check for a reintroduced `.length > 0` guard |
 | A saved line reappears after deleting it twice | a regenerated id — the client id IS the server PK | `toggleSave` in `useRizzStore.ts` |
-| A fresh install shows a deleted account's vault | `deleteAccount()` resets `scanHistory` only | `session.ts:384` |
+| A fresh install shows a deleted account's vault | `deleteAccount()` resets `scanHistory` only | `services/auth.ts` |
 | Credits never refresh on iOS | `refreshCredits()` folded back behind the bubble's `isSupported` guard | it needs its own effect in `_layout.tsx` |

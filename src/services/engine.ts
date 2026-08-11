@@ -3,6 +3,7 @@ import { coachPayload } from '@/state/useRizzStore';
 import type { AnalysisResult, EngineMode } from '@/types';
 import { uid, wait } from '@/utils/misc';
 import { callApi, imagePayload, isLiveApi } from './api';
+import { seedRotator } from './seedRotator';
 
 /**
  * The Screenshot Intelligence Engine.
@@ -67,13 +68,10 @@ async function analyzeViaApi(
 // Simulation path — offline demo mode
 // ---------------------------------------------------------------------------
 
-let rotation = Math.floor(Math.random() * MOCK_ANALYSES.length);
+const nextSeed = seedRotator(MOCK_ANALYSES);
 
 async function simulateAnalysis(): Promise<AnalysisResult> {
   // Hold roughly one beat per stage so the scanning UI gets its moment.
   await wait(ANALYZE_STAGES.length * 850 + 400);
-  const seed = MOCK_ANALYSES[rotation % MOCK_ANALYSES.length];
-  rotation += 1;
-  const clone = JSON.parse(JSON.stringify(seed)) as Omit<AnalysisResult, 'id' | 'createdAt'>;
-  return { ...clone, id: uid(), createdAt: Date.now() };
+  return { ...nextSeed(), id: uid(), createdAt: Date.now() };
 }

@@ -38,6 +38,9 @@ CLAUDE.md
 # blame reports, jars — regenerated on every build. 240 of these were tracked,
 # which is 3.4MB of noise in every clone and diff.
 modules/**/build/
+# Gradle's own daemon state — lock files and binary hash caches. Same reason as
+# the line above; 13 of these were tracked and dirtied the tree on every build.
+modules/**/.gradle/
 
 # macOS archive-extraction junk. Never belonged here.
 __MACOSX/

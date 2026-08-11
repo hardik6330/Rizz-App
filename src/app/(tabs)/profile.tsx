@@ -1,5 +1,4 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
@@ -8,14 +7,14 @@ import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AiNotice } from '@/components/AiNotice';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { ScanReport } from '@/components/ScanReport';
-import { GlowDropZone } from '@/components/GlowDropZone';
-import { HapticPressable } from '@/components/HapticPressable';
-import { ScreenHeader } from '@/components/ScreenHeader';
-import { StagedLoader } from '@/components/StagedLoader';
-import { useToast } from '@/components/Toast';
+import { AiNotice } from '@/components/feature/AiNotice';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { ScanReport } from '@/components/feature/ScanReport';
+import { GlowDropZone } from '@/components/ui/GlowDropZone';
+import { HapticPressable } from '@/components/ui/HapticPressable';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { StagedLoader } from '@/components/ui/StagedLoader';
+import { useToast } from '@/components/ui/Toast';
 import {
   addCaptureListener,
   consumePendingCapture,
@@ -26,17 +25,18 @@ import {
 } from '@/../modules/profile-capture';
 import { BG } from '@/data/assets';
 import { PROFILE_LABELS, PROFILE_STAGES, analyzeProfile } from '@/services/profileEngine';
-import { fetchScans, isLiveApi } from '@/state/session';
+import { isLiveApi } from '@/services/auth';
+import { fetchScans } from '@/services/userApi';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import type { ProfileCapture, ProfileScanResult, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
-import { timeAgo } from '@/utils/misc';
-import { useBackToIdle } from '@/utils/useBackToIdle';
-import { useAiConsent } from '@/utils/useAiConsent';
-import { useCreditGate } from '@/utils/useCreditGate';
-import { useStagedProgress } from '@/utils/useStagedProgress';
+import { copyLine, timeAgo } from '@/utils/misc';
+import { useBackToIdle } from '@/hooks/useBackToIdle';
+import { useAiConsent } from '@/hooks/useAiConsent';
+import { useCreditGate } from '@/hooks/useCreditGate';
+import { useStagedProgress } from '@/hooks/useStagedProgress';
 
 type Phase = 'idle' | 'working' | 'done';
 type Pick = { uri: string; base64: string; mimeType: string };
@@ -335,11 +335,7 @@ export default function ProfileScreen() {
     toast.show('Removed from history');
   };
 
-  const copyLine = async (text: string) => {
-    await Clipboard.setStringAsync(text);
-    haptic.success();
-    toast.show('Copied. Paste it in.');
-  };
+  const copyText = (text: string) => copyLine(text, toast.show, 'Copied. Paste it in.');
 
   const toggleSaveLine = (line: string, index: number) => {
     if (!result) return;
@@ -375,7 +371,7 @@ export default function ProfileScreen() {
             mode={result.mode}
             onReset={reset}
             isLineSaved={isLineSaved}
-            onCopyLine={(t) => void copyLine(t)}
+            onCopyLine={(t) => void copyText(t)}
             onToggleSaveLine={toggleSaveLine}
             onFeedback={() => toast.show('Thanks — noted!')}
             showUpsell={outOfCredits}

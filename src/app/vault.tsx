@@ -1,22 +1,21 @@
-import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CircleIconButton } from '@/components/CircleIconButton';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { EmptyVault } from '@/components/EmptyVault';
-import { useToast } from '@/components/Toast';
-import { HapticPressable } from '@/components/HapticPressable';
-import { VaultItem } from '@/components/VaultItem';
+import { CircleIconButton } from '@/components/ui/CircleIconButton';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { EmptyVault } from '@/components/feature/EmptyVault';
+import { useToast } from '@/components/ui/Toast';
+import { HapticPressable } from '@/components/ui/HapticPressable';
+import { VaultItem } from '@/components/feature/VaultItem';
 import { APP_NAME } from '@/constants';
 import { hydrateVault, useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import type { SavedItem } from '@/types';
 import { haptic } from '@/utils/haptics';
-import { shareText } from '@/utils/misc';
+import { copyLine, shareText } from '@/utils/misc';
 
 const FILTERS = ['All', 'Opener', 'Comeback', 'Recovery', 'Closer', 'Engine', 'Bio'] as const;
 type Filter = (typeof FILTERS)[number];
@@ -43,11 +42,7 @@ export default function VaultScreen() {
     return filter === 'All' ? sorted : sorted.filter((item) => item.category === filter);
   }, [savedItems, filter]);
 
-  const copyItem = async (item: SavedItem) => {
-    await Clipboard.setStringAsync(item.text);
-    haptic.success();
-    toast.show("Copied. Go get 'em.");
-  };
+  const copyItem = (item: SavedItem) => copyLine(item.text, toast.show);
 
   const shareItem = async (item: SavedItem) => {
     haptic.medium();

@@ -1,15 +1,14 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, ScrollView, StyleSheet, Text, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FeedCard } from '@/components/FeedCard';
-import { HapticPressable } from '@/components/HapticPressable';
-import { LimitBadge, ProChip } from '@/components/LimitBadge';
-import { LockOverlay } from '@/components/LockOverlay';
-import { useToast } from '@/components/Toast';
+import { FeedCard } from '@/components/feature/FeedCard';
+import { HapticPressable } from '@/components/ui/HapticPressable';
+import { LimitBadge, ProChip } from '@/components/ui/LimitBadge';
+import { LockOverlay } from '@/components/feature/LockOverlay';
+import { useToast } from '@/components/ui/Toast';
 import { APP_NAME, FREE_SWIPE_LIMIT } from '@/constants';
 import { FEED_ITEMS } from '@/data/feed';
 import { generateFreshOpeners } from '@/services/feedEngine';
@@ -20,7 +19,7 @@ import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { categoryColor, palette, radii, spacing } from '@/theme/tokens';
 import type { FeedCategory, FeedItem } from '@/types';
 import { haptic } from '@/utils/haptics';
-import { shareText } from '@/utils/misc';
+import { copyLine, shareText } from '@/utils/misc';
 
 const FILTERS: { key: FeedCategory | 'All'; label: string }[] = [
   { key: 'All', label: 'All' },
@@ -150,14 +149,7 @@ export default function DiscoverScreen() {
     useRizzStore.getState().incrementSwipe();
   }).current;
 
-  const copyItem = useCallback(
-    async (item: FeedItem) => {
-      await Clipboard.setStringAsync(item.text);
-      haptic.success();
-      toast.show("Copied. Go get 'em.");
-    },
-    [toast],
-  );
+  const copyItem = useCallback((item: FeedItem) => copyLine(item.text, toast.show), [toast]);
 
   const shareItem = useCallback(
     async (item: FeedItem) => {

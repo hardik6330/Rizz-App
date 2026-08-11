@@ -5,9 +5,9 @@ import { AppState, ScrollView, StyleSheet, Switch, Text, View } from 'react-nati
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CircleIconButton } from '@/components/CircleIconButton';
-import { HapticPressable } from '@/components/HapticPressable';
-import { useToast } from '@/components/Toast';
+import { CircleIconButton } from '@/components/ui/CircleIconButton';
+import { HapticPressable } from '@/components/ui/HapticPressable';
+import { useToast } from '@/components/ui/Toast';
 import { useRizzStore } from '@/state/useRizzStore';
 import { isSupported, isEnabled, permissions, setEnabled } from '@/../modules/profile-capture';
 import { track } from '@/services/analytics';

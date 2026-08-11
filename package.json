@@ -57,7 +57,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "checks": "tsc --noEmit && eslint src modules --max-warnings=5 && node src/state/limits.selfcheck.ts && node src/services/contracts.selfcheck.ts && node src/utils/contentId.selfcheck.ts",
+    "checks": "tsc --noEmit && eslint src modules --max-warnings=5 && node src/state/limits.selfcheck.ts && node src/services/contracts.selfcheck.ts && node src/utils/contentId.selfcheck.ts && node src/theme/contrast.selfcheck.ts",
     "login": "npx eas-cli login",
     "whoami": "npx eas-cli whoami",
     "fingerprint": "expo-updates fingerprint:generate --platform android",

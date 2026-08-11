@@ -14,7 +14,8 @@ type AnalysisSeed = Omit<AnalysisResult, 'id' | 'createdAt'>;
  * Simulation results used when no live AI key is configured (and as a network
  * fallback). Three full variants rotate so repeat analyses feel alive.
  */
-export const MOCK_ANALYSES: AnalysisSeed[] = [
+/** Non-empty: `seedRotator` indexes into it, so an empty list must be a compile error. */
+export const MOCK_ANALYSES: [AnalysisSeed, ...AnalysisSeed[]] = [
   {
     replies: [
       {

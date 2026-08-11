@@ -136,7 +136,7 @@ export async function creditsFor(userId: string): Promise<CreditState> {
 /**
  * The `credits` object every response carries, in the ONE shape the client reads.
  *
- * These key names are a contract with `Credits` in the app's `state/session.ts`,
+ * These key names are a contract with `Credits` in the app's `services/auth.ts`,
  * and `useRizzStore` writes them into the store verbatim. Drift is not a display
  * bug: `/v1/ai/*` once returned `{ is_pro, remaining }`, so `analysis_count`
  * arrived `undefined`, the meter rendered `NaN/3 free`, and — the expensive part —

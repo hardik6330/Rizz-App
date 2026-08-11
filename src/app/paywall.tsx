@@ -16,10 +16,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CircleIconButton } from '@/components/CircleIconButton';
-import { HapticPressable } from '@/components/HapticPressable';
-import { PlanCard } from '@/components/PlanCard';
-import { useToast } from '@/components/Toast';
+import { CircleIconButton } from '@/components/ui/CircleIconButton';
+import { HapticPressable } from '@/components/ui/HapticPressable';
+import { PlanCard } from '@/components/feature/PlanCard';
+import { useToast } from '@/components/ui/Toast';
 import { PRIVACY_URL, TERMS_URL } from '@/constants';
 import { AVATARS, BG } from '@/data/assets';
 import { track, type PaywallSource } from '@/services/analytics';

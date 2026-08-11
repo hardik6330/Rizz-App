@@ -1,5 +1,4 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
@@ -12,25 +11,26 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CircleIconButton } from '@/components/CircleIconButton';
-import { AiNotice } from '@/components/AiNotice';
-import { HapticPressable } from '@/components/HapticPressable';
+import { CircleIconButton } from '@/components/ui/CircleIconButton';
+import { AiNotice } from '@/components/feature/AiNotice';
+import { HapticPressable } from '@/components/ui/HapticPressable';
 import { INTERESTS } from '@/data/interests';
-import { ProUpsellCard } from '@/components/ProUpsellCard';
-import { ScreenHeader } from '@/components/ScreenHeader';
-import { StagedLoader } from '@/components/StagedLoader';
-import { useToast } from '@/components/Toast';
+import { ProUpsellCard } from '@/components/feature/ProUpsellCard';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { StagedLoader } from '@/components/ui/StagedLoader';
+import { useToast } from '@/components/ui/Toast';
 import { BIO_STAGES, optimizeBio } from '@/services/bioEngine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import type { BioOption, BioResult, BioVibe } from '@/types';
 import { haptic } from '@/utils/haptics';
-import { useBackToIdle } from '@/utils/useBackToIdle';
-import { useAiConsent } from '@/utils/useAiConsent';
-import { useCreditGate } from '@/utils/useCreditGate';
-import { useKeyboardInset } from '@/utils/useKeyboardInset';
-import { useStagedProgress } from '@/utils/useStagedProgress';
+import { copyLine } from '@/utils/misc';
+import { useBackToIdle } from '@/hooks/useBackToIdle';
+import { useAiConsent } from '@/hooks/useAiConsent';
+import { useCreditGate } from '@/hooks/useCreditGate';
+import { useKeyboardInset } from '@/hooks/useKeyboardInset';
+import { useStagedProgress } from '@/hooks/useStagedProgress';
 
 type Phase = 'idle' | 'working' | 'done';
 
@@ -130,11 +130,7 @@ export default function BioScreen() {
   // Android back closes the result instead of exiting the app. See useBackToIdle.
   useBackToIdle(phase === 'done', reset);
 
-  const copyBio = async (text: string) => {
-    await Clipboard.setStringAsync(text);
-    haptic.success();
-    toast.show('Copied. Go be irresistible.');
-  };
+  const copyBio = (text: string) => copyLine(text, toast.show, 'Copied. Go be irresistible.');
 
   const toggleSaveBio = (option: BioOption) => {
     if (!result) return;

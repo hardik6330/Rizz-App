@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 
 import { creditsEnvelope } from './credits.ts';
 
-/** Exactly the fields of `Credits` in the app's src/state/session.ts. */
+/** Exactly the fields of `Credits` in the app's src/services/auth.ts. */
 const CLIENT_KEYS = ['is_pro', 'analysis_count', 'credits_remaining'] as const;
 
 const free = creditsEnvelope({ isPro: false, analysisCount: 1, remaining: 2 });
