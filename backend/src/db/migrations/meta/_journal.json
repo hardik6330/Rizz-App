@@ -78,6 +78,13 @@
       "when": 1780000000000,
       "tag": "0010_coach_profile",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1781000000000,
+      "tag": "0011_fk_and_cleanup",
+      "breakpoints": true
     }
   ]
 }

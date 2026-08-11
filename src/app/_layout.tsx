@@ -361,6 +361,15 @@ export default function RootLayout() {
               options={{ presentation: 'modal', gestureEnabled: false }}
             />
             <Stack.Screen name="analyzer" options={{ presentation: 'modal' }} />
+            {/*
+              gestureEnabled stays ON, unlike the two gates above: dismissing
+              this one is a legitimate answer — it means "no, do not upload my
+              screenshots" — and the app is fully usable after it. Taking the
+              swipe away would make a consent screen harder to refuse than to
+              accept, which is the shape of the dark pattern the rule exists to
+              stop. See ai-consent.tsx.
+            */}
+            <Stack.Screen name="ai-consent" options={{ presentation: 'modal' }} />
             <Stack.Screen
               name="paywall"
               options={{ presentation: 'modal', gestureEnabled: false }}

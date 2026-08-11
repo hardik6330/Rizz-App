@@ -55,7 +55,67 @@ export type AnalyticsEvent =
   | { name: 'a11y_prompt_seen' }
   | { name: 'a11y_settings_opened' }
   | { name: 'a11y_enabled' }
-  | { name: 'a11y_disabled'; via: 'app_toggle' | 'bubble_drag' };
+  | { name: 'a11y_disabled'; via: 'app_toggle' | 'bubble_drag' }
+  /*
+   * ── The activation funnel ──────────────────────────────────────────────────
+   *
+   * install → gate_seen → first_result → account → paywall_viewed → pro_purchased
+   *
+   * Everything from `paywall_viewed` onwards already existed; everything before
+   * it did not, so the most expensive question this product has — how many
+   * installs die on the signup wall before seeing a single result — had no
+   * answer at all. `ai_success` fires on every analysis and cannot tell a first
+   * from a fiftieth, which is the distinction activation is made of.
+   *
+   * These land BEFORE the funnel changes they exist to measure. A change to the
+   * gate or the free tier with no baseline is a change nobody can evaluate — the
+   * numbers move and there is nothing to compare them against.
+   */
+  /**
+   * The mandatory account gate rendered. The denominator for everything below.
+   *
+   * `returning` separates a cold install from a user who signed out — without it
+   * the gate's conversion rate is diluted by people who already have an account
+   * and are simply logging back in.
+   */
+  | { name: 'gate_seen'; returning: boolean }
+  /**
+   * The user's FIRST successful analysis on this install — the activation event.
+   *
+   * Fired once per install and never again: the store flag that gates it is
+   * persisted, so a reinstall counts as a new activation (correctly — it is a
+   * new install) but a relaunch does not. `engine` records which tool earned it,
+   * which is what tells you whether the Lab deserves to be the landing tab.
+   */
+  | { name: 'first_result'; engine: EngineName }
+  /**
+   * An account came into existence, or was recovered. `method` distinguishes the
+   * three paths so the code-login route — the nearest thing to a password reset
+   * — can be measured rather than assumed to be unused.
+   */
+  | { name: 'account_created'; method: 'signup' }
+  | { name: 'account_login'; method: 'password' | 'code' }
+  /**
+   * A free user was refused an analysis. The paywall's true demand signal.
+   *
+   * Distinct from `paywall_viewed`: this fires when the gate BITES, whether or
+   * not the paywall was then shown or the user simply gave up. The gap between
+   * the two is the number of people who hit the wall and did not even look.
+   */
+  | { name: 'credits_exhausted'; engine: EngineName }
+  /*
+   * ── The upload-consent gate ────────────────────────────────────────────────
+   *
+   * The disclosure that screenshots go to Google Gemini. Two events, because the
+   * interesting number is the difference: people who read what the app actually
+   * does and decided not to. That is a product signal nothing else reports, and
+   * it must not be quietly conflated with a paywall bounce.
+   *
+   * `engine` is what they were reaching for when the gate appeared. NEVER add
+   * anything describing what they were about to upload.
+   */
+  | { name: 'ai_consent_seen'; engine: EngineName }
+  | { name: 'ai_consent_granted'; engine: EngineName };
 
 export type EngineName = 'lab' | 'profile' | 'bio' | 'feed' | 'chat';
 export type PaywallSource = 'out_of_credits' | 'swipe_limit' | 'upsell_card' | 'manual';

@@ -29,14 +29,109 @@ export function imagePart(base64: string, mimeType: string): Part {
 }
 
 /**
- * Pinned, not the rolling alias.
+ * Pinned, not the rolling alias. **This comment used to be aspirational.**
  *
- * `gemini-flash-latest` silently rolled to Gemini 3, which rejected the old
- * `thinkingBudget` key with HTTP 400 on EVERY call — the whole app served mock
- * data until a human noticed. Pinning here means the next roll is a deploy we
- * choose, not an outage we discover. Canary a new model before promoting it.
+ * The line below read `gemini-flash-latest` while this block claimed it was
+ * pinned, and the alias has now moved twice underneath us:
+ *
+ *   1. It rolled to Gemini 3, which rejected the old `thinkingBudget` key with
+ *      HTTP 400 on EVERY call — the whole app served mock data until a human
+ *      noticed. That incident is what this comment was written about.
+ *   2. It rolled again to `gemini-3.6-flash`, which lists at $1.50/$7.50 per
+ *      million tokens against the $0.25/$1.50 of the tier below it. Nothing
+ *      broke, nothing was logged, and the primary cost line of the business
+ *      went up ~6x without a commit. That one is why the pin finally happened.
+ *
+ * An alias is a promise that someone else may change your model, your API
+ * contract and your bill on their schedule. Pinning makes the next roll a
+ * deploy we choose rather than an outage or an invoice we discover.
+ *
+ * ## The standing policy: pick the BEST model, not the cheapest
+ *
+ * This product sells the quality of one generated line. A user who gets a
+ * mediocre reply does not come back, and no per-call saving is worth a churned
+ * subscriber — so a cheaper tier is not an optimisation here, it is a product
+ * regression with a smaller invoice attached.
+ *
+ * **Do not downgrade this to a Flash-Lite tier to cut COGS.** The list prices
+ * below exist so `costUsd` can be computed and a 6x change is visible; they are
+ * not an argument. If spend needs bounding, the levers are `DAILY_CALL_CAP` and
+ * the size of the free tier — both of which cost nothing in output quality.
+ *
+ * Stable IDs and list prices per 1M tokens (in / out), verified Aug 2026:
+ *
+ *   gemini-3.6-flash        $1.50 / $7.50   ← current. Newest stable Flash.
+ *   gemini-3.5-flash        $1.50 / $7.50     same price; evaluate head-to-head
+ *   gemini-3.5-flash-lite   $0.30 / $2.50     cheaper, weaker — not for this app
+ *   gemini-3.1-flash-lite   $0.25 / $1.50     cheaper, weaker — not for this app
+ *
+ * A Pro tier is deliberately not listed: only preview IDs exist today, pinning
+ * production to a preview model reinstates the exact instability this pin
+ * removes, and the user is watching a spinner — Pro's latency is a real cost to
+ * them even when the money is not the objection.
+ *
+ * ## Changing this value
+ *
+ * One line, and it is a REAL change — canary it, do not just ship it:
+ *
+ *   cd backend && node --env-file=.env --import tsx src/ai/gateway.selfcheck.ts
+ *
+ * The selfcheck makes one live call under a deliberately small token cap, which
+ * catches both the "invalid argument" class of failure (a model that rejects
+ * `thinkingLevel`) and the truncation class. It cannot tell you the answer got
+ * WORSE — so also run a real screenshot through the Lab and read the output
+ * before promoting.
+ *
+ * ponytail: pinned to the model already running, so this change is cost- and
+ * behaviour-neutral by design. It removes the silent-roll risk and nothing else.
  */
-const MODEL = 'gemini-flash-latest';
+const MODEL = 'gemini-3.6-flash';
+
+/**
+ * List price per 1M tokens, for the estimate on every `gemini.ok` line.
+ *
+ * Why estimate cost here at all: the 6x price change above was invisible for
+ * weeks because nothing in this service ever expressed a call in money. Tokens
+ * are logged, and tokens are not the number that moved — the price per token
+ * was. A cost field means the regression shows up in the same log line everyone
+ * already reads, on the first call after a bad pin.
+ *
+ * Deliberately a hardcoded table and deliberately approximate. It is a smoke
+ * alarm, not an invoice: Google's billing is authoritative, this exists to make
+ * an order-of-magnitude move impossible to miss. An unknown model logs no cost
+ * rather than a wrong one.
+ *
+ * **This is a visibility tool, not a budget.** The model choice above is made on
+ * quality; see the policy there. A high `costUsd` is expected and is answered by
+ * capping VOLUME, never by weakening the model.
+ *
+ * ponytail: no rollup table, no metrics backend. Grep `gemini.ok` and sum
+ * `costUsd`. Add aggregation when a log search stops being enough.
+ */
+const PRICES: Record<string, { in: number; out: number }> = {
+  'gemini-3.6-flash': { in: 1.5, out: 7.5 },
+  'gemini-3.5-flash-lite': { in: 0.3, out: 2.5 },
+  'gemini-3.1-flash-lite': { in: 0.25, out: 1.5 },
+};
+
+/**
+ * Estimated USD for one call, or undefined for a model we have no price for.
+ *
+ * Thinking tokens are billed at the OUTPUT rate and are NOT part of
+ * `candidatesTokenCount` — the same trap `totalTokens` exists to avoid. Summing
+ * prompt + output alone under-bills every call on a thinking model, which is
+ * this one.
+ */
+function estimateCost(usage: Usage): number | undefined {
+  const price = PRICES[usage.model];
+  if (!price) return undefined;
+  const input = usage.promptTokens ?? 0;
+  const output = (usage.outputTokens ?? 0) + (usage.thoughtTokens ?? 0);
+  const usd = (input * price.in + output * price.out) / 1_000_000;
+  // 6dp: a single Lab call lands around $0.001, so fewer digits round it to zero
+  // and the field reads as "free" on every line.
+  return Number(usd.toFixed(6));
+}
 
 /**
  * Prompt version = the first 8 hex of sha256(prompt text).
@@ -194,6 +289,7 @@ export async function generate<T>(opts: GenerateOptions): Promise<{ data: T; usa
     throw Errors.aiUnavailable();
   }
 
-  log.info('gemini.ok', { engine: opts.engine, prompt, ...usage });
+  // `costUsd` last so it reads as the summary of the numbers before it.
+  log.info('gemini.ok', { engine: opts.engine, prompt, ...usage, costUsd: estimateCost(usage) });
   return { data: parsed, usage };
 }

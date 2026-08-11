@@ -13,6 +13,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CircleIconButton } from '@/components/CircleIconButton';
+import { AiNotice } from '@/components/AiNotice';
 import { HapticPressable } from '@/components/HapticPressable';
 import { ProUpsellCard } from '@/components/ProUpsellCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
@@ -25,6 +26,7 @@ import { palette, radii, spacing } from '@/theme/tokens';
 import type { BioOption, BioResult, BioVibe } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { useBackToIdle } from '@/utils/useBackToIdle';
+import { useAiConsent } from '@/utils/useAiConsent';
 import { useCreditGate } from '@/utils/useCreditGate';
 import { useKeyboardInset } from '@/utils/useKeyboardInset';
 import { useStagedProgress } from '@/utils/useStagedProgress';
@@ -66,6 +68,7 @@ export default function BioScreen() {
 
   const outOfCredits = useOutOfCredits();
   const creditGate = useCreditGate();
+  const needsAiConsent = useAiConsent();
 
   const interests = useMemo(() => {
     const extras = custom
@@ -85,7 +88,8 @@ export default function BioScreen() {
   };
 
   const optimize = useCallback(async () => {
-    if (creditGate('out_of_credits')) return;
+    if (needsAiConsent('bio')) return;
+    if (creditGate('out_of_credits', 'bio')) return;
     if (!canOptimize) {
       toast.show('Pick at least one interest');
       return;
@@ -114,6 +118,7 @@ export default function BioScreen() {
       stopStages();
     }
   }, [
+    needsAiConsent,
     creditGate,
     canOptimize,
     interests,
@@ -148,7 +153,6 @@ export default function BioScreen() {
       id: `bio-${result.id}-${option.id}`,
       text: option.text,
       category: 'Bio',
-      source: 'bio',
     });
   };
 
@@ -331,10 +335,7 @@ export default function BioScreen() {
               </Text>
             </HapticPressable>
 
-            <View style={styles.privacyRow}>
-              <Ionicons name="shield-checkmark-outline" size={13} color={palette.textTertiary} />
-              <Text style={styles.privacyText}>Written just for you. Never posted, never shared.</Text>
-            </View>
+            <AiNotice />
           </>
         )}
       </ScrollView>
@@ -500,17 +501,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.2,
     color: palette.ink,
-  },
-  privacyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: spacing.xs,
-  },
-  privacyText: {
-    fontSize: 12,
-    color: palette.textTertiary,
   },
   results: {
     gap: spacing.md,

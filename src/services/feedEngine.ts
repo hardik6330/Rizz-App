@@ -1,6 +1,6 @@
 import { BG, BG_FALLBACK } from '@/data/assets';
 import type { FeedCategory, FeedItem } from '@/types';
-import { uid } from '@/utils/misc';
+import { contentId } from '@/utils/contentId';
 import { callApi, isLiveApi } from './api';
 
 const BG_KEYS = Object.keys(BG) as (keyof typeof BG)[];
@@ -35,7 +35,22 @@ function toFeedItems(lines: RawLine[]): FeedItem[] {
     // Reuse the real bundled cinematic backgrounds so AI cards look premium.
     const key = BG_KEYS[i % BG_KEYS.length];
     return {
-      id: uid(),
+      /*
+       * Derived from the line, NOT `uid()`.
+       *
+       * The server generates this batch once per day for everybody and serves
+       * the cached row after that, so the same text comes back on every fetch —
+       * but `uid()` gave it a new id each time. A vault id is the server's
+       * primary key and the save is an upsert, so a re-minted id turned "save
+       * this line" into a second row: the card showed unsaved, the user tapped
+       * it again, and the vault held two identical entries. Refetches happen on
+       * sign-out, on a new day, and on any cache miss, so this was reachable in
+       * normal use rather than a corner case.
+       *
+       * The curated lines in `data/feed.ts` never had the bug — their ids are
+       * hardcoded (`feed-01`…). This gives the generated ones the same property.
+       */
+      id: contentId('ai', line.text),
       category: line.category,
       text: line.text,
       context: line.context,

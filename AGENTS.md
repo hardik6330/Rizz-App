@@ -28,6 +28,49 @@ launch, traded for a 30-day JWT (revocable — see `token_epoch` below). It is n
 that would mean either `expo-crypto` (native, therefore a rebuild rather than an OTA) or
 `Math.random`, and this id is the credential that owns a user's credits.
 
+⚠️ **The bubble's reply goes to the CLIPBOARD, and that is a compliance boundary — never
+auto-send, auto-paste, tap send, or add a "reply for me" mode.** Play prohibits any use of
+the Accessibility API that lets an app "autonomously initiate, plan, and execute actions".
+The service already performs the one UI action it is allowed: `scrollAndRead()` scrolls the
+thread up to gather history and `restoreScroll()` puts it back — user-triggered and
+deterministic, which is the permitted shape. Making it *send* crosses into the automation
+the policy bans and puts the Android app at risk. **That scroll must also stay disclosed**
+in `analyzer.tsx` and in `/privacy` §4; both said "the visible chat text" until it was
+noticed that the service reads more than was on screen. Full argument and the review pack:
+[docs/play-accessibility-declaration.md](docs/play-accessibility-declaration.md).
+
+⚠️ **Name Google Gemini on every surface that uploads, and never write "our AI".** Five places
+describe the same pipe — `app/ai-consent.tsx`, `components/AiNotice.tsx` (rendered by Lab,
+Profile Scan and Bio Lab), `analyzer.tsx`, `/privacy` §4, and the Play declaration. Change one
+and change all five; a reviewer who finds them disagreeing has a reason to distrust every one
+of them. `AiNotice` replaced three per-screen copies of "Analyses are private. Never posted,
+never shared." — which was not thin but *backwards*: a person reading it about a screenshot of
+someone else's conversation concludes the analysis runs on their phone. It runs at Google.
+
+⚠️ **`useAiConsent()` gates every AI tool, and it is NOT a paywall.** It reads one flag —
+`aiConsent` — and touches no credit, plan or entitlement. **A Pro subscriber is asked exactly
+like a free user**, because the question is whether a private conversation may leave the device
+and money does not buy a different answer. Never skip it for payers, never fold it into
+`useCreditGate` (a change to the free tier would then be a change to a compliance surface), and
+keep it FIRST at each call site — before the credit gate and before the image picker, so
+consent is recorded while the app still holds none of the user's data.
+
+The gate has one deliberate exemption: **the Android bubble**. `analyzer.tsx` is a stricter
+disclosure than the consent screen — it names Gemini, needs two OS permissions plus an in-app
+switch, and cannot be reached by accident — so a capture arriving from it is already consented.
+Do not stack a second prompt on that path.
+
+**Dismissing `/ai-consent` is a valid answer and must stay easy.** `gestureEnabled` is ON for
+that route, unlike the account and onboarding gates: closing it means "no, do not upload my
+screenshots", the flag stays false, and the rest of the app keeps working. A consent screen
+that is harder to refuse than to accept is the dark pattern the rule exists to stop — so no
+pre-ticked box, no "Decline" that does something other than close, and no disabling the app
+until they agree.
+
+**Re-read Apple's third-party-AI guideline before the first TestFlight submission** rather than
+trusting this paragraph — it is a fast-moving area and this was written against the November
+2025 wording.
+
 **One documented exception:** `modules/profile-capture/.../GeminiChatClient.kt`. The chat
 bubble generates a reply inside the accessibility service, where the RN/JS context may not
 exist, so it cannot go through `services/api.ts` and makes its own HTTP call. It now posts to
@@ -60,13 +103,32 @@ engine **silently falls back to mock data**. Symptom: "the AI ignores my screens
 canned results." `backend/src/ai/gateway.selfcheck.ts` guards this with a deliberately small
 token cap.
 
-**`gemini-flash-latest` is a rolling alias, and the thinking key changed under it.** It
-now resolves to `gemini-3.6-flash`. Gemini 3 dropped the numeric `thinkingBudget` for a
-`thinkingLevel` enum and **400s on the old key** — "Request contains an invalid argument",
-on every call, so the whole app quietly served mock data until someone noticed. Valid
-levels are `low`, `minimal`, `high`; there is no `none`/`off`, and `high` reproduces the
-MAX_TOKENS truncation. The alias can roll again: if every engine goes canned at once, run
-the selfcheck before suspecting anything else.
+⚠️ **The model is now PINNED — `MODEL = 'gemini-3.6-flash'`, not `gemini-flash-latest`.**
+That alias moved twice underneath this codebase, and the block above was written about the
+first time: Gemini 3 dropped the numeric `thinkingBudget` for a `thinkingLevel` enum and
+**400s on the old key** — on every call, so the whole app quietly served mock data until
+someone noticed. Valid levels are `low`, `minimal`, `high`; there is no `none`/`off`, and
+`high` reproduces the MAX_TOKENS truncation.
+
+The second roll broke nothing and cost more: the alias landed on `gemini-3.6-flash` at
+**$1.50/$7.50** per 1M tokens against the **$0.25/$1.50** of the tier below, so the primary
+cost line of the business rose ~6x with no commit and no log line. `gateway.ts` had a
+comment claiming it was pinned for months while the constant was still the alias — do not
+let those two drift again.
+
+⚠️ **Standing policy: pick the BEST model, never the cheapest — do not propose a cheaper
+tier to cut COGS.** This product sells the quality of one generated line; a mediocre reply
+loses the user, and no per-call saving is worth a churned subscriber. The list prices in
+`gateway.ts` exist so `costUsd` can be computed and a 6x move is visible — they are not an
+argument for downgrading. **If spend needs bounding, the levers are `DAILY_CALL_CAP` and the
+size of the free tier**, neither of which costs output quality. A Pro tier is not used
+either: only preview IDs exist, and the user is watching a spinner while it runs.
+
+**Changing `MODEL` is a real change, not config.** One line, then canary:
+`cd backend && node --env-file=.env --import tsx src/ai/gateway.selfcheck.ts` catches both
+failure classes (a model that rejects `thinkingLevel`, and truncation) under a deliberately
+small cap. It cannot tell you the answer got *worse* — run a real screenshot through the Lab
+and read it before promoting. Stable IDs sit in `gateway.ts` beside the constant.
 
 **Gemini 3 cannot switch thinking off — but do not "buy headroom" for it.** `thinkingBudget:
 0` used to mean zero; `thinkingLevel: 'low'` only means *less* (a six-line transcript still
@@ -88,17 +150,51 @@ in `analyzer.tsx` and `account.tsx`. A third kind of user-scoped table needs doc
 - **The client mints the id and it IS the server primary key.** `POST /v1/user/vault` upserts
   (`ON DUPLICATE KEY UPDATE`), so re-saving is idempotent. Regenerate an id on sync and the
   user gets a duplicate they have to delete twice.
+- ⚠️ **Anything savable gets `contentId()`, never `uid()`.** This rule shipped broken and the
+  bug was exactly the sentence above: `feedEngine.ts` decorated each daily line with `uid()`,
+  but the batch is generated once globally per day, so every refetch (sign-out, new day, cache
+  miss) gave identical text a new id. The card then read as unsaved, the user tapped save, and
+  the upsert INSERTED — two identical rows in the vault. `contentId(prefix, text)` in
+  `utils/contentId.ts` is stable across launches and devices, which is what makes the upsert do
+  its job; `contentId.selfcheck.ts` in `npm run checks` pins stability, collision-freedom and
+  the 64-char `saved_items.id` ceiling. `uid()` stays correct for **analysis results** — a
+  re-run is a genuinely new report and deserves a new row. The test is whether the same bytes
+  can come back from the server twice. `hydrateVault()` carries a permanent dedupe pass that
+  clears the pairs already in people's vaults.
 - **Sync helpers live in `session.ts` and hand-roll `fetch`,** like everything else there —
   they carry the raw bearer header and must not go through `callApi`, which sits on top of
-  session identity. Each returns `false`/`[]` instead of throwing and returns early when
+  session identity. Each returns `false` instead of throwing and returns early when
   `isLiveApi` is false, so the vault works offline; the cost is that a failed write is silent
-  until the next fetch. `fetchVault()` / `fetchScans()` hydrate on screen mount.
-- **`GET /v1/user/scans` caps at 20; the vault has no cap** — which is why `vault.tsx` is the
-  one list carrying explicit `initialNumToRender` / `maxToRenderPerBatch` / `windowSize`
-  bounds, and no `getItemLayout` (saved lines are variable height; a wrong fixed height
-  desynchronises scroll from content). Do not "tidy" those props away.
-- **Every user-scoped table must be added to the `DELETE /v1/user/me` transaction by hand.**
-  There are no foreign keys. Nothing fails if you forget — the rows just outlive the account.
+  until the next fetch.
+- **The readers answer `null` for "could not ask" and `[]` for "the server says empty",
+  and callers MUST honour the difference.** `fetchVault()` and `fetchScans()` return `null`
+  when offline, when the token bounces and in mock mode. Both used to flatten every one of
+  those to `[]`, so every call site guarded on `items.length > 0` — which meant a vault or a
+  scan list emptied on another device could never sync, and (on the scans path, which re-runs
+  on every screen focus including the return from the paywall) a failed fetch wiped history
+  the user was looking at. Never reintroduce a `.length > 0` guard: the empty array is the
+  answer, `null` is the absence of one.
+- **`hydrateVault()` in `useRizzStore.ts` is the only vault hydration path.** The store calls
+  it on account change and `vault.tsx` calls it on mount. It existed twice, in near-copies
+  that had already drifted — one compared before writing, the other did not.
+- **`GET /v1/user/scans` caps at 20; `GET /v1/user/vault` caps at `VAULT_PAGE` (500) and says
+  so with `has_more`.** The flag is load-bearing, not informational: `hydrateVault()` REPLACES
+  the local copy, and replacing a 600-line vault with the newest 500 would delete 100 lines off
+  the user's device that still exist on the server. When `has_more` is set it merges instead,
+  server rows winning on id. Raise the cap freely; do not drop the flag, and do not add a caller
+  that ignores it. The query is unpaginated by design — the client mirrors the whole vault into
+  MMKV — so the cap is a bound on one response, not a page cursor.
+- **`vault.tsx` renders the whole list**, which is why it is the one list carrying explicit
+  `initialNumToRender` / `maxToRenderPerBatch` / `windowSize` bounds, and no `getItemLayout`
+  (saved lines are variable height; a wrong fixed height desynchronises scroll from content).
+  Do not "tidy" those props away.
+- **Foreign keys with `ON DELETE CASCADE` land in migration 0011** on `profile_scans`,
+  `saved_items` and `credit_events`. Until that migration is applied everywhere, keep adding
+  every new user-scoped table to the `DELETE /v1/user/me` transaction by hand — nothing fails
+  if you forget, the rows just outlive the account. Once it is applied, the database enforces
+  what that comment used to ask you to remember, and the hand-written deletes become
+  belt-and-braces rather than the mechanism. Do not remove them in the same change that adds
+  the constraints.
 - **`deleteAccount()` clears BOTH lists, and both are load-bearing.** It cleared only
   `scanHistory` once: the server rows were gone but the MMKV copy of the vault survived, so the
   next anonymous install on that device opened the Vault and read the deleted account's saved
@@ -110,9 +206,16 @@ in `analyzer.tsx` and `account.tsx`. A third kind of user-scoped table needs doc
   `removeScan` would drop the local copy and leave the row alive forever with nothing to notice.
   Same failure shape as the `analysisCount` double-write. Do not add a second call at a call site.
 
-**The silent mock fallback hides live errors.** Every engine catches failures and returns
-mock data so the app demos offline. When debugging "AI not working", check the console warn
-(`[engine] live analysis failed`) first — a live key does NOT mean you're seeing live output.
+**Mock seeds are DEMO MODE ONLY — this used to say otherwise and the code moved first.**
+All three AI engines are now `if (!isLiveApi) return simulate…; return viaApi(…)`: with an
+API configured a failure THROWS and the screen toasts, because substituting a seed for a
+failed call meant a user scanning their own profile got a report about "Maya, Bristol 26"
+saved into their history as real. The one remaining fallback is `feedEngine`, which returns
+`[]` so Discover falls back to the CURATED feed — content degrading to other content, not a
+fabricated analysis of something the user supplied. Leave that one alone.
+
+What is still true: with no `EXPO_PUBLIC_API_URL` every engine serves seeds and the app
+demos fully offline, so canned output means "no API configured", not "the API failed".
 
 **`callApi` VALIDATES the response before returning it — `services/contracts.ts`.** `src/types.ts`
 and `backend/src/ai/schemas.ts` describe the same payloads in two languages, kept in step by
@@ -150,6 +253,13 @@ Details and the exact TLS failure modes: `backend/README.md`.
 in `gateway.ts` logs the first 8 hex of sha256(prompt) on every call, so
 `engine + prompt + totalTokens` attributes a quality or cost change to a specific edit. A
 declared version is wrong the first time someone tweaks a prompt without bumping it.
+
+**`gemini.ok` now carries `costUsd`, and that is the line to watch.** Tokens were always
+logged; the number that actually moved in the incident above was the price *per* token, and
+nothing in the service expressed a call in money, so a 6x change was invisible for weeks.
+The estimate comes from a hardcoded `PRICES` table in `gateway.ts` — a smoke alarm, not an
+invoice. Keep it in step when `MODEL` changes; an unpriced model logs no cost rather than a
+wrong one. Grep `gemini.ok` and sum `costUsd`; there is deliberately no rollup table yet.
 
 **Cost lives in `totalTokens`, not `promptTokens + outputTokens`.** `gemini.ok` logs
 `model`, `promptTokens`, `outputTokens`, `thoughtTokens`, `totalTokens` and `latencyMs` on
@@ -343,10 +453,10 @@ fronted by `requireAccount`, not plain JWT: a device token proves someone holds 
 id, not that they are the account holder. Hard DELETE, never a soft flag — the unique key on
 `email` would block them signing up again.
 
-⚠️ Two leftovers. The route's own comment still claims "one statement is the whole
-implementation… the user row IS the user's data" — stale since the transaction landed, and the
-code directly below it disagrees. And there are still **no foreign keys**, so a new user-scoped
-table is only deleted if someone adds it to that transaction by hand.
+Both leftovers this note used to carry are now closed. The route's doc comment was rewritten
+and no longer claims "one statement is the whole implementation"; foreign keys with
+`ON DELETE CASCADE` arrive in migration 0011. Until 0011 is applied on every environment,
+the by-hand rule above still governs — see the bullet in the vault/scan-history section.
 
 **`email` and `username` are the ONLY PII in the schema, and that is now the rule** —
 `db/schema.ts` used to say "never any PII" and that line was traded deliberately in
@@ -495,6 +605,20 @@ signal.
 (`/paywall?source=…`), so a new entry point is attributed for free and `paywall_viewed` cannot
 drift from `paywall_dismissed`. Do not instrument the `router.push` call sites.
 
+**The activation funnel is `gate_seen → first_result → account_* → credits_exhausted`**, and
+each one is fired from exactly one place on purpose:
+
+| Event | Fired from | Why there |
+|---|---|---|
+| `gate_seen` | `account.tsx`, inside the `isOnboarding` branch | Opened as a modal from Profile Scan this is not a gate; counting it would pad the denominator |
+| `first_result` | `callApi` in `services/api.ts` | One choke point that already knows the engine. `feed` is excluded — a background daily fetch is not activation |
+| `account_created` / `account_login` | `account.tsx` `submit()`, after the await | Before the await it would count rejected attempts as conversions |
+| `credits_exhausted` | `useCreditGate` | The moment the tier REFUSES someone, which is a different number from `paywall_viewed` — the gap is everyone who hit the wall and never read the offer |
+
+⚠️ **`first_result` needs `hasActivated` in `partialize`** or every launch re-reports the
+user as newly activated. It is the only analytics flag that must survive a reload; a
+reinstall correctly counts again, because that is a new install.
+
 ## Onboarding answers — `src/app/onboarding.tsx` → `coachParts()`
 
 **Every question in the setup flow must change the model's output, in the same change that
@@ -509,6 +633,18 @@ thing that notices.
 `COACH_STRUGGLES`, `COACH_STYLES` are zod enums on the server; `CoachApp`, `CoachStruggle`,
 `CoachStyle` in `src/types.ts` are the same strings. Renaming one side only does not 400 — the
 server drops the unknown value and the user quietly loses personalisation. Change both.
+
+**`backend/src/lib/coach.ts` is the only validator and the only writer of `users.coach_json`.**
+`Coach` (the zod schema), `rememberCoach()` (the write) and `storedCoach()` (the read-back)
+live there, and both routes that touch the column import them: the AI engines write it
+opportunistically as a side effect of an analysis, `POST /v1/user/coach` writes it for the
+onboarding screen, which has the answers before it has run anything. They disagreed until P2 —
+`/v1/user/coach` parsed `z.string().max(64)` per field and issued its own `UPDATE`, so it
+accepted values the enums do not define and could overflow `VARCHAR(255)`, which MySQL
+truncates mid-string into JSON that never parses again. Adding a third writer means importing
+`rememberCoach`, not writing a fourth `UPDATE`. `backend/src/lib/coach.selfcheck.ts` asserts
+the enums reject unknown values and that the widest legal payload still fits the column — so
+adding an app or a longer style key fails there rather than in production.
 
 **It rides in the user turn, never the system instruction.** Same rule as `ui_text`, plus one
 more: `promptVersion()` hashes and memoises the system string, so a per-user system prompt

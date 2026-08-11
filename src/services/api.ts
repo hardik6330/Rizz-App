@@ -15,6 +15,9 @@
  */
 
 import { apiUrl, accessToken, reportCredits, type Credits } from '@/state/session';
+// Safe direction: the store imports `session`, never this file, so there is no
+// cycle. Used only for the one-per-install activation flag below.
+import { useRizzStore } from '@/state/useRizzStore';
 import { reportError, track, type EngineName } from './analytics';
 import { isValidResult } from './contracts';
 
@@ -110,6 +113,19 @@ export async function callApi<T>(path: string, body: unknown, signal?: AbortSign
     }
 
     track({ name: 'ai_success', engine, ms: Date.now() - started });
+    /*
+     * Activation, fired at most once per install.
+     *
+     * `feed` is excluded deliberately: the daily Discover batch is a background
+     * fetch the user never asked for, so counting it would mark every install
+     * activated on launch and make the number mean nothing.
+     *
+     * Here rather than in the three screens for the same reason `ai_success` is
+     * — one choke point cannot drift, and a fourth tool gets it for free.
+     */
+    if (engine !== 'feed' && useRizzStore.getState().markActivated()) {
+      track({ name: 'first_result', engine });
+    }
     return data.result;
   } catch (error) {
     // `code`, never `message` — a server message could one day quote input.

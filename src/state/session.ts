@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 
+import type { CoachProfile } from '@/types';
+
 import { kv } from './storage';
 
 /**
@@ -467,18 +469,18 @@ export interface SavedScanItem {
   createdAt: number;
 }
 
-/** Pull saved profile scan reports from the backend DB. */
-export async function fetchScans(): Promise<SavedScanItem[]> {
-  if (!isLiveApi) return [];
+/** Pull saved profile scan reports from the backend DB. `null` means "could not ask" — see `fetchVault`. */
+export async function fetchScans(): Promise<SavedScanItem[] | null> {
+  if (!isLiveApi) return null;
   try {
     const res = await fetch(apiUrl('/v1/user/scans'), {
       headers: { Authorization: `Bearer ${await accessToken()}` },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     const data = (await res.json()) as { scans: SavedScanItem[] };
     return data.scans ?? [];
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -496,18 +498,35 @@ export async function deleteScan(id: string): Promise<boolean> {
   }
 }
 
-/** Pull saved vault items from backend DB. */
-export async function fetchVault(): Promise<Array<{ id: string; category: string; text: string; note?: string; savedAt: number }>> {
-  if (!isLiveApi) return [];
+/**
+ * Pull saved vault items from backend DB. `null` means "could not ask".
+ *
+ * The distinction is the whole point of the return type. This used to answer
+ * `[]` for both "the server says you have saved nothing" and "we are offline /
+ * the token bounced / mock mode", which left every caller guessing — and the
+ * guess they all made was `if (items.length > 0)`, so a genuinely emptied vault
+ * could never sync and a local copy could never be cleared from another device.
+ * Callers must treat `null` as "keep what you have" and `[]` as authoritative.
+ */
+export interface VaultPage {
+  items: { id: string; category: string; text: string; note?: string; savedAt: number }[];
+  /** The server held back older rows — see `hydrateVault`, which must merge rather than replace. */
+  hasMore: boolean;
+}
+
+export async function fetchVault(): Promise<VaultPage | null> {
+  if (!isLiveApi) return null;
   try {
     const res = await fetch(apiUrl('/v1/user/vault'), {
       headers: { Authorization: `Bearer ${await accessToken()}` },
     });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { items: Array<{ id: string; category: string; text: string; note?: string; savedAt: number }> };
-    return data.items ?? [];
+    if (!res.ok) return null;
+    const data = (await res.json()) as { items: VaultPage['items']; has_more?: boolean };
+    // `has_more` absent means a server older than the cap — treat as complete,
+    // which is what it was.
+    return { items: data.items ?? [], hasMore: data.has_more ?? false };
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -558,7 +577,9 @@ export async function clearVaultItems(): Promise<boolean> {
 }
 
 /** Save or update onboarding coach profile on backend DB. */
-export async function saveCoachProfile(coach: { apps: string[]; struggle: string; style: string }): Promise<boolean> {
+// `CoachProfile`, not loose strings: `/v1/user/coach` validates against closed
+// enums, so a value TypeScript would have let through here is a 400 at runtime.
+export async function saveCoachProfile(coach: CoachProfile): Promise<boolean> {
   if (!isLiveApi) return true;
   try {
     const res = await fetch(apiUrl('/v1/user/coach'), {

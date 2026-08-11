@@ -1,4 +1,3 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -8,6 +7,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AiNotice } from '@/components/AiNotice';
 import { ABSimulator } from '@/components/ABSimulator';
 import { AnalyzingOverlay } from '@/components/AnalyzingOverlay';
 import { CircleIconButton } from '@/components/CircleIconButton';
@@ -30,6 +30,7 @@ import type { AnalysisResult, EngineMode, ReplyOption } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { shareText } from '@/utils/misc';
 import { useBackToIdle } from '@/utils/useBackToIdle';
+import { useAiConsent } from '@/utils/useAiConsent';
 import { useCreditGate } from '@/utils/useCreditGate';
 import { useStagedProgress } from '@/utils/useStagedProgress';
 
@@ -60,6 +61,7 @@ export default function LabScreen() {
 
   const outOfCredits = useOutOfCredits();
   const creditGate = useCreditGate();
+  const needsAiConsent = useAiConsent();
 
   /** Run one mode against the held screenshot. `onFail` restores the prior view. */
   const runAnalysis = useCallback(
@@ -74,6 +76,10 @@ export default function LabScreen() {
         const analysis = await analyzeScreenshot(input, targetMode, temperature);
         setResults((previous) => ({ ...previous, [targetMode]: analysis }));
         setPhase('done');
+        // Release raw base64 string bytes to free RAM once successfully analyzed
+        if (shot.current) {
+          shot.current = { ...shot.current, base64: '' };
+        }
         // The first success on a screenshot buys every mode and reroll of it.
         if (!charged.current) {
           charged.current = true;
@@ -99,7 +105,8 @@ export default function LabScreen() {
   );
 
   const pickScreenshot = useCallback(async () => {
-    if (creditGate('out_of_credits')) return;
+    if (needsAiConsent('lab')) return;
+    if (creditGate('out_of_credits', 'lab')) return;
 
     const picked = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -115,7 +122,7 @@ export default function LabScreen() {
     charged.current = false;
     shot.current = { base64: asset.base64 ?? '', mimeType: asset.mimeType ?? 'image/jpeg' };
     void runAnalysis(mode);
-  }, [creditGate, mode, runAnalysis]);
+  }, [needsAiConsent, creditGate, mode, runAnalysis]);
 
   /** Switching modes analyses on demand — free, the screenshot already paid. */
   const changeMode = (next: EngineMode) => {
@@ -164,7 +171,6 @@ export default function LabScreen() {
       id: `engine-${result.id}-${option.id}`,
       text: option.text,
       category: 'Engine',
-      source: 'engine',
     });
   };
 
@@ -286,13 +292,8 @@ export default function LabScreen() {
           </View>
         )}
 
-        {/* Privacy note */}
-        {phase !== 'done' && (
-          <View style={styles.privacyRow}>
-            <Ionicons name="shield-checkmark-outline" size={13} color={palette.textTertiary} />
-            <Text style={styles.privacyText}>Analyses are private. Never posted, never shared.</Text>
-          </View>
-        )}
+        {/* Where the screenshot actually goes — see components/AiNotice.tsx */}
+        {phase !== 'done' && <AiNotice />}
       </ScrollView>
 
       {toast.element}
@@ -377,16 +378,5 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     lineHeight: 17,
     color: palette.textSecondary,
-  },
-  privacyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: spacing.xs,
-  },
-  privacyText: {
-    fontSize: 12,
-    color: palette.textTertiary,
   },
 });

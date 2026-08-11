@@ -17,6 +17,7 @@ import { CircleIconButton } from '@/components/CircleIconButton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HapticPressable } from '@/components/HapticPressable';
 import { useToast } from '@/components/Toast';
+import { track } from '@/services/analytics';
 import {
   AuthError,
   deleteAccount,
@@ -108,8 +109,24 @@ export default function AccountScreen() {
    * timing guess in it.
    */
   useEffect(() => {
-    if (isOnboarding) void SplashScreen.hideAsync().catch(() => {});
-  }, [isOnboarding]);
+    if (!isOnboarding) return;
+    void SplashScreen.hideAsync().catch(() => {});
+    /*
+     * The denominator of the whole activation funnel.
+     *
+     * This screen is the app for anyone without an account, so every install
+     * that does not convert dies here — and until now that was an unmeasured
+     * number. `returning` separates a cold install from someone who signed out
+     * and is coming back, because mixing the two flatters the conversion rate
+     * with people who already decided months ago.
+     *
+     * Inside the `isOnboarding` branch on purpose: opened as a modal from the
+     * Profile Scan row this is not a gate, and counting it would inflate the
+     * denominator with users who are already past it.
+     */
+    track({ name: 'gate_seen', returning: remembered != null });
+    // `remembered` is frozen at mount, so this fires once per gate presentation.
+  }, [isOnboarding, remembered]);
   const [username, setUsername] = useState('');
   /**
    * Pre-filled on LOGIN only, and blank on signup.
@@ -339,16 +356,29 @@ export default function AccountScreen() {
     haptic.medium();
     setBusy(true);
     try {
-      const user = isSignup
-        ? await signUp({
-            username: username.trim(),
-            email: email.trim(),
-            password,
-            code: code.trim(),
-          })
-        : useCode
-          ? await logInWithCode(email.trim(), code.trim())
-          : await logIn(email.trim(), password);
+      if (isSignup) {
+        await signUp({
+          username: username.trim(),
+          email: email.trim(),
+          password,
+          code: code.trim(),
+        });
+      } else if (useCode) {
+        await logInWithCode(email.trim(), code.trim());
+      } else {
+        await logIn(email.trim(), password);
+      }
+      /*
+       * After the await, so a rejected attempt never counts as a conversion.
+       * `method` keeps the three paths apart — in particular the code login,
+       * which is this product's only recovery route and is currently assumed
+       * rather than known to be used.
+       */
+      track(
+        isSignup
+          ? { name: 'account_created', method: 'signup' }
+          : { name: 'account_login', method: useCode ? 'code' : 'password' },
+      );
       haptic.success();
       setPassword('');
       setCode('');
@@ -443,7 +473,12 @@ export default function AccountScreen() {
    * account. One-way on purpose: false → true only, never back.
    */
   useEffect(() => {
-    if (isLiveApi && signedInAs == null) setIsOnboarding(true);
+    if (isLiveApi && signedInAs == null) {
+      const handle = requestAnimationFrame(() => {
+        setIsOnboarding(true);
+      });
+      return () => cancelAnimationFrame(handle);
+    }
   }, [signedInAs]);
 
   return (

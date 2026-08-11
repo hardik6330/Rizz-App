@@ -87,9 +87,16 @@ export interface FeedItem {
 export interface SavedItem {
   id: string;
   text: string;
-  /** FeedCategory, "Engine" (analysis engine) or "Bio" (bio optimizer). */
+  /**
+   * FeedCategory, "Engine" (analysis engine) or "Bio" (bio optimizer).
+   *
+   * This is also where the item came from — "Engine" and "Bio" name their
+   * producer and everything else is a feed line. A separate `source` field used
+   * to say the same thing a second time; `saved_items` has no column for it, so
+   * every item that came back from the server had a required field that was
+   * `undefined` at runtime, behind a cast that hid it. Nothing ever read it.
+   */
   category: FeedCategory | 'Engine' | 'Bio';
-  source: 'feed' | 'engine' | 'bio';
   savedAt: number;
 }
 

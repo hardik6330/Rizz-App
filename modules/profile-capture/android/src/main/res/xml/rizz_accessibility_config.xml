@@ -12,11 +12,21 @@
   flagReportViewIds is required for getViewIdResourceName(), which ScreenClassifier
   scores on. Without it every view id reads null and detection silently degrades
   to text-only signals.
+
+  isAccessibilityTool is declared FALSE, explicitly, and that is the honest
+  answer: RizzCoach is not a screen reader, switch-access, voice-input or Braille
+  product, and only those four categories are accessibility tools as Google
+  defines them. false is also the attribute's default, so this line changes no
+  behaviour — it exists because the Play declaration asks you to attest to this
+  value and an omitted attribute is an implied answer rather than a stated one.
+  Setting it true to reach the lighter review path would be the fastest way to
+  lose the developer account. See docs/play-accessibility-declaration.md.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
   android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
   android:accessibilityFeedbackType="feedbackGeneric"
   android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+  android:isAccessibilityTool="false"
   android:canRetrieveWindowContent="true"
   android:canTakeScreenshot="true"
   android:notificationTimeout="300"

@@ -66,9 +66,14 @@ export default function AnalyzerScreen() {
   // Both permissions are granted in Settings, outside our process — so re-read
   // them every time the user comes back rather than trusting cached state.
   useEffect(() => {
-    refresh();
+    const handle = requestAnimationFrame(() => {
+      refresh();
+    });
     const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
-    return () => sub.remove();
+    return () => {
+      cancelAnimationFrame(handle);
+      sub.remove();
+    };
   }, [refresh]);
 
   const ready = a11y && overlay;
@@ -153,7 +158,21 @@ export default function AnalyzerScreen() {
         <View style={styles.disclosure}>
           <Text style={styles.disclosureTitle}>What this reads, and when</Text>
           <Bullet icon="eye-outline" text="RizzCoach reads the screen of those five apps only, to recognise when you're on a profile or an open chat. It reads nothing in any other app." />
-          <Bullet icon="hand-left-outline" text="It only acts when you tap ✨ — a screenshot on a profile, or the visible chat text in a conversation. Nothing is read in the background, ever." />
+          {/*
+            * "the visible chat text" was WRONG, and this is the compliance
+            * surface — Play review reads it and compares it against what the
+            * service does. `scrollAndRead()` in RizzAccessibilityService scrolls
+            * the thread upwards several times, reading between each step, then
+            * scrolls back to put the user where they were. So it reads history
+            * that was NOT on screen when they tapped, and it visibly moves their
+            * screen while doing it.
+            *
+            * Both facts have to be here. The reading is the one a reviewer cares
+            * about; the movement is the one a USER cares about, because an app
+            * scrolling by itself with no explanation reads as possessed rather
+            * than as a feature they asked for.
+            */}
+          <Bullet icon="hand-left-outline" text="It only acts when you tap ✨. On a profile it takes one screenshot. In a chat it scrolls the conversation up to read the recent messages — you will see it move — then puts you back where you were. Nothing is read in the background, ever." />
           <Bullet icon="cloud-upload-outline" text="That screenshot or chat text is sent to Google Gemini to write the report or the reply, then discarded. It is never saved to your device and never posted anywhere." />
           <Bullet icon="power-outline" text="The switch below turns it off instantly. Turning it off stops all screen reading." />
         </View>

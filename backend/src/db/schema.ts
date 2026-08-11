@@ -64,6 +64,26 @@ export const users = mysqlTable(
     analysisCount: int('analysis_count', { unsigned: true }).notNull().default(0),
 
     /**
+     * The per-install daily ceiling — `DAILY_CALL_CAP` in lib/limits.ts.
+     *
+     * **This is the only limit that applies to Pro**, and it is the difference
+     * between a compromised account costing us a day and costing us a month:
+     * `analysis_count` gates the free tier and stops entirely once `is_pro` is
+     * set, so without these two columns an unlimited plan is literally unlimited.
+     *
+     * They were missing from this file while `middleware/chargeCredit` read and
+     * wrote them on every AI request, which is how migration 0011 came to drop
+     * them — the model said they did not exist. `db:generate` diffs against THIS
+     * file, so an omission here is a DROP COLUMN in the next generated migration.
+     * Nothing in the request path notices until every call 500s.
+     *
+     * `daily_call_date` is a DATE compared against `todayKey()`, which is UTC —
+     * the pool is opened with timezone 'Z' to match. Never CURDATE().
+     */
+    dailyCallCount: int('daily_call_count', { unsigned: true }).notNull().default(0),
+    dailyCallDate: date('daily_call_date', { mode: 'string' }),
+
+    /**
      * The three onboarding answers as JSON — `{ apps, struggle, style }`.
      *
      * Written opportunistically by the AI routes that already receive it, so
@@ -191,13 +211,38 @@ export const emailOtps = mysqlTable(
     /** SHA-256 hex of `<email>:<purpose>:<code>`. Never the code itself. */
     codeHash: char('code_hash', { length: 64 }).notNull(),
     attempts: smallint('attempts', { unsigned: true }).notNull().default(0),
+    /**
+     * Sends inside the current 24h window — `MAX_SENDS_PER_WINDOW` in lib/otp.ts.
+     *
+     * Added in migration 0007 and absent from this file until now, which made it
+     * a `DROP COLUMN` waiting for someone to run `db:generate`. Losing it does
+     * not break a request — it removes the only cap on the TOTAL number of
+     * emails one address can be sent, silently, leaving the 60s cooldown as the
+     * whole defence. That combination delivers 1,440 mails a day to one inbox,
+     * on our bill, from our sending domain.
+     */
+    sends: smallint('sends', { unsigned: true }).notNull().default(1),
+    /**
+     * Start of the current 24h window. Separate from `created_at` on purpose:
+     * `created_at` is the cooldown clock and moves on every send, so a counter
+     * keyed to it would reset before the window ever closed.
+     */
+    windowStart: bigint('window_start', { mode: 'number' }).notNull().default(0),
     expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
     /** Doubles as the resend cooldown clock. */
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.email, t.purpose] }),
+    // 0006's nightly EVENT still reads this one.
     idxExpires: index('idx_otp_expires').on(t.expiresAt),
+    /*
+     * The sweep is on `created_at`, NOT `expires_at` — a row outlives its code
+     * because the row is what carries `sends`. Without this index that sweep is
+     * a full table scan taking gap locks across a table with a hot INSERT.
+     * Added in 0007; do not drop it.
+     */
+    idxCreated: index('idx_otp_created').on(t.createdAt),
   }),
 );
 

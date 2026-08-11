@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { db } from '../db/client.ts';
+import { Coach, rememberCoach } from '../lib/coach.ts';
 import { Errors } from '../lib/errors.ts';
 import { signAccess } from '../lib/jwt.ts';
 import { FREE_ANALYSIS_LIMIT } from '../lib/limits.ts';
@@ -48,25 +49,31 @@ user.get('/credits', async (c) => {
   });
 });
 
-const CoachProfileBody = z.object({
-  apps: z.array(z.string()).max(10),
-  struggle: z.string().min(1).max(64),
-  style: z.string().min(1).max(64),
-});
-
-/** Store / update user's coach profile onboarding answers. */
+/**
+ * Store / update the onboarding answers.
+ *
+ * The AI routes write this same column opportunistically on every analysis that
+ * carries a coach profile; this endpoint exists for the one client that has the
+ * answers before it has run anything — the onboarding screen. Both go through
+ * `rememberCoach`, and both validate with `Coach`.
+ *
+ * That was not true until P2: this route parsed `z.string().max(64)` per field
+ * and wrote the column directly, so it accepted values the enums do not define
+ * and could overflow VARCHAR(255) with ten 64-character app names — MySQL would
+ * truncate mid-string and every later read would fail to parse, silently
+ * dropping the user's personalisation until they re-ran onboarding.
+ *
+ * `Coach` carries `.catch(undefined)`, so a payload it dislikes arrives here as
+ * `undefined` rather than a parse error — hence the explicit check instead of
+ * `safeParse`. An old build sending a since-renamed answer gets a 400 it can
+ * act on, not a silent no-op.
+ */
 user.post('/coach', async (c) => {
   const { sub } = c.get('user');
-  const body = CoachProfileBody.safeParse(await c.req.json().catch(() => null));
-  if (!body.success) throw Errors.badRequest('Invalid coach profile payload');
+  const coach = Coach.parse(await c.req.json().catch(() => null));
+  if (!coach) throw Errors.badRequest('Invalid coach profile payload');
 
-  const jsonStr = JSON.stringify(body.data);
-  await db.execute(sql`
-    UPDATE users
-       SET coach_json = ${jsonStr}
-     WHERE id = ${sub}
-  `);
-
+  await rememberCoach(sub, coach);
   return c.json({ ok: true });
 });
 
@@ -115,7 +122,30 @@ user.delete('/me', requireAccount, async (c) => {
   return c.json({ ok: true });
 });
 
-/** Fetch saved vault items for the authenticated user. */
+/**
+ * How many saved lines one response will carry.
+ *
+ * The query was unbounded. Nothing here is paginated and the client mirrors the
+ * whole vault into MMKV, so "unbounded" meant one user's save loop could ask a
+ * serverless function to serialise their entire history into a single JSON body
+ * — a slow request that gets slower forever, on a plan billed by duration.
+ *
+ * 500 is far above any real vault (`FREE_ANALYSIS_LIMIT` is 3 and Pro users save
+ * a handful per session) and is a size the client can hold and render without
+ * windowing beyond what `vault.tsx` already does. Raising it is cheap; removing
+ * it is not, so it is a constant rather than a literal in the SQL.
+ */
+const VAULT_PAGE = 500;
+
+/**
+ * Fetch saved vault items for the authenticated user.
+ *
+ * `has_more` is not decoration — the client REPLACES its local copy with this
+ * response, and replacing a 600-item vault with the newest 500 would delete 100
+ * lines from the user's device that still exist on the server. When the flag is
+ * set the client merges instead. It is derived by asking for one row more than
+ * we intend to return, which costs nothing and never lies.
+ */
 user.get('/vault', async (c) => {
   const { sub } = c.get('user');
   const rows = await db.execute(sql`
@@ -123,15 +153,17 @@ user.get('/vault', async (c) => {
       FROM saved_items
      WHERE user_id = ${sub}
      ORDER BY saved_at DESC
+     LIMIT ${VAULT_PAGE + 1}
   `);
-  const items = (rows as unknown as [Array<{ id: string; category: string; text: string; note: string | null; saved_at: number }>])[0].map((row) => ({
+  const all = (rows as unknown as [Array<{ id: string; category: string; text: string; note: string | null; saved_at: number }>])[0];
+  const items = all.slice(0, VAULT_PAGE).map((row) => ({
     id: row.id,
     category: row.category,
     text: row.text,
     note: row.note ?? undefined,
     savedAt: row.saved_at,
   }));
-  return c.json({ items });
+  return c.json({ items, has_more: all.length > VAULT_PAGE });
 });
 
 const SaveVaultBody = z.object({

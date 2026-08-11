@@ -28,11 +28,27 @@ import { CONTENT_MAX, useLayout } from '@/theme/layout';
 import { glow, palette, radii, spacing } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
+/**
+ * What Pro ACTUALLY unlocks. Every line here must be false for a free user.
+ *
+ * Two of these used to be untrue. "Roast Mode + A/B Simulator" are not gated —
+ * `index.tsx` renders both for anyone with a credit — and "Fresh lines dropped
+ * weekly" described a feed that regenerates DAILY and is free either way. A
+ * purchase screen listing things the user already has is the kind of claim a
+ * store reviewer reads as misleading and a customer reads as a refund request,
+ * and it is worse than a shorter list: it teaches people that the paywall's
+ * copy cannot be trusted at the exact moment they are deciding whether to pay.
+ *
+ * The rule when adding a line: name the gate that enforces it. Unlimited
+ * analyses is `useOutOfCredits`; unlimited swipes is `FREE_SWIPE_LIMIT`; the
+ * bubble is gated by the same credit pool. If you cannot point at the code that
+ * withholds it, it is not a Pro feature and it does not belong on this screen.
+ */
 const FEATURES: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
   { icon: 'infinite', text: 'Unlimited screenshot breakdowns' },
+  { icon: 'scan-outline', text: 'Unlimited profile scans & bio rewrites' },
   { icon: 'flame', text: 'Unlimited Discovery swipes' },
-  { icon: 'skull-outline', text: 'Roast Mode + A/B Simulator' },
-  { icon: 'sparkles', text: 'Fresh lines dropped weekly' },
+  { icon: 'sparkles', text: 'Unlimited one-tap replies from the ✨ bubble' },
 ];
 
 export default function PaywallScreen() {

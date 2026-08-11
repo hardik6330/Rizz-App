@@ -71,6 +71,7 @@ RizzCoach/
 │   │   ├── vault.tsx             saved lines (DB synced & themed delete confirmation modal)
 │   │   ├── account.tsx           signup · login · sign-out · delete account; the auth gate
 │   │   ├── analyzer.tsx          disclosure + the two-permission flow for the bubble
+│   │   ├── ai-consent.tsx        ★ upload consent — blocks all 3 AI tools until granted
 │   │   ├── onboarding.tsx        the 3 setup questions — every answer feeds coachParts()
 │   │   └── +not-found.tsx
 │   │
@@ -81,6 +82,7 @@ RizzCoach/
 │   │   ├── AuthFields.tsx        CredentialFields · CodeStep · Field — split out of account.tsx
 │   │   ├── AppErrorBoundary.tsx  ★ the crash screen — exported as `ErrorBoundary` by NAME
 │   │   ├── ScreenHeader.tsx      wordmark + credit meter + vault, on all three AI tools
+│   │   ├── AiNotice.tsx          ★ the "sent to Google Gemini" line — all three AI tools
 │   │   ├── GlowDropZone.tsx      the breathing screenshot drop pad
 │   │   ├── StagedLoader.tsx      text-only "thinking" card (Bio, Profile)
 │   │   ├── AnalyzingOverlay.tsx  beam sweep over the picked image (Lab)
@@ -116,7 +118,9 @@ RizzCoach/
 │   ├── data/                   mockAnalysis.ts · feed.ts · assets.ts   (offline seeds)
 │   ├── utils/                  hooks + helpers
 │   │   ├── useCreditGate.ts      ★ the ONE free-tier block → paywall, with attribution
+│   │   ├── useAiConsent.ts      ★ the ONE upload-consent block → /ai-consent (NOT a paywall)
 │   │   ├── useStagedProgress.ts  the "thinking" stage ticker (owns the timer, nothing else)
+│   │   ├── contentId.ts        ★ stable id from text — savable things, never uid()
 │   │   └── useBackToIdle.ts · useKeyboardInset.ts · haptics.ts · misc.ts
 │   ├── constants.ts            FREE_ANALYSIS_LIMIT (3) · FREE_SWIPE_LIMIT (10)
 │   └── types.ts                result shapes — must match the server schemas exactly
@@ -306,7 +310,7 @@ an open-ended bill rather than a bounded one.
 
 The key, every system prompt, every response schema, the model choice, credit enforcement and
 rate limiting all live in `backend/` now. Four engines remain on the client, and they contribute
-only **a request body and mock seeds**:
+only **a request body and demo-mode seeds**:
 
 | Engine | Route | Notes |
 |---|---|---|
@@ -317,7 +321,7 @@ only **a request body and mock seeds**:
 
 All of them go through `callApi` in `services/api.ts`. **Never hand-roll a fetch.** `isLiveApi`
 is true when `EXPO_PUBLIC_API_URL` is set; false means every engine serves mock seeds and the
-app demos fully offline.
+app demos fully offline. When it IS set, the seeds are unreachable — see §4.5.
 
 **One documented exception:** `GeminiChatClient.kt` makes its own HTTP call, because the bubble
 runs inside the accessibility service where the JS context may not exist. It calls the RizzCoach
@@ -344,14 +348,15 @@ load-bearing:
 **`thinkingConfig: { thinkingLevel: 'low' }` — do not remove, do not raise.**
 `gemini-flash-latest` is a thinking model and thinking tokens count against `maxOutputTokens`.
 Without this the model spends the budget thinking, returns `finishReason: MAX_TOKENS`, the JSON
-comes back truncated, `JSON.parse` throws — and the engine silently falls back to mock data.
-Symptom: *"the AI ignores my screenshot."*
+comes back truncated and `JSON.parse` throws — so every analysis fails and every user sees a
+toast. Symptom: *"it errors on every screenshot."*
 
-**The thinking key changed under a rolling alias.** `gemini-flash-latest` now resolves to Gemini
-3, which dropped the numeric `thinkingBudget` for a `thinkingLevel` enum and **400s on the old
-key**, on every call. Valid levels are `low`, `minimal`, `high`; there is no `none`, and `high`
-reproduces the truncation. If every engine goes canned at once, run the selfcheck before
-suspecting anything else.
+**The thinking key changed under a rolling alias, which is why the model is now pinned.**
+`gemini-flash-latest` resolved to Gemini 3, which dropped the numeric `thinkingBudget` for a
+`thinkingLevel` enum and **400s on the old key**, on every call. Valid levels are `low`,
+`minimal`, `high`; there is no `none`, and `high` reproduces the truncation. `MODEL` is an
+explicit version now — if every engine fails at once, run `npm run check` (it makes a real call)
+before suspecting anything else.
 
 **Do not "buy headroom" by raising `maxOutputTokens`.** Gemini 3 sizes thinking as a *fraction*
 of the cap, so a bigger cap buys more thinking, latency and cost for an identical answer (the
@@ -370,14 +375,30 @@ list — the last message verbatim, who sent it, and one line naming the running
 emits properties in schema order, so the model commits to what the conversation says before it
 writes a single reply. The client renders it as a quote card above the replies, which doubles as
 proof to the user that it actually read their screenshot. Mock seeds carry no `read`, so the
-card's absence is a free tell that you are looking at canned data.
+card's absence is a free tell that you are in demo mode.
 
-### 4.5 The silent mock fallback
+### 4.5 Mock seeds are a demo mode, not a fallback
 
-Every engine catches failures and returns mock data so the app demos offline. This is
-deliberate, and it is also the single most confusing behaviour in the codebase: **a live API URL
-does not mean you are seeing live output.** When debugging "the AI isn't working", check the
-console warn (`[engine] live analysis failed`) before anything else.
+**A live failure throws. It does not quietly become a canned answer.** Every engine reads
+`if (!isLiveApi) return simulate…()` on the first line and then returns `callApi(…)` — so the
+seeds are reachable only when `EXPO_PUBLIC_API_URL` is unset. With a URL set, an outage, a
+`SCHEMA` mismatch or a 500 propagates to the screen, which catches it, toasts, and leaves the
+user where they were. `index.tsx`, `profile.tsx` and `bio.tsx` each carry that catch.
+
+This section used to say the opposite, and said it for long enough to be quoted into an audit:
+*"every engine catches failures and returns mock data."* That was true once. It was deliberately
+removed because an outage was indistinguishable from a bad answer — the user was charged a
+credit and handed a fabricated analysis of a screenshot nothing had read. **Do not restore it.**
+A visible error is the correct output for a failure.
+
+**`feedEngine` is the one exception, and it is not the same thing.** It catches, warns
+`[feed] live fetch failed`, and returns `[]`, at which point Discover falls back to the
+**curated** feed in `data/feed.ts` — human-written lines that were always going to be shown to
+somebody. That is content degrading to other content, not an analysis being invented. The feed
+is also the only engine whose result is not about anything the user supplied.
+
+So when debugging "the AI isn't working": you will have an error and a toast. Check the console
+for `[engine] live analysis failed`, then `curl` the API.
 
 ### 4.5a The response is validated before anything renders
 
@@ -387,8 +408,8 @@ same four payloads in two languages with nothing enforcing it, and `callApi<T>` 
 answer. The server ships separately from an OTA and an installed build cannot be rolled back —
 so a renamed field arrived as `undefined` and painted blank cards, silently.
 
-A mismatch now throws `ApiError('SCHEMA')` into the mock fallback above: the user gets a
-visibly canned result and a toast instead of an empty report, and Crashlytics gets the trace.
+A mismatch now throws `ApiError('SCHEMA')`, which reaches the screen's catch: the user gets a
+toast and stays put instead of watching blank cards paint, and Crashlytics gets the trace.
 The guards check **only what a renderer dereferences unconditionally** — stricter than the UI
 would turn a cosmetic server change into a user-facing outage. `isProfile: false` passes
 carrying none of the report (a rejection is a valid answer), and an unknown route passes so a
@@ -442,7 +463,7 @@ Hono, deployed as a Vercel function, against Railway MySQL via Drizzle.
 | `POST /v1/ai/chat` | JWT | transcript → one reply (called by the Android bubble) |
 | `POST /v1/ai/feed` | JWT | the day’s Discover lines, generated once and cached in MySQL |
 | `GET /v1/user/credits` | JWT | the truth about the balance |
-| `GET /v1/user/vault` | JWT | saved lines, newest first |
+| `GET /v1/user/vault` | JWT | saved lines, newest first, capped at 500 + `has_more` |
 | `POST /v1/user/vault` | JWT | upsert one saved line — client-minted id is the PK |
 | `DELETE /v1/user/vault/:id` · `DELETE /v1/user/vault` | JWT | remove one · clear all |
 | `GET /v1/user/scans` | JWT | the last **20** profile-scan summaries |
@@ -575,8 +596,10 @@ once, so the vault's MMKV copy outlived the account and the next anonymous insta
 device read the deleted user's saved lines. It uses `setState` rather than the store actions on
 purpose: `clearVault()` mirrors to the API, and the token is already gone by that point.
 
-⚠️ One leftover: the route's own doc comment still claims "one statement is the whole
-implementation… the user row IS the user's data". Stale — the code directly below it disagrees.
+Migration 0011 adds `ON DELETE CASCADE` foreign keys to `profile_scans`, `saved_items` and
+`credit_events`. Until it is applied on every environment the hand-written transaction is still
+the thing that works, so **keep adding each new user-scoped table to it by hand** — the FKs are
+a second belt, not a replacement.
 
 ### 5.6 The two deployment traps
 
@@ -778,8 +801,8 @@ background. Force-stop, open, close, open again.
 **Build keys come from the EAS environment, not `.env`.** `.env` is gitignored so it never
 reaches EAS. A profile only loads them if it declares `"environment"` — `preview` and
 `production` do. Drop that field and the build succeeds with no `EXPO_PUBLIC_API_URL` baked in,
-`isLiveApi` is false, and every engine silently serves mock data. `eas env:list --environment
-preview` before blaming the model.
+`isLiveApi` is false, and every engine serves mock seeds — a build that demos perfectly and
+talks to nothing. `eas env:list --environment preview` before blaming the model.
 
 **`app.config.ts` layers over `app.json`; the iOS widget is opt-in.** The widget plugin needs an
 Apple Team ID, so it attaches only when `APPLE_TEAM_ID` is set. Never hand-declare the App Group
@@ -860,7 +883,7 @@ leave RizzCoach near zero in Battery usage.
 | `takeScreenshot failed: N` | framework throttled or refused; no retry by design |
 | `overlay add failed` | overlay permission gone, or an OEM refusing the window |
 | `api http 4xx/5xx` | the backend rejected it; the credit was refunded |
-| `[engine] live analysis failed` | **the AI silently fell back to mock data** |
+| `[engine] live analysis failed` | the call failed and the screen toasted — the user got an error, not a fake result |
 
 **OEM notes.** Xiaomi/MIUI, Samsung/OneUI, Huawei and OnePlus aggressively kill background
 services and bury extra overlay permissions in their own settings. If it works on a Pixel and
@@ -874,8 +897,9 @@ The failure modes that have actually cost time, and what they look like from the
 
 | Symptom | Real cause | Check |
 |---|---|---|
-| "The AI ignores my screenshot" / canned results | any live failure — the engine fell back to mocks | console warn `[engine] live analysis failed`; then `curl` the API |
-| Every engine goes canned at once | the model alias rolled and the thinking key 400s | `gateway.selfcheck.ts` |
+| "The AI ignores my screenshot" | a real analysis of the wrong thing — check the `read` quote card, which shows what it actually saw | if the card is absent you are in demo mode (`EXPO_PUBLIC_API_URL` unset) |
+| Every analysis errors and toasts | any live failure — outage, `SCHEMA` mismatch, thinking-key 400 | console warn `[engine] live analysis failed`; then `curl` the API |
+| Every engine fails at once | the thinking key 400s, or `MODEL` names a version that was retired | `npm run check` in `backend/` — it makes a real call |
 | All four tools broken + the bubble toasts "not connected yet" | the backend is down, or something threw at module load — one bug, four symptoms | `POST /v1/auth/device` (not `/healthz`, which needs no DB) |
 | Every POST times out at 60s, GETs fine | the Vercel adapter drained the request body | `vercel.selfcheck.ts` |
 | The OTA changed nothing | no branch mapped to the channel, or a runtimeVersion mismatch, or you only launched once | `eas channel:view <channel>` |
@@ -888,7 +912,9 @@ The failure modes that have actually cost time, and what they look like from the
 | White screen, no way back | a render throw with no boundary | `ErrorBoundary` exported by that exact name from both layouts |
 | Signup says "check your email", no mail arrives | the address already has an account | `/v1/auth/otp` must return 409 `EMAIL_TAKEN`, not `{ok:true}` |
 | Discover swipes vanish faster than swiping | `seen` keyed by index and reset on filter change | it is a `Set<string>` of ids in `discover.tsx`; never clear it |
-| The vault empties, or a delete comes back on next open | the sync helper failed silently — they all swallow errors and return `false` | is `isLiveApi` true? then `GET /v1/user/vault` by hand |
+| The same saved line appears twice | a savable id came from `uid()` instead of `contentId()` — the upsert inserted rather than updated | `npm run checks`; then grep for `uid()` on anything reaching `toggleSave` |
+| A delete comes back on next open | the sync WRITE failed silently — the write helpers swallow errors and return `false` | is `isLiveApi` true? then `GET /v1/user/vault` by hand |
+| The vault or scan list empties itself | a hydrate overwrote local state with a failed fetch — `fetchVault`/`fetchScans` must return `null`, not `[]`, on failure (§4.5) | check for a reintroduced `.length > 0` guard |
 | A saved line reappears after deleting it twice | a regenerated id — the client id IS the server PK | `toggleSave` in `useRizzStore.ts` |
 | A fresh install shows a deleted account's vault | `deleteAccount()` resets `scanHistory` only | `session.ts:384` |
 | Credits never refresh on iOS | `refreshCredits()` folded back behind the bubble's `isSupported` guard | it needs its own effect in `_layout.tsx` |

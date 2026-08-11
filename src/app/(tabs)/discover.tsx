@@ -171,7 +171,7 @@ export default function DiscoverScreen() {
   const saveItem = useCallback(
     (item: FeedItem) => {
       haptic.light();
-      toggleSave({ id: item.id, text: item.text, category: item.category, source: 'feed' });
+      toggleSave({ id: item.id, text: item.text, category: item.category });
     },
     [toggleSave],
   );

@@ -8,6 +8,7 @@ import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AiNotice } from '@/components/AiNotice';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ScanReport } from '@/components/ScanReport';
 import { GlowDropZone } from '@/components/GlowDropZone';
@@ -25,7 +26,7 @@ import {
 } from '@/../modules/profile-capture';
 import { BG } from '@/data/assets';
 import { PROFILE_LABELS, PROFILE_STAGES, analyzeProfile } from '@/services/profileEngine';
-import { isLiveApi } from '@/state/session';
+import { fetchScans, isLiveApi } from '@/state/session';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
@@ -33,6 +34,7 @@ import type { ProfileCapture, ProfileScanResult, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { timeAgo } from '@/utils/misc';
 import { useBackToIdle } from '@/utils/useBackToIdle';
+import { useAiConsent } from '@/utils/useAiConsent';
 import { useCreditGate } from '@/utils/useCreditGate';
 import { useStagedProgress } from '@/utils/useStagedProgress';
 
@@ -87,9 +89,11 @@ export default function ProfileScreen() {
 
   const outOfCredits = useOutOfCredits();
   const creditGate = useCreditGate();
+  const needsAiConsent = useAiConsent();
 
   const addImages = useCallback(async () => {
-    if (creditGate('out_of_credits')) return;
+    if (needsAiConsent('profile')) return;
+    if (creditGate('out_of_credits', 'profile')) return;
     const remaining = MAX_IMAGES - images.length;
     if (remaining <= 0) return;
 
@@ -109,7 +113,7 @@ export default function ProfileScreen() {
 
     haptic.medium();
     setImages((prev) => [...prev, ...next].slice(0, MAX_IMAGES));
-  }, [images.length, creditGate]);
+  }, [images.length, creditGate, needsAiConsent]);
 
   const removeImage = (uri: string) => {
     haptic.light();
@@ -265,21 +269,23 @@ export default function ProfileScreen() {
         setKilled(serviceKilled());
       }
       takePendingCapture();
-      if (isLiveApi) {
-        void import('@/state/session').then(({ fetchScans }) => {
-          void fetchScans().then((scans) => {
-            const formattedScans = scans.map((item) => ({
-              id: item.id,
-              mode: item.mode,
-              isProfile: true,
-              name: item.title,
-              createdAt: item.createdAt,
-              ...item.summary,
-            }));
-            useRizzStore.setState({ scanHistory: formattedScans.slice(0, 20) });
-          });
-        });
-      }
+      // `fetchScans` returns null when `!isLiveApi`, so no guard is needed here.
+      void fetchScans().then((scans) => {
+        // `null` is "could not ask" — offline, or the token bounced. This runs
+        // on EVERY focus, including the return from the paywall, so overwriting
+        // on a failed fetch wiped the history the user was looking at and made
+        // it look like their scans had been deleted.
+        if (!scans) return;
+        const formattedScans = scans.map((item) => ({
+          id: item.id,
+          mode: item.mode,
+          isProfile: true,
+          name: item.title,
+          createdAt: item.createdAt,
+          ...item.summary,
+        }));
+        useRizzStore.setState({ scanHistory: formattedScans.slice(0, 20) });
+      });
     }, [takePendingCapture]),
   );
 
@@ -342,7 +348,6 @@ export default function ProfileScreen() {
       id: `profile-${result.id}-bio-${index}`,
       text: line,
       category: 'Bio',
-      source: 'bio',
     });
   };
 
@@ -590,10 +595,7 @@ export default function ProfileScreen() {
               </View>
             )}
 
-            <View style={styles.privacyRow}>
-              <Ionicons name="shield-checkmark-outline" size={13} color={palette.textTertiary} />
-              <Text style={styles.privacyText}>Scans are private. Never posted, never shared.</Text>
-            </View>
+            <AiNotice />
           </>
         )}
       </ScrollView>
@@ -766,17 +768,6 @@ const styles = StyleSheet.create({
   analyzerSub: {
     fontSize: 12,
     lineHeight: 17,
-    color: palette.textTertiary,
-  },
-  privacyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: spacing.xs,
-  },
-  privacyText: {
-    fontSize: 12,
     color: palette.textTertiary,
   },
 

@@ -11,8 +11,7 @@ import { useToast } from '@/components/Toast';
 import { HapticPressable } from '@/components/HapticPressable';
 import { VaultItem } from '@/components/VaultItem';
 import { APP_NAME } from '@/constants';
-import { fetchVault } from '@/state/session';
-import { useRizzStore } from '@/state/useRizzStore';
+import { hydrateVault, useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing } from '@/theme/tokens';
 import type { SavedItem } from '@/types';
@@ -33,11 +32,7 @@ export default function VaultScreen() {
   const clearVault = useRizzStore((state) => state.clearVault);
 
   React.useEffect(() => {
-    fetchVault().then((items) => {
-      if (items.length > 0) {
-        useRizzStore.setState({ savedItems: items as SavedItem[] });
-      }
-    });
+    void hydrateVault();
   }, []);
 
   const [itemToDelete, setItemToDelete] = useState<SavedItem | null>(null);
@@ -157,9 +152,9 @@ export default function VaultScreen() {
         ]}
         ItemSeparatorComponent={Separator}
         showsVerticalScrollIndicator={false}
-        initialNumToRender={8}
-        maxToRenderPerBatch={8}
-        windowSize={7}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
         removeClippedSubviews
         ListEmptyComponent={
           savedItems.length === 0 ? (

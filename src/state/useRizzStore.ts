@@ -53,6 +53,34 @@ interface RizzState {
    */
   hasOnboarded: boolean;
   /**
+   * Has this install ever produced a successful analysis? **Activation.**
+   *
+   * Persisted, and that is the whole point: `ai_success` fires on every call and
+   * cannot tell a first from a fiftieth, so without a durable flag there is no
+   * way to count the one event that says the product worked for someone. A
+   * reinstall correctly counts again — it is a new install; a relaunch does not.
+   *
+   * Set from `callApi`, not from the screens. It is a single choke point that
+   * already knows the engine, and three screens setting a funnel flag is three
+   * places for it to be forgotten when a fourth tool ships.
+   */
+  hasActivated: boolean;
+  /**
+   * Has the user agreed that their screenshots may be sent to Google Gemini?
+   *
+   * **false blocks every AI tool** — see `utils/useAiConsent.ts`. This is a
+   * disclosure gate, not a feature flag and not a paywall: nothing about it
+   * touches credits, plans or entitlement, and a Pro user is asked exactly like
+   * a free one. The question is whether their private conversation may leave the
+   * device, and money does not buy a different answer.
+   *
+   * Persisted, because asking again every launch trains people to tap through
+   * consent screens without reading them — which is the failure mode the rule
+   * exists to prevent. A reinstall asks again, correctly: that is a fresh device
+   * with no record of the person having ever seen it.
+   */
+  aiConsent: boolean;
+  /**
    * The first-run answers, or null while they are still unanswered.
    *
    * **null is what makes `/onboarding` appear** — same shape as `account` gating
@@ -86,11 +114,15 @@ interface RizzState {
   setFeedback: (id: string, value: 'up' | 'down') => void;
   setOnboarded: () => void;
   setCoach: (coach: CoachProfile) => void;
+  /** Records agreement that uploads may go to Google Gemini. See `aiConsent`. */
+  grantAiConsent: () => void;
+  /** Marks activation and reports whether THIS call was the first. See `hasActivated`. */
+  markActivated: () => boolean;
 }
 
 export const useRizzStore = create<RizzState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       savedItems: [],
       scanHistory: [],
       analysisCount: 0,
@@ -101,6 +133,8 @@ export const useRizzStore = create<RizzState>()(
       dailyFeedDate: null,
       feedback: {},
       hasOnboarded: false,
+      hasActivated: false,
+      aiConsent: false,
       coach: null,
       account: null,
 
@@ -200,6 +234,22 @@ export const useRizzStore = create<RizzState>()(
 
       setOnboarded: () => set({ hasOnboarded: true }),
 
+      grantAiConsent: () => set({ aiConsent: true }),
+
+      /**
+       * Returns true exactly once per install — on the call that flips the flag.
+       *
+       * Read-then-write is safe here in a way it would not be for a credit:
+       * JS is single-threaded, `set` is synchronous, and the worst case of a
+       * miss is one under-counted analytics event rather than a free analysis.
+       * Do NOT copy this shape for anything that gates spending.
+       */
+      markActivated: () => {
+        if (get().hasActivated) return false;
+        set({ hasActivated: true });
+        return true;
+      },
+
       setCoach: (coach) => {
         void saveCoachProfile(coach);
         set({ coach });
@@ -237,6 +287,11 @@ export const useRizzStore = create<RizzState>()(
         feedback: state.feedback,
         // Must persist, or the first-run walkthrough reappears on every launch.
         hasOnboarded: state.hasOnboarded,
+        // Must persist, or every launch re-reports the user as newly activated.
+        hasActivated: state.hasActivated,
+        // Must persist, or the app re-asks for upload consent on every launch —
+        // which teaches people to tap through it without reading.
+        aiConsent: state.aiConsent,
         // Same — and it is also the personalisation every engine reads.
         coach: state.coach,
         account: state.account,
@@ -295,14 +350,84 @@ function adoptCoach(raw: string | null | undefined): void {
 /** Signup, login, sign-out and delete all land here. See `account` above. */
 onAccountChanged((account) => {
   useRizzStore.setState({ account });
-  if (account != null) {
-    void fetchVault().then((items) => {
-      if (items && items.length > 0) {
-        useRizzStore.setState({ savedItems: items as SavedItem[] });
-      }
-    });
-  }
+  if (account != null) void hydrateVault();
 });
+
+/**
+ * Pull the vault from the server and take it as the truth. The ONE place that
+ * does this — the vault screen used to run its own near-copy on mount.
+ *
+ * `null` is "could not ask" and leaves the local copy alone; `[]` is the server
+ * genuinely saying the vault is empty, and is applied. That is what makes a
+ * vault cleared on another device actually clear here. Both call sites used to
+ * guard on `items.length > 0` instead, which meant an emptied vault came back
+ * from the dead on every launch.
+ *
+ * Compared before writing because this runs on every open of the screen and a
+ * fresh array reference would re-render the list for nothing.
+ */
+export async function hydrateVault(): Promise<void> {
+  const page = await fetchVault();
+  if (!page) return;
+
+  /*
+   * Drop lines already saved under a different id, and delete those rows.
+   *
+   * Cleanup for a bug that is fixed at the source: the daily feed decorated its
+   * lines with `uid()`, so the same text came back with a new id on every fetch,
+   * the card read as unsaved, and saving it again inserted a SECOND row instead
+   * of upserting the first. `contentId()` in `feedEngine.ts` stopped new ones
+   * from appearing; this clears the pairs already sitting in people's vaults,
+   * which they would otherwise have to delete twice by hand.
+   *
+   * Newest wins because the list arrives `saved_at DESC` — the row the user most
+   * recently interacted with is the one whose id the UI is checking against.
+   *
+   * Safe to leave in permanently: with stable ids it matches nothing and costs
+   * one pass over a list already in memory. It is not a general "no two lines
+   * may share text" rule — it only ever fires on rows that are byte-identical,
+   * which is a duplicate by any definition the user would recognise.
+   */
+  const seen = new Set<string>();
+  const deduped = page.items.filter((row) => {
+    if (seen.has(row.text)) {
+      // Fire-and-forget, exactly like `removeSaved`: `deleteVaultItem` no-ops
+      // offline and swallows its own failures, and a retry is just the next
+      // hydrate.
+      void deleteVaultItem(row.id);
+      return false;
+    }
+    seen.add(row.text);
+    return true;
+  });
+  page.items = deduped;
+
+  /*
+   * Replace when the server sent everything; merge when it capped the response.
+   *
+   * Replacing is what makes a vault emptied on another device actually empty
+   * here — but replacing a truncated page would delete the local copy of the
+   * older lines the server deliberately held back. Merge keeps them, server
+   * values winning on id collisions, so nothing is ever lost in either
+   * direction. `has_more` only fires past 500 saved lines; this is the branch
+   * nobody will hit and everybody would have got wrong.
+   */
+  const next = page.hasMore
+    ? [
+        ...(page.items as SavedItem[]),
+        ...useRizzStore
+          .getState()
+          .savedItems.filter((local) => !page.items.some((row) => row.id === local.id)),
+      ].sort((a, b) => b.savedAt - a.savedAt)
+    : (page.items as SavedItem[]);
+
+  // Compared before writing: this runs on every open of the screen, and a fresh
+  // array reference would re-render the list for nothing.
+  const current = useRizzStore.getState().savedItems;
+  if (JSON.stringify(current) !== JSON.stringify(next)) {
+    useRizzStore.setState({ savedItems: next });
+  }
+}
 
 /**
  * Account deleted — drop the local copy of everything it owned.

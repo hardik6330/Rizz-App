@@ -24,7 +24,13 @@ export async function shareText(message: string): Promise<'shared' | 'copied'> {
   return 'copied';
 }
 
-/** Lightweight unique id — good enough for local list keys, not for servers. */
+/**
+ * Lightweight unique id — good enough for local list keys, not for servers.
+ *
+ * **Not for anything the user can save.** A vault id is the server's primary key
+ * and the save is an upsert, so a re-minted id inserts a duplicate row instead
+ * of updating the original. Use `contentId()` in `utils/contentId.ts` there.
+ */
 export function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }

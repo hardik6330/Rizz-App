@@ -55,6 +55,16 @@ async function columnExists(table: string, column: string): Promise<boolean> {
   return (((rows as unknown as [Array<{ n: number }>])[0]?.[0]?.n ?? 0) as number) > 0;
 }
 
+/** Named foreign key / unique / check constraint in this schema. */
+async function constraintExists(name: string): Promise<boolean> {
+  const rows = await db.execute(sql`
+    SELECT COUNT(*) AS n
+      FROM information_schema.table_constraints
+     WHERE constraint_schema = DATABASE() AND constraint_name = ${name}
+  `);
+  return (((rows as unknown as [Array<{ n: number }>])[0]?.[0]?.n ?? 0) as number) > 0;
+}
+
 async function eventExists(name: string): Promise<boolean> {
   const rows = await db.execute(sql`
     SELECT COUNT(*) AS n
@@ -86,6 +96,20 @@ const PROBES: { when: number; tag: string; applied: () => Promise<boolean> }[] =
   { when: 1778000000000, tag: '0008_profile_scans', applied: () => tableExists('profile_scans') },
   { when: 1779000000000, tag: '0009_saved_items', applied: () => tableExists('saved_items') },
   { when: 1780000000000, tag: '0010_coach_profile', applied: () => columnExists('users', 'coach_json') },
+  /*
+   * The first probe that asks about a CONSTRAINT rather than a table or column,
+   * because that is all 0011 adds — the two DROP COLUMNs it used to open with
+   * were removed (see the migration's own header for why).
+   *
+   * Probing for the constraint and not for the absence of `daily_call_count` is
+   * the point: "the columns are gone" would have read as "applied" on a database
+   * where somebody had dropped them by hand, and skipped the foreign keys.
+   */
+  {
+    when: 1781000000000,
+    tag: '0011_fk_and_cleanup',
+    applied: () => constraintExists('fk_saved_items_user'),
+  },
 ];
 
 /** The newest migration whose effects are already present, or null for a fresh DB. */

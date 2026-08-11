@@ -245,6 +245,9 @@ on screen so it can suggest a reply in place. It uses Android's
 by hand</strong> in your phone's settings.</p>
 <ul>
   <li>It activates only in supported messaging and dating apps.</li>
+  <li>It reads only when you tap the ✨ button. In a conversation it scrolls the
+      thread up to read the recent messages, then returns you to where you
+      were — so it reads a little more than was on screen when you tapped.</li>
   <li>Screen content is used to generate that one suggestion and is
       <strong>not stored and not sent anywhere except the AI</strong>.</li>
   <li>It is never used for advertising, profiling or analytics.</li>
