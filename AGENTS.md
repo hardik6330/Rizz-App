@@ -915,6 +915,27 @@ in exactly the same way, since `fetchVault` keeps local rows the server page lac
 install-scoped for the same reason `logOut` keeps the install id, and wiping them would make
 sign-out a way to reset the free tier.
 
+**And it is wiped again on sign-IN, by `noteAccountEmail`, whenever the address differs from
+the last one used on this device.** Two things make this necessary rather than belt-and-braces.
+A wipe at sign-out cannot repair an install that has *already* signed out — every device that
+signed out on an earlier build still carries the previous user's `coach`, and would hand it to
+every account created on it from then on; this heals those on the next sign-in. And it does not
+assume `logOut` is the only way the account can change, which is exactly the kind of assumption
+that stops being true later.
+
+`LAST_EMAIL_KEY` is the signal because it **survives sign-out** — by then the store's `account`
+is null, so nothing else on the device can say who the local data belonged to. Compared
+case-insensitively, or a capital letter wipes a vault. A fresh install has no previous address,
+so nothing is wiped and an anonymous user's saved lines correctly survive their first signup.
+
+Order matters and is load bearing: the wipe is synchronous and runs *after* `persistSession`,
+so it lands before the `hydrateVault()` that sign-in kicked off resolves — the merge then sees
+an empty local list and takes the server's rows alone. It also runs after `adoptCoach` has
+declined to overwrite (the device still had the old answers at that moment), which is why the
+gate's `refreshCredits(true)` is what finally adopts the *new* account's answers: it re-asks
+with `coach` now null, so a returning user is still not re-questioned and a genuinely new one
+is.
+
 **Closed enums on both sides, and they are a wire contract.** `COACH_APPS`,
 `COACH_STRUGGLES`, `COACH_STYLES` are zod enums on the server; `CoachApp`, `CoachStruggle`,
 `CoachStyle` in `src/types.ts` are the same strings. Renaming one side only does not 400 — the

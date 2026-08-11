@@ -84,7 +84,13 @@ afterwards (a separate in-app toggle). It states, in these words:
 
 - reads the screen of those apps only, to recognise a profile or an open chat
 - acts **only** when ✨ is tapped — nothing is read in the background, ever
-- what is sent to Google Gemini, and that it is discarded afterwards
+- what is sent to our AI provider, and that it is discarded afterwards — the
+  screen says "our AI provider", not the name. The **declaration above still
+  names Google Gemini**, and must: §3 and the Data Safety answers are where the
+  third party is identified, along with §4 of the in-app privacy policy. The
+  in-product copy is generic on purpose and the two are not in conflict — but if
+  a reviewer asks where the user can see the name, the answer is the privacy
+  policy, so do not remove it from there.
 - that the switch turns it off instantly
 
 Do not reword these while the declaration is in review; the video and the form

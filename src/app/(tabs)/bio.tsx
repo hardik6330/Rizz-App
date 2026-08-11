@@ -325,7 +325,7 @@ export default function BioScreen() {
               </Text>
             </HapticPressable>
 
-            <AiNotice />
+            <AiNotice tool="bio" />
           </>
         )}
       </ScrollView>

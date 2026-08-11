@@ -293,7 +293,7 @@ export default function LabScreen() {
         )}
 
         {/* Where the screenshot actually goes — see components/AiNotice.tsx */}
-        {phase !== 'done' && <AiNotice />}
+        {phase !== 'done' && <AiNotice tool="lab" />}
       </ScrollView>
 
       {toast.element}

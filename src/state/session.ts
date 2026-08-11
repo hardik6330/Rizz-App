@@ -57,6 +57,42 @@ const LAST_EMAIL_KEY = 'rizz.lastEmail';
 export function lastAccountEmail(): string | undefined {
   return kv.getString(LAST_EMAIL_KEY);
 }
+
+/**
+ * Record who just signed in — and if it is somebody else, drop the previous
+ * account's local data first.
+ *
+ * Called by all three of `signUp`, `logIn` and `logInWithCode`, after the await,
+ * so a rejected attempt neither wipes anything nor claims the address.
+ *
+ * `logOut` already wipes, so in the ordinary flow this finds nothing to do. It
+ * exists because that is not a guarantee it can make alone:
+ *
+ *  - A device that signed out on a build WITHOUT that wipe still holds the
+ *    previous user's answers, and would hand them to every account created on
+ *    it from then on. Nothing at sign-out time can fix an install that has
+ *    already signed out. This heals it on the next sign-in.
+ *  - It does not depend on `logOut` being the only way an account can change,
+ *    which is the kind of assumption that quietly stops being true.
+ *
+ * `LAST_EMAIL_KEY` is the right signal precisely because it SURVIVES sign-out —
+ * the store's `account` is null by then, so it cannot tell you who the local
+ * data belonged to.
+ *
+ * A fresh install has no previous address, so nothing is wiped and an anonymous
+ * user's saved lines survive their first signup — which is correct, they are
+ * that person's.
+ *
+ * Case-insensitive: addresses are matched that way everywhere else, and
+ * treating `Sam@x.com` as a different person from `sam@x.com` would wipe a
+ * vault on a capital letter.
+ */
+function noteAccountEmail(email: string): void {
+  const previous = kv.getString(LAST_EMAIL_KEY);
+  if (previous && previous.toLowerCase() !== email.toLowerCase()) onWipe?.();
+  kv.set(LAST_EMAIL_KEY, email);
+}
+
 export interface Credits {
   is_pro: boolean;
   analysis_count: number;
@@ -292,7 +328,7 @@ export async function signUp(input: {
     }
   }
   // After the await, so a rejected signup never claims to be this device's account.
-  kv.set(LAST_EMAIL_KEY, input.email);
+  noteAccountEmail(input.email);
   return user;
 }
 
@@ -316,7 +352,7 @@ export async function logIn(email: string, password: string): Promise<SessionUse
     install_id: kv.getString(INSTALL_KEY),
   });
   // Same as signUp: only a successful login names this device's account.
-  kv.set(LAST_EMAIL_KEY, email);
+  noteAccountEmail(email);
   return user;
 }
 
@@ -340,7 +376,7 @@ export async function logInWithCode(email: string, code: string): Promise<Sessio
     code,
     install_id: kv.getString(INSTALL_KEY),
   });
-  kv.set(LAST_EMAIL_KEY, email);
+  noteAccountEmail(email);
   return user;
 }
 

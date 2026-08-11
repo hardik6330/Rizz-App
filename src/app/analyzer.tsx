@@ -173,7 +173,12 @@ export default function AnalyzerScreen() {
             * than as a feature they asked for.
             */}
           <Bullet icon="hand-left-outline" text="It only acts when you tap ✨. On a profile it takes one screenshot. In a chat it scrolls the conversation up to read the recent messages — you will see it move — then puts you back where you were. Nothing is read in the background, ever." />
-          <Bullet icon="cloud-upload-outline" text="That screenshot or chat text is sent to Google Gemini to write the report or the reply, then discarded. It is never saved to your device and never posted anywhere." />
+          {/* Generic provider wording, same as `AiNotice` and `ai-consent.tsx`;
+              §4 of `/privacy` names it. ⚠️ `docs/play-accessibility-declaration.md`
+              lists what this screen tells the user — if this bullet is reworded,
+              that list changes with it, or the submission describes a screen the
+              reviewer will not find. */}
+          <Bullet icon="cloud-upload-outline" text="That screenshot or chat text is sent to our AI provider to write the report or the reply, then discarded. It is never saved to your device and never posted anywhere." />
           <Bullet icon="power-outline" text="The switch below turns it off instantly. Turning it off stops all screen reading." />
         </View>
 

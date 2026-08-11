@@ -595,7 +595,7 @@ export default function ProfileScreen() {
               </View>
             )}
 
-            <AiNotice />
+            <AiNotice tool="scan" />
           </>
         )}
       </ScrollView>

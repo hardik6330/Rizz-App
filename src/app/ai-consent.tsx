@@ -84,9 +84,18 @@ export default function AiConsentScreen() {
         </View>
 
         <View style={styles.card}>
+          {/*
+            "Our AI provider" rather than the provider's name — the product copy
+            is generic by choice, and §4 of `/privacy` names it. What must NOT be
+            softened is the transfer itself: this screen is the affirmative
+            consent gate, so it has to say plainly that the upload leaves the
+            device and reaches another company. "The only company outside
+            RizzCoach that sees it" is carrying that weight now, and is the
+            sentence to protect if this is ever shortened.
+          */}
           <Bullet
-            icon="logo-google"
-            text="What you upload is sent to Google Gemini, which writes the reply, the report or the bio. Google is the only company outside RizzCoach that sees it."
+            icon="cloud-upload-outline"
+            text="What you upload is sent to our AI provider, which writes the reply, the report or the bio. They are the only company outside RizzCoach that sees it."
           />
           <Bullet
             icon="trash-outline"

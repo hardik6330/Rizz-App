@@ -34,9 +34,10 @@ import { haptic } from '@/utils/haptics';
  * order the rule is actually about.
  *
  * One flow does NOT route through here: the Android bubble. `analyzer.tsx` is a
- * fuller disclosure than this screen — it names Gemini, requires two OS
- * permissions and an in-app switch, and is unreachable by accident — so a
- * capture arriving from it is already consented. Do not add a second prompt on
+ * fuller disclosure than this screen — it spells out what is read, that it is
+ * sent to our AI provider and discarded, requires two OS permissions and an
+ * in-app switch, and is unreachable by accident — so a capture arriving from it
+ * is already consented. Do not add a second prompt on
  * top of it; that path is covered, and see `docs/play-accessibility-declaration.md`.
  */
 export function useAiConsent(): (engine: EngineName) => boolean {
