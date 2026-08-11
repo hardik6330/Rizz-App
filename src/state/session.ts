@@ -231,11 +231,23 @@ async function postSession(path: string, body: unknown, token?: string): Promise
  * Unauthenticated on purpose: recovery has to work on a phone that has been
  * signed out or wiped, where there may be no usable token at all.
  */
-export async function requestOtp(email: string, purpose: 'signup' | 'login'): Promise<void> {
+export async function requestOtp(
+  email: string,
+  purpose: 'signup' | 'login',
+  /**
+   * Signup only. Sent so the server can reject a taken name BEFORE mailing a
+   * code — otherwise the clash surfaces from the INSERT inside `/signup`, which
+   * is after the user has waited for the mail and typed six digits, and the
+   * code is burnt by the time they get back to the form.
+   *
+   * Optional because login has no username to send.
+   */
+  username?: string,
+): Promise<void> {
   const res = await fetch(apiUrl('/v1/auth/otp'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, purpose }),
+    body: JSON.stringify({ email, purpose, ...(username ? { username } : {}) }),
     // Longer than the other calls: this one blocks on an SMTP handshake, and the
     // server would rather hold the request than claim a send it has not made.
     signal: AbortSignal.timeout(30_000),
@@ -375,6 +387,12 @@ export function logOut(): void {
    * back in on the first resume. See persistSession.
    */
   kv.set(SIGNED_OUT_KEY, '1');
+  /*
+   * Drop the local copy of everything the account owned — vault, scan history
+   * and the coach answers. Without this the next account to sign in on this
+   * device inherits all three: see `onAccountCleared`.
+   */
+  onWipe?.();
   onAccount?.(null);
 }
 
@@ -401,7 +419,7 @@ export async function deleteAccount(): Promise<void> {
   // The account is gone — remembering its address would offer a login that
   // cannot succeed.
   kv.remove(LAST_EMAIL_KEY);
-  // Drops the local copy of the vault and the scan history — see onAccountDeleted.
+  // Drops the local copy of the vault, scan history and coach answers.
   onWipe?.();
   onAccount?.(null);
 }
@@ -653,22 +671,33 @@ export function onAccountChanged(fn: (username: string | null) => void): void {
 }
 
 /**
- * Wipe the local copy of everything the account owned. Delete only — NOT sign-out.
+ * Wipe the local copy of everything the account owned. **Sign-out AND delete.**
  *
- * A third channel rather than a flag on `onAccountChanged`, because the two cases
- * want opposite behaviour and `onAccount?.(null)` fires for both: signing out must
- * LEAVE the vault and scan history alone (the rows still exist on the server and
- * come back on the next login), while deleting must remove them (the rows are
- * gone, and the next anonymous install on this device would otherwise open the
- * Vault and read them).
+ * It used to be delete only, on the reasoning that signing out could safely
+ * leave the vault and scan history in place because "the rows still exist on
+ * the server and come back on the next login". That holds for signing back into
+ * the SAME account, and is wrong for the case that actually happens: sign out,
+ * sign up as someone else. Then the previous account's saved lines merge into
+ * the new one's vault (`fetchVault` keeps local rows the server page does not
+ * have, and `toggleSave` mirrors to the API, so they can be written to the new
+ * account's server row), its scan history stays readable, and — the visible
+ * symptom — its `coach` answers stay set, so `coachStepDone` in `_layout.tsx`
+ * is already true and the new user is never asked the three setup questions.
  *
- * This replaces a `void import('@/state/useRizzStore')` inside `deleteAccount`,
- * which worked but meant one relationship had two mechanisms — a callback channel
- * in one direction and a dynamic import dodging the same cycle in the other.
+ * Losing an unsynced local write on an offline sign-out is the cost, and it is
+ * small: `toggleSave` fires `saveVaultItem` immediately, so anything not on the
+ * server was already lost when that request failed.
+ *
+ * ⚠️ It wipes **account-owned** state only — never `analysisCount` or `isPro`.
+ * Those are install-scoped for the same reason `logOut` keeps the install id: a
+ * sign-out must not be a way to farm three more free analyses.
+ *
+ * Still a third channel rather than a flag on `onAccountChanged`, because that
+ * one also fires with a username on login, where nothing should be wiped.
  */
 let onWipe: (() => void) | undefined;
 
-export function onAccountDeleted(fn: () => void): void {
+export function onAccountCleared(fn: () => void): void {
   onWipe = fn;
 }
 

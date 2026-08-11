@@ -1,7 +1,7 @@
 import { DarkTheme, Stack, ThemeProvider, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -14,6 +14,7 @@ import {
 } from '@/../modules/profile-capture';
 
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
+import { SplashIntro } from '@/components/SplashIntro';
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { identify, initPurchases } from '@/services/purchases';
 import { syncDailyOpenerToWidget } from '@/services/widgetBridge';
@@ -100,6 +101,25 @@ export default function RootLayout() {
    */
   const account = useRizzStore((s) => s.account);
   const accountStepDone = !isLiveApi || account != null;
+
+  /** The animated splash. See where it is rendered, at the bottom of this file. */
+  const [intro, setIntro] = useState(true);
+  const endIntro = useCallback(() => setIntro(false), []);
+
+  /**
+   * Step 0 of 2: the demo, which runs BEFORE the gate above.
+   *
+   * It is the answer to the trade stated in that comment — the email is now
+   * asked for after the user has watched the product work, not before. See
+   * `welcome.tsx`.
+   *
+   * `|| accountStepDone` is what keeps an existing install out of it: someone
+   * upgrading into this build has an account, has used the app, and does not
+   * need a demo of it. It also covers the no-API case, where there is no gate
+   * to soften and so nothing to soften it with.
+   */
+  const hasSeenWelcome = useRizzStore((s) => s.hasSeenWelcome);
+  const welcomeStepDone = hasSeenWelcome || accountStepDone;
 
   useEffect(() => {
     // Fire-and-forget boot work: RevenueCat + push today's opener to the widget.
@@ -237,11 +257,42 @@ export default function RootLayout() {
   /** Did the gate actually run this session? Gates the landing below. */
   const onboardedThisSession = useRef(false);
 
+  /**
+   * **Ask the server before asking the user.** This waits on a network call
+   * rather than on a timer, and that is the entire point of it.
+   *
+   * A returning user's answers exist only on their row. `adoptCoach` in
+   * `useRizzStore` already takes them — but they ride on `/v1/user/credits`, and
+   * nothing was forcing that call after a login: the refresh effect below runs
+   * on mount and on resume, and on a fresh install the mount happens while
+   * there is still no account to authenticate with. So the answers arrived, at
+   * the earliest, on the next resume — long after this pushed. A user who had
+   * answered these three questions months ago, on another device, reinstalled
+   * and was asked all three again.
+   *
+   * `force` skips the 30s throttle, because the mount-time attempt already
+   * spent the window and failed for want of a token.
+   *
+   * Offline resolves too, with `coach` still null, and then we ask — which is
+   * the right fallback: three questions is a smaller harm than an unpersonalised
+   * account, and the answers upsert to the same column either way.
+   *
+   * The re-read of `coach` inside the callback is not paranoia about the deps.
+   * `adoptCoach` writes the store from this very request, so the value that
+   * matters lands between the call and its resolution — `coachStepDone` above is
+   * a snapshot from before it.
+   */
   useEffect(() => {
     if (!accountStepDone || coachStepDone) return;
     onboardedThisSession.current = true;
-    const t = setTimeout(() => router.push('/onboarding'), 400);
-    return () => clearTimeout(t);
+    let alive = true;
+    void refreshCredits(true).then(() => {
+      if (!alive || useRizzStore.getState().coach != null) return;
+      router.push('/onboarding');
+    });
+    return () => {
+      alive = false;
+    };
   }, [accountStepDone, coachStepDone]);
   useEffect(() => {
     if (accountStepDone) {
@@ -263,9 +314,10 @@ export default function RootLayout() {
      */
 
     /*
-     * Dead-man's switch. If `account.tsx` never mounts, the splash would stay up
-     * for ever and the app would look bricked with nothing in the log. Better a
-     * flash than a black screen.
+     * Dead-man's switch. Whichever of `welcome.tsx` and `account.tsx` is the
+     * current gate lifts the splash on mount; if neither ever does, it would
+     * stay up for ever and the app would look bricked with nothing in the log.
+     * Better a flash than a black screen.
      */
     const t = setTimeout(hideSplash, 3000);
     return () => clearTimeout(t);
@@ -325,28 +377,45 @@ export default function RootLayout() {
           }}
         >
           {/*
-            Declared FIRST, and outside the guard, so it is the route the
-            navigator falls back to when everything below is removed. A guarded
-            screen is not hidden, it is not declared at all — so while the gate
-            is up `/account` is the whole app and the Lab tab has no frame to
-            render in. That is the fix: not a faster redirect, no redirect.
+            Declared FIRST, and guarded so it is declared ONLY while it is the
+            gate. Both halves matter. First, because a guarded screen is not
+            hidden but undeclared, so while the demo is up `/welcome` is the
+            whole app and nothing else has a frame to render in. Guarded, because
+            a permanently-declared first route would go on being the navigator's
+            fallback after the demo was done — and the user who watched it and
+            has no account yet would land back on it instead of on signup.
+
+            Same technique as the account gate below, one step earlier. There is
+            no way to reach this screen again once its flag is set.
+          */}
+          <Stack.Protected guard={!welcomeStepDone}>
+            <Stack.Screen name="welcome" options={{ animation: 'none', gestureEnabled: false }} />
+          </Stack.Protected>
+          {/*
+            The account gate. Declared before everything below it for the same
+            fallback reason, and gated on the demo so the two queue rather than
+            race — the demo's CTA sets a flag, which un-declares `/welcome` and
+            declares this in the same commit, and the navigator lands here with
+            no navigation call and so no transition to mis-time.
 
             It is still a modal the rest of the time, opened from the account
             row on Profile Scan. `account.tsx` reads the store to tell the two
             apart — see `isOnboarding` there.
           */}
-          <Stack.Screen
-            name="account"
-            options={
-              accountStepDone
-                ? { presentation: 'modal' }
-                // gestureEnabled off while it is the gate: signing out from the
-                // modal leaves this screen presented as one, and an iOS
-                // swipe-to-dismiss would drop the user out of the only route that
-                // exists. Android's hardware back is handled in account.tsx.
-                : { animation: 'none', gestureEnabled: false }
-            }
-          />
+          <Stack.Protected guard={welcomeStepDone}>
+            <Stack.Screen
+              name="account"
+              options={
+                accountStepDone
+                  ? { presentation: 'modal' }
+                  // gestureEnabled off while it is the gate: signing out from the
+                  // modal leaves this screen presented as one, and an iOS
+                  // swipe-to-dismiss would drop the user out of the only route that
+                  // exists. Android's hardware back is handled in account.tsx.
+                  : { animation: 'none', gestureEnabled: false }
+              }
+            />
+          </Stack.Protected>
           <Stack.Protected guard={accountStepDone}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="vault" options={{ presentation: 'modal' }} />
@@ -376,6 +445,21 @@ export default function RootLayout() {
             />
           </Stack.Protected>
         </Stack>
+        {/*
+          The animated splash, rendered AFTER the navigator so it paints over
+          it, and unmounted the moment it finishes.
+
+          `useState(true)` is the entire "cold launch only" rule. This component
+          mounts exactly once per JS context, and a warm resume does not remount
+          the layout — so the intro cannot replay, with no flag to persist and no
+          timestamp to compare. Fast Refresh does replay it in dev; that is a
+          dev-only artefact of the same property and not worth guarding.
+
+          It also owns `hideAsync()` while it is up — see the note in
+          SplashIntro about why the gate screens must not lift the splash out
+          from under it.
+        */}
+        {intro && <SplashIntro onDone={endIntro} />}
       </ThemeProvider>
     </GestureHandlerRootView>
   );

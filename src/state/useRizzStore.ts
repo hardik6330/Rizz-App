@@ -11,7 +11,7 @@ import {
   fetchVault,
   isLiveApi,
   onAccountChanged,
-  onAccountDeleted,
+  onAccountCleared,
   onCreditsChanged,
   saveCoachProfile,
   saveVaultItem,
@@ -53,6 +53,20 @@ interface RizzState {
    */
   hasOnboarded: boolean;
   /**
+   * Has the user watched the "what this app does" demo? Set on its CTA.
+   *
+   * **Gates `/account`, so it runs BEFORE the signup wall** — see the note on
+   * the account gate in `_layout.tsx`, which spells out the cost of asking for
+   * an email before the user has seen a single result. This is the answer to
+   * that: show the product working, then ask.
+   *
+   * `_layout.tsx` treats an existing account as equivalent, so an install that
+   * upgrades into this build is not shown a demo of an app it already uses.
+   * That means this flag stays false for those users for ever, which is fine —
+   * nothing else reads it.
+   */
+  hasSeenWelcome: boolean;
+  /**
    * Has this install ever produced a successful analysis? **Activation.**
    *
    * Persisted, and that is the whole point: `ai_success` fires on every call and
@@ -88,8 +102,11 @@ interface RizzState {
    * boolean alongside it would be a second source of truth for one question, and
    * the two would eventually disagree about whether to show a modal.
    *
-   * Read by every engine through `coachPayload()`. Cleared on account deletion,
-   * because the next person to use this install is a different person.
+   * Read by every engine through `coachPayload()`. Cleared on sign-out as well
+   * as on deletion — the next account to sign in on this device is a different
+   * person, and because this doubles as the "have they done the quiz" flag,
+   * leaving it set meant they were never asked and inherited the previous
+   * user's answers. See `onAccountCleared`.
    */
   coach: CoachProfile | null;
   /**
@@ -113,6 +130,8 @@ interface RizzState {
   setDailyFeed: (items: FeedItem[], date: string) => void;
   setFeedback: (id: string, value: 'up' | 'down') => void;
   setOnboarded: () => void;
+  /** Records that the pre-signup demo was watched. See `hasSeenWelcome`. */
+  seeWelcome: () => void;
   setCoach: (coach: CoachProfile) => void;
   /** Records agreement that uploads may go to Google Gemini. See `aiConsent`. */
   grantAiConsent: () => void;
@@ -133,6 +152,7 @@ export const useRizzStore = create<RizzState>()(
       dailyFeedDate: null,
       feedback: {},
       hasOnboarded: false,
+      hasSeenWelcome: false,
       hasActivated: false,
       aiConsent: false,
       coach: null,
@@ -234,6 +254,8 @@ export const useRizzStore = create<RizzState>()(
 
       setOnboarded: () => set({ hasOnboarded: true }),
 
+      seeWelcome: () => set({ hasSeenWelcome: true }),
+
       grantAiConsent: () => set({ aiConsent: true }),
 
       /**
@@ -287,6 +309,7 @@ export const useRizzStore = create<RizzState>()(
         feedback: state.feedback,
         // Must persist, or the first-run walkthrough reappears on every launch.
         hasOnboarded: state.hasOnboarded,
+        hasSeenWelcome: state.hasSeenWelcome,
         // Must persist, or every launch re-reports the user as newly activated.
         hasActivated: state.hasActivated,
         // Must persist, or the app re-asks for upload consent on every launch —
@@ -430,16 +453,26 @@ export async function hydrateVault(): Promise<void> {
 }
 
 /**
- * Account deleted — drop the local copy of everything it owned.
+ * The account no longer owns this device — sign-out or delete. Drop the local
+ * copy of everything it owned.
  *
  * `setState`, deliberately, and not `clearVault()` / `removeScan()`: those actions
- * mirror to the API, and by the time this fires the token is already gone and the
- * rows were deleted server-side in one transaction. Calling them would fire 401s
- * at a user that no longer exists.
+ * mirror to the API, and by the time this fires the token is already gone. On the
+ * delete path the rows were removed server-side in one transaction, so calling
+ * them would fire 401s at a user that no longer exists; on the sign-out path the
+ * rows must SURVIVE on the server, and those actions would delete them.
  *
- * Sign-out does NOT come through here — see `onAccountDeleted` in session.ts.
+ * `coach` is in the list and is the reason sign-out was added to this channel. It
+ * is persisted, so it used to outlive a sign-out — and `coachStepDone` in
+ * `_layout.tsx` is `coach != null`, so the next account to sign up on this device
+ * was never asked the three setup questions and was personalised with the
+ * previous user's answers. See `onAccountCleared` in session.ts.
+ *
+ * ⚠️ Account-owned state only. `analysisCount` and `isPro` stay — they are
+ * install-scoped, and wiping them here would make sign-out a way to reset the
+ * free tier.
  */
-onAccountDeleted(() => {
+onAccountCleared(() => {
   useRizzStore.setState({ savedItems: [], scanHistory: [], coach: null });
 });
 

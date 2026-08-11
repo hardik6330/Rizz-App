@@ -71,12 +71,34 @@ export type AnalyticsEvent =
    * gate or the free tier with no baseline is a change nobody can evaluate — the
    * numbers move and there is nothing to compare them against.
    */
+  /*
+   * ── The demo that now runs before the gate ─────────────────────────────────
+   *
+   * `welcome_seen` is the real top of the funnel: it is the first frame after
+   * the splash on a cold install, so it is the only event that counts installs
+   * rather than installs-that-got-as-far-as-the-signup-form.
+   *
+   * `ms` is how long they watched before tapping through, which is the only way
+   * to tell "the demo sold it" from "the demo was an obstacle they skipped".
+   * The loop is ~8s, so a median well under that means people are not waiting
+   * for the paste — the part that explains the product — and the script is too
+   * slow rather than too long.
+   *
+   * The gap between this and `gate_seen` is the demo's own drop-off, and it is
+   * the number that decides whether this screen should exist at all.
+   */
+  | { name: 'welcome_seen' }
+  | { name: 'welcome_done'; ms: number }
   /**
    * The mandatory account gate rendered. The denominator for everything below.
    *
    * `returning` separates a cold install from a user who signed out — without it
    * the gate's conversion rate is diluted by people who already have an account
    * and are simply logging back in.
+   *
+   * No longer the top of the funnel — `welcome_seen` fires before it on a cold
+   * install. It is still the denominator for signup conversion, just not for
+   * install conversion.
    */
   | { name: 'gate_seen'; returning: boolean }
   /**

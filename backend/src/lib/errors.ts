@@ -30,6 +30,18 @@ export const Errors = {
    */
   emailTaken: () =>
     new ApiError(409, 'EMAIL_TAKEN', 'That email already has an account — log in instead'),
+  /**
+   * Its own code so the client can point at the username field rather than
+   * printing a sentence under the form and leaving the user to work out which
+   * of the three inputs is wrong.
+   *
+   * Enumeration is a much smaller question here than for `emailTaken`: a
+   * username is public — the app prints it back as `@name` on the account
+   * screen — so confirming one exists reveals nothing the account screen does
+   * not, and there is no inbox behind it to attack.
+   */
+  usernameTaken: () =>
+    new ApiError(409, 'USERNAME_TAKEN', 'That username is taken — try another'),
   noAccount: () =>
     new ApiError(404, 'NO_ACCOUNT', 'No account uses that email — create one instead'),
   wrongPassword: () =>

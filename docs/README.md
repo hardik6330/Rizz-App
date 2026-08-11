@@ -73,6 +73,7 @@ RizzCoach/
 │   │   ├── analyzer.tsx          disclosure + the two-permission flow for the bubble
 │   │   ├── ai-consent.tsx        ★ upload consent — blocks all 3 AI tools until granted
 │   │   ├── onboarding.tsx        the 3 setup questions — every answer feeds coachParts()
+│   │   ├── welcome.tsx           ★ 4 scripted demos, BEFORE the signup gate
 │   │   └── +not-found.tsx
 │   │
 │   ├── components/             25 shared UI pieces
@@ -83,6 +84,7 @@ RizzCoach/
 │   │   ├── AppErrorBoundary.tsx  ★ the crash screen — exported as `ErrorBoundary` by NAME
 │   │   ├── ScreenHeader.tsx      wordmark + credit meter + vault, on all three AI tools
 │   │   ├── AiNotice.tsx          ★ the "sent to Google Gemini" line — all three AI tools
+│   │   ├── SplashIntro.tsx       ★ animated splash — must match app.json's native one exactly
 │   │   ├── GlowDropZone.tsx      the breathing screenshot drop pad
 │   │   ├── StagedLoader.tsx      text-only "thinking" card (Bio, Profile)
 │   │   ├── AnalyzingOverlay.tsx  beam sweep over the picked image (Lab)
@@ -115,7 +117,7 @@ RizzCoach/
 │   │   ├── layout.ts             gutter · tab-bar clearance · card heights · font scale
 │   │   └── contrast.selfcheck.ts ✓ runnable — WCAG AA vs tokens.ts
 │   │
-│   ├── data/                   mockAnalysis.ts · feed.ts · assets.ts   (offline seeds)
+│   ├── data/                   mockAnalysis.ts · feed.ts · assets.ts · interests.ts
 │   ├── utils/                  hooks + helpers
 │   │   ├── useCreditGate.ts      ★ the ONE free-tier block → paywall, with attribution
 │   │   ├── useAiConsent.ts      ★ the ONE upload-consent block → /ai-consent (NOT a paywall)
@@ -180,17 +182,94 @@ skip straight past the report and exit the app. Every such screen calls
 `vault` and `paywall` are full-screen modals on Android and must apply `insets.top` themselves —
 iOS sheets report 0 there.
 
-**First run is three steps, in this order, and `_layout.tsx` queues them:**
+**First run is four steps, in this order, and `_layout.tsx` queues them:**
 
 | Step | Route | Flag that ends it | Skippable |
 |---|---|---|---|
+| 0 | `welcome.tsx` | `hasSeenWelcome` | no — `account` is not even declared |
+
+`welcome.tsx` is itself four horizontal pages, all four scripted demos: **Bio Lab** (chips
+picked, a vibe chosen, a bio written), **the Lab** (a screenshot picked, read, three replies
+back), **Profile Scan** (the ✨ bubble on a profile) and **chat** (the ✨ bubble in a
+conversation). The order is a widening claim — two things you do inside the app, then two it
+does inside theirs. A `ScrollView pagingEnabled` carries them so swipe works for free; the CTA
+and dots live outside it, or the button would slide off screen mid-swipe. Every loop runs
+through `usePhaseLoop` and is gated on `live`, otherwise each burns a timer and a re-render
+every few hundred ms behind the other pages from the app's first frame.
+
+With no stills left, none of the four is the payoff by contrast, so the **kind of reveal**
+carries that instead and each kind means something: pages 0–1 swap their content in place
+(one screen changing its own state, which is what those tabs do), Profile Scan's sheet covers
+the whole card (`launchApp()` — RizzCoach came to the foreground), and the chat sheet covers
+only the composer (our surface over someone else's app). The ✨ appears only on pages 2–3, so
+the gesture keeps meaning one specific thing.
+
+Bio Lab and the Lab each carry more than one worked example — three chip combinations and two
+screenshots respectively — indexed by the `cycle` count `usePhaseLoop` returns. A loop that
+replays identically is the moment someone decides they have seen it. Every bio traces back to
+its own three chips and every reply answers the last line of its own thread; that traceability
+*is* the claim, since a bio you cannot trace back to what you tapped is a template.
+
+The Vault lost its page to the Lab: a screen in front of the signup gate has to earn itself
+against the tab a new user actually lands on, and the Vault is where you go once you already
+have lines worth keeping. It survives as a fact chip, "Save what lands".
+
+Every stage list and label on these pages is **imported, not retyped** — `ANALYZE_STAGES`,
+`PROFILE_STAGES.them`, `PROFILE_LABELS.them`, and `INTERESTS` (moved to `data/interests.ts` so
+both Bio Lab and welcome can read it without welcome pulling `BioScreen` onto the cold-start
+path). A retyped copy drifts the first time something is renamed, and then onboarding is
+advertising a screen the app does not have.
 | 1 | `account.tsx` | `account != null` | no — `(tabs)` is not even declared |
 | 2 | `onboarding.tsx` | `coach != null` | no |
 | 3 | `analyzer.tsx` | `hasOnboarded` | yes, set on dismissal either way |
 
-Each waits on the previous one's flag. They are all pushes fired on the same mount, so a step
-that does not wait lands on top of whichever modal won the race. Step 3 is Android-only
+Each waits on the previous one's flag. Steps 2 and 3 are pushes fired on the same mount, so a
+step that does not wait lands on top of whichever modal won the race. Step 3 is Android-only
 (`isSupported`), which is why the landing effect treats iOS as done after step 2.
+
+**Step 2 waits on a network call, not a timer.** A returning user's answers live only on their
+server row; `adoptCoach()` in `useRizzStore` takes them, but they ride on `/v1/user/credits`,
+and nothing forced that call after a login — the refresh effect runs on mount and on resume,
+and on a fresh install the mount happens while there is still no account to authenticate with.
+So the answers arrived on the next resume at the earliest, long after the push. **Someone who
+answered these three questions months ago on another device reinstalled and was asked all three
+again.** The effect now awaits `refreshCredits(true)` and re-reads `coach` from the store in the
+callback — `adoptCoach` writes it from that very response, so `coachStepDone` in the closure is
+a snapshot from before it. Offline resolves too, with `coach` still null, and then we ask: three
+questions is a smaller harm than an unpersonalised account, and the answers upsert either way.
+
+Steps 0 and 1 are not pushes at all — they are **declaration guards**, and that is the whole
+technique. A `Stack.Protected` screen is not hidden, it is undeclared, so while step 0 is up
+`/welcome` is the only route in the navigator and there is no other screen for the user to see
+a frame of. Its CTA sets `hasSeenWelcome`, which un-declares `/welcome` and declares `/account`
+in one commit; the navigator lands on the next gate with no navigation call and therefore no
+transition to mis-time. `/welcome` is guarded on `!welcomeStepDone` rather than declared
+permanently first, because a permanently-first route goes on being the fallback — a user who
+watched the demo but has no account would land back on it instead of on signup.
+
+`welcomeStepDone` is `hasSeenWelcome || accountStepDone`. The second half is what keeps an
+existing install out of the demo on upgrade, and covers the no-API build where there is no
+signup gate to soften.
+
+Step 0 exists to answer the cost the account gate's own comment states: it lands before the
+user has seen a single result, so every install unwilling to hand over an email dies there.
+The four demos replay the product end to end — a bio built out of three tapped chips, a
+screenshot turned into three replies, a profile scored from the bubble, and a chat answered
+from it — so the email is traded for something watched rather than promised.
+
+The demos are **scripted animations, not video files**: a recording would add tens of MB to the
+install, need a re-export for every copy change (and so drift stale the first time nobody
+bothered), resist translation, and letterbox on any aspect ratio it was not exported for. The
+art is the bundled `BG` gradients and the `AVATARS` portrait already in `data/assets.ts` — no
+new art was shot for this screen.
+
+⚠️ **Every number and line on all four pages is hardcoded, and must stay hardcoded.** This
+screen runs before the account exists, before `aiConsent`, and before any credit could be
+charged; wiring any of it to a live engine would bill a user who has agreed to nothing. The
+mock *shapes* are real, though, and that is the maintenance burden: Profile Scan scores out of
+10 with a note per score (`ProfileScore`), Bio Lab returns labelled tone variants (`BioOption`),
+the Vault stores lines by category. If one of those shapes changes, the mock changes with it or
+it becomes a lie told on the first screen of the app.
 
 **Only routes belong in `src/app/`.** The folder *is* the router, so a helper component left
 beside a screen becomes a reachable URL. That is why the two big screens were split into

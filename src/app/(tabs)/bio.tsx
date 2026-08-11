@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleIconButton } from '@/components/CircleIconButton';
 import { AiNotice } from '@/components/AiNotice';
 import { HapticPressable } from '@/components/HapticPressable';
+import { INTERESTS } from '@/data/interests';
 import { ProUpsellCard } from '@/components/ProUpsellCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { StagedLoader } from '@/components/StagedLoader';
@@ -32,17 +33,6 @@ import { useKeyboardInset } from '@/utils/useKeyboardInset';
 import { useStagedProgress } from '@/utils/useStagedProgress';
 
 type Phase = 'idle' | 'working' | 'done';
-
-const INTERESTS: { emoji: string; label: string }[] = [
-  { emoji: '🏔️', label: 'Adventurer' },
-  { emoji: '☕', label: 'Coffee Lover' },
-  { emoji: '💻', label: 'Tech Geek' },
-  { emoji: '📚', label: 'Bookworm' },
-  { emoji: '🏋️', label: 'Gym Rat' },
-  { emoji: '🎵', label: 'Music Head' },
-  { emoji: '🍳', label: 'Foodie' },
-  { emoji: '🐶', label: 'Pet Lover' },
-];
 
 const VIBES: BioVibe[] = ['Funny', 'Sarcastic', 'Chill', 'Ambitious'];
 

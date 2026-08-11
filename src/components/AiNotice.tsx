@@ -18,14 +18,20 @@ import { palette, spacing } from '@/theme/tokens';
  *
  * **Name the provider.** "Our AI" does not satisfy Apple's third-party-AI
  * disclosure rule, and it is not what a person needs to know to decide whether
- * to upload a private chat. Keep this wording in step with `analyzer.tsx` and
- * with §4 of `/privacy` — three surfaces describing one pipe, and a reviewer who
- * finds them disagreeing has found a reason to look harder at all three.
+ * to upload a private chat. Keep this wording in step with `analyzer.tsx`,
+ * `ai-consent.tsx`, and §4 of `/privacy` — four surfaces describing one pipe,
+ * and a reviewer who finds them disagreeing has found a reason to look harder
+ * at all four.
  *
- * ponytail: notice, not consent. Apple's 5.1.2(i) wants an affirmative action
- * before the first upload, which needs a gate screen and a persisted flag — see
- * P1-10. Build that when there is an iOS build to submit; this closes the "we
- * never told them" gap on the platform actually shipping today.
+ * This is the standing notice, not the gate. Apple's 5.1.2(i) affirmative
+ * action lives in `ai-consent.tsx` behind `utils/useAiConsent.ts`, which every
+ * tool calls before its credit gate. That fires once; this stays on screen.
+ *
+ * Not rendered on the native chat bubble's path — that reply is generated
+ * natively and never launches the app, so neither this nor the consent gate can
+ * reach it. It is disclosed by `analyzer.tsx`, which is mandatory before the
+ * bubble can exist; wiring the consent flag through would mean extending
+ * ChatEntitlement in `modules/profile-capture`.
  */
 export function AiNotice() {
   return (

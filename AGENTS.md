@@ -376,8 +376,236 @@ and rehydrates synchronously, so `account` is correct on the first render.
 
 **Do not reintroduce a delay, a push, or a redirect here**, and do not move `hideAsync()`
 into `_layout.tsx` — hiding it there uncovers whatever the navigator had painted at that
-moment. The 3s timer is a dead-man's switch only: if `account.tsx` never mounts, a flash
-beats a splash that never lifts.
+moment. The 3s timer is a dead-man's switch only: if neither gate mounts, a flash beats a
+splash that never lifts.
+
+**`welcome.tsx` now sits one step in front of the gate and uses the identical technique.**
+`/account` is itself wrapped in `<Stack.Protected guard={welcomeStepDone}>`, so on a cold
+install `/welcome` is the entire app, and its CTA sets a flag rather than navigating —
+un-declaring one screen and declaring the next in one commit. Two consequences to preserve:
+
+- **`/welcome` is guarded on `!welcomeStepDone`, not merely declared first.** A
+  permanently-declared first route stays the navigator's fallback for ever, so a user who
+  watched the demo and has no account yet would fall back onto the demo instead of signup.
+  Declare-first is necessary but not sufficient; the negative guard is the other half.
+- **`welcomeStepDone = hasSeenWelcome || accountStepDone`**, and the second half is load-
+  bearing. Without it every existing install upgrading into this build gets a demo of an app
+  it already uses, and the no-API build shows a demo of a signup gate that never appears.
+
+`welcome.tsx` owns `hideAsync()` on the cold-install path now, for the same reason
+`account.tsx` owns it on the signed-out one: whichever screen is actually the current gate
+lifts the splash on its own mount. Both call it; only one of them is ever mounted first.
+
+**…except while `SplashIntro` is up, and then IT owns `hideAsync()`.** The animated splash
+(`components/SplashIntro.tsx`) is an overlay rendered above the navigator, so it is what the
+user is looking at; if a gate screen lifted the native splash first, there would be a frame of
+whatever the navigator had painted before the overlay covered it. All three call it — the gate
+screens are the fallback for any launch that skips the intro, and hiding an already-hidden
+splash rejects harmlessly.
+
+⚠️ **`SplashIntro`'s first frame must be pixel-identical to the native splash**: same
+`palette.ink` ground, same `splash-icon.png`, same `LOGO = 150` width, same centre. Those four
+are duplicated from the `expo-splash-screen` plugin block in `app.json` and **must be changed
+together** — change one and the logo visibly jumps at the handoff, which reads as a rendering
+bug, not an animation. It is also why the logo only ever translates, never scales, and why the
+lockup's scale-to-fit is driven off the slide rather than applied at rest: the handoff frame is
+still 1.0, and by the time it is scaled the thing is visibly moving.
+
+**Cold launch only, and the mechanism is `useState(true)` in `_layout.tsx` — not a flag.** The
+layout mounts once per JS context, and a warm resume does not remount it, so the intro cannot
+replay. Do not add a persisted flag or a timestamp comparison; there is nothing for them to fix.
+
+**The wordmark is a PNG, not a font.** Clash Display is free for commercial use in apps, but
+the Fontshare EULA forbids modifying the font software (so it cannot be subsetted) and grants
+embedding only in read-only documents, while explicitly permitting its use to "create logos and
+other graphic elements [and] static images". A rendered wordmark is inside that grant; an
+extractable `.ttf` in an APK is not clearly inside it. **Do not add the font file to the repo.**
+Regenerate the asset with `docs/wordmark.py`, and if its pixel size changes, update
+`NAME_RATIO` in `SplashIntro.tsx` — the whole lockup geometry is derived from it. `expo-font` is
+in `package.json` and deliberately unused: an async font load gating the splash animation would
+make the splash take longer in order to look nicer.
+
+**`ICON_PAD_RIGHT` is measured from `splash-icon.png`'s alpha bounding box, not chosen.** The
+icon is a 512×512 canvas with the mark inset — bbox (75, 39)–(432, 471), so 80px of the width,
+a full 15.6%, is transparent padding on the right edge alone. At `LOGO = 150` that is 23pt of
+invisible space between the visible mark and where the layout thinks the logo ends, which is why
+a 14pt margin once rendered as a ~37pt hole and the lockup read as two unrelated objects. Hence
+`LAYOUT_GAP = GAP - LOGO * ICON_PAD_RIGHT`, which is legitimately negative. **Re-export the icon
+with different padding and this must be re-measured.** The wordmark has no such slack —
+`docs/wordmark.py` crops to alpha, so its left edge is ink. `GAP` is the only number to turn if
+the spacing still looks wrong; everything else derives from it.
+
+**Both splash springs are overdamped (ζ slightly above 1), and that is deliberate.**
+ζ = damping / (2·√stiffness) at reanimated's default mass of 1. They were previously ζ≈0.95 and
+ζ≈0.47, so both rang — the logo passed its mark and came back, the mark bounced. On a splash the
+eye has nothing else to look at and reads that as the layout settling late rather than as
+personality.
+
+**Both demos are scripted animations and must stay so.** Not bundled video — install size,
+a re-export required for every copy change, no translation, and letterboxing on any aspect
+ratio it was not exported for.
+
+**All four pages go through `Page`, and no page invents its own arrangement** — including the
+two demos. Visual, kicker,
+title, body, facts, spacer — in that order, with the visual at one shared `visualHeight()` so
+the copy block starts at the same y on every page. This is a fix, not a preference: the tour
+pages put the image on top with copy beneath while the demo page put its title on top with the
+chat beneath and a dead black band under that, and swiping between them read as two different
+screens stitched together. The demo's chat card derives its height from the same function minus
+`CARD_CHROME`, so a hardcoded number there silently breaks the alignment.
+
+The ratio and clamps in `visualHeight()` are budgeted against the copy and footer, not chosen by
+eye — the note there does the arithmetic. Raise them and the facts row slides under the CTA on a
+small phone, where nothing scrolls vertically and so it is simply lost.
+
+⚠️ **The demo ends at "Copied", never "Pasted" or "Sent".** `RizzAccessibilityService` calls
+`copyToClipboard(result.reply)` and toasts "✨ Reply copied — paste & send"; it never writes into
+the host app and never sends. An earlier version of this screen typed the reply into her chat's
+composer and said "Pasted in. Send it." — advertising an autonomous action, which is the exact
+capability the Play accessibility declaration says the service does not have. That is why the
+result renders as our own sheet **over** her composer rather than inside it: two surfaces,
+visibly separate, because that is what actually happens.
+
+**The demo thread is a real back-and-forth with history, and the scan pass is the point.**
+Not one orphan message: what is being demonstrated is *context*, and a tool that only read the
+last line could not know about the running joke, so its reply would be indistinguishable from a
+generic opener. The thread is deliberately taller than its clipped, bottom-aligned box — the
+oldest messages fall off the top behind a fade, which is what makes it read as a conversation
+already in progress. During `think` a violet line sweeps the box and each bubble's border lights
+as it passes; a line sweeping over *static* bubbles reads as a loading bar, bubbles reacting to
+it read as something being taken in. Two constants there are load bearing and are documented at
+their definitions: the highlight window is bounded away from both ends of the sweep (or the top
+message sits permanently outlined at rest, and the bottom one loses a half-lit border in a
+single frame), and the border is always drawn with only its colour animating (or every bubble
+twitches a pixel wider as the line reaches it).
+
+**The read scrolls the thread back and then returns it, because the service does.**
+`RizzAccessibilityService` scrolls the user's chat backward `CHAT_SCROLLS = 3` times, reading
+between each step, then scrolls forward again — and `analyzer.tsx` warns the user they will see
+their screen move, because an app scrolling by itself with no warning reads as possession rather
+than as a feature. The demo's `think` phase is one linear clock carved into three beats: scroll
+back (0–0.3), sweep the revealed history (0.3–0.8), scroll forward again (0.8–1). **Keep the
+return leg.** A demo that read the history and left her scrolled up would show worse behaviour
+than the app actually has. `think` is the long phase for the same reason — 3 × `SCROLL_SETTLE_MS`
+is 1.35s of real scrolling before the request is even sent, so a snappier version would
+misrepresent the wait.
+
+**The reply carries one of her emoji, and that is a demonstration, not decoration.**
+`prompts.ts` tells the model to mirror the user's voice — "capitalisation, punctuation habits,
+**emoji use or total lack of it**, slang, and typical message length". A clean, formal reply
+dropped into a thread full of 😭 and 👀 is precisely what makes a generated line read as
+generated, so the demo must not show one. One emoji, not three: the same file says "no emoji
+spam". If that mirroring instruction is ever removed, this copy changes with it.
+
+The demo copy ships in store-listing screenshots. Keep it flirty, keep it clean, and keep it
+obviously fictional — no real handles, no real conversations.
+
+**The order is Bio Lab · the Lab · Profile Scan · chat, and all four are demos.** No stills
+remain. The order is a widening claim: two things you do *inside* the app, then two things it
+does *inside theirs*. The pages are a `ScrollView pagingEnabled` so swipe is free; the CTA and
+dots sit **outside** it, or the button slides off screen mid-swipe.
+
+**The Vault is deliberately not one of the four.** It was a still here and lost its page to the
+Lab. A screen shown in front of the signup gate has to earn itself against the tab a new user
+actually lands on, and the Vault is somewhere you go once you already have lines worth keeping.
+It survives in `LAB_FACTS` as "Save what lands".
+
+⚠️ **The sheet language carries what motion no longer can.** With every page moving, none of
+them is the singular payoff by contrast, so the *type* of reveal has to do that work and the
+three kinds mean three different things:
+
+| page | reveal | because |
+|---|---|---|
+| Bio Lab, the Lab | content swaps **in place** | one screen changing its own state — which is what `bio.tsx` and `(tabs)/index.tsx` do |
+| Profile Scan | sheet covers the **whole card** | `launchApp()` — RizzCoach came to the foreground |
+| chat | sheet covers **only the composer** | our surface over someone else's app |
+
+Do not reach for a sheet on pages 0–1 because it looks better. **The ✨ appears only on pages
+2–3** for the same reason: it is the app's one signature gesture, and on four pages it stops
+meaning anything specific.
+
+**Both loops go through `usePhaseLoop`, and both are gated on `live`.** One hook, because the
+two things that are easy to get subtly wrong have to be decided once: an ungated loop runs a
+timer and a re-render behind the other pages from the app's first frame, and a loop that starts
+before `AccessibilityInfo` has answered shows the opening frames of an animation the user has
+asked never to see (`reduceMotion` is `null` until it answers — check `!== false`, not
+`!reduceMotion`). Under Reduce Motion the hook holds each demo's **last** phase, so those users
+get the payoff frame rather than an empty chat or an unscanned profile.
+
+### The Bio Lab and Lab demos
+
+**Both replay their real screen's own flow, in its own order.** Bio Lab fills in `BioInput` —
+`interests`, then `vibe`, then the `BioResult` — and the Lab runs a screenshot through
+`ANALYZE_STAGES` into `ReplyOption`s. The stage lines are **imported** (`ANALYZE_STAGES`,
+`PROFILE_STAGES.them`), never retyped, so the first real run shows the same words in the same
+order the demo did.
+
+**`INTERESTS` lives in `data/interests.ts`, not in `(tabs)/bio.tsx`.** Both screens read it, and
+a retyped copy would leave onboarding advertising a chip the app no longer has. It is not
+imported *from the route* because that would drag `BioScreen`'s whole dependency graph onto the
+cold-start path — welcome is the first screen a fresh install renders.
+
+**Each loop shows a different example, and `usePhaseLoop` returns the `cycle` count that
+selects it** — three combinations on Bio Lab, two screenshots on the Lab. A loop that replays
+identically is the moment a user decides they have seen it, so the second watch has to pay.
+`cycle` is bumped on the WRAP, not on mount, so the first pass is always variant 0 and which
+example a user meets first does not depend on timing. Bio Lab's three `label`s cover all three
+of `BioTone`, so watching twice shows the range rather than one voice with different nouns.
+
+⚠️ **Every bio must be traceable back to its own three chips, and every reply must answer the
+last line of its own thread.** That traceability is the entire claim both pages make — a bio you
+cannot trace back to what you tapped is a template, and a reply that would work under either
+screenshot demonstrates exactly the thing the page argues against. Change a pick, change the
+bio. Picks are named by label rather than index so reordering `INTERESTS` cannot silently change
+which chips light up.
+
+Both variant lists are typed with **tuples, not arrays** (`BioVariant.picks`,
+`LabVariant.replies`), so the counts are compile errors rather than device-only surprises:
+`BIO_HOLD.pick` is paced against exactly three chips, and a variant showing two replies would
+read as the model having found only two answers.
+
+⚠️ **The Lab demo says "Pick a screenshot", never "take" or "record".** The app opens the photo
+library via `ImagePicker`; it has no camera path and does not capture the screen. It also shows
+**all three** replies with their `spice` pips filled to level — the choice between three styles
+is the feature, and `spice` is a 1–3 scale that needs its own maximum on screen to read as one.
+
+### The Profile Scan demo
+
+⚠️ **The RizzCoach sheet covers the WHOLE card, and the chat demo's sheet deliberately does
+not.** That asymmetry is the product, not styling. A bubble tap on a profile runs
+`onAnalyzeTapped` → screenshot → `CaptureStore` push → **`launchApp()`**: RizzCoach comes to the
+foreground and renders the report itself, so the demo has to look like an app switch. The chat
+bubble's result really is our sheet sitting over someone else's app, so that one is a partial
+cover. Draw the profile report as a panel floating over the dating app and you have depicted the
+service painting UI into another app and reading it back — wrong, and the exact capability the
+accessibility declaration disclaims.
+
+**A bubble capture is always mode `'them'`** (`profile.tsx`: `setMode(capture.mode ?? 'them')`),
+so every label on that sheet comes from `PROFILE_LABELS.them` verbatim — "First Impression",
+"Shared-Interest Signal", "Your best opening move" — and the loading lines are
+`PROFILE_STAGES.them` imported, not retyped, so the first real scan shows the same words in the
+same order. Two scores, never more: `ProfileScanResult` has exactly two `ProfileScore` slots.
+
+⚠️ **It ends at "Tap to copy", not "Copied" — the opposite of the chat demo.**
+`PROFILE_LABELS.them.linesHint` is "Tap copy to send one…": openers sit in the report until the
+user takes one. The chat bubble auto-copies. Do not conflate the two.
+
+**Nothing on this page promises a match.** `PROFILE_LABELS.them.disclaimer` is explicit that a
+scan is "conversation prep — they're a whole human, not a score", and a first-run screen
+promising odds would be contradicted by the first report the user ever opens. Sell openers that
+get answered; that is what the report actually produces.
+
+**The profile is invented art on our own bundled background, never a recreation of a real
+dating app's card.** Same rule as the chat demo's phone mock — another company's trade dress in
+our onboarding is also their trade dress in our store listing. A photo, a name and an age is all
+the recognition the beat needs.
+
+⚠️ **Every number and line on every page is hardcoded and must stay hardcoded.** This screen
+runs before the account, before `aiConsent`, and before any credit could be charged, so wiring
+any of it to a live engine would bill a user who has agreed to nothing. But the mock *shapes*
+are real — scores out of 10 with a note (`ProfileScore`), labelled tone variants (`BioOption`),
+Vault lines by category. Change one of those shapes and the mock changes with it, or the first
+screen of the app is telling a lie about the rest of it.
 
 **The mirror image is the post-login flash.** `signedInAs != null` is guarded by
 `&& !isOnboarding` in `account.tsx`, because a successful auth flips `account` in the store
@@ -414,18 +642,40 @@ anything**, so the commonest signup mistake produced "check your email" and a co
 never existed, with nothing in the UI able to tell the user. No wording fixes that — only
 naming the case does.
 
-Four codes now, and `account.tsx` branches on the code, not the message:
+Five codes now, and `account.tsx` branches on the code, not the message:
 
 | Code | Status | When |
 |---|---|---|
 | `EMAIL_TAKEN` | 409 | `/otp` signup, or a signup race on `uq_users_email` |
+| `USERNAME_TAKEN` | 409 | `/otp` signup, or a signup race on `uq_users_username` |
 | `NO_ACCOUNT` | 404 | `/otp` login, or `/login` with an unknown address |
 | `WRONG_PASSWORD` | 401 | password branch only |
 | `ACCOUNT_LOCKED` | 429 | 10 failures — **including the attempt that trips it** |
 
-`nudgeMode()` in `account.tsx` moves the user to the other tab on the first two, keeping
-what they typed. That is the whole point of naming them; an error string they have to read
-and act on themselves is barely better than the silence.
+`nudgeMode()` in `account.tsx` moves the user to the other tab on `EMAIL_TAKEN` /
+`NO_ACCOUNT`, keeping what they typed. That is the whole point of naming them; an error
+string they have to read and act on themselves is barely better than the silence.
+
+**Both clashes are checked at `/otp`, before a code is mailed.** The email one always was;
+the username one used to surface from `ER_DUP_ENTRY` inside `/signup`, which runs *after*
+the user has waited for the mail, switched apps and typed six digits — so they were told to
+pick another name at the one moment their code had just been burnt. `/otp` takes an
+optional `username` for this (optional so an older client still works, just without the
+pre-check), and `account.tsx` sends it on the signup path. The `ER_DUP_ENTRY` handler in
+`/signup` stays as the race backstop and answers with **the same codes**, so the client
+never has to learn two ways of being told the same thing; on `USERNAME_TAKEN` it returns to
+the details step, since the field to fix is behind the code screen.
+
+`usernameField` is one Zod schema shared by both routes. Two copies would drift, and the
+failure mode is a name accepted at the pre-check and rejected after the code — exactly what
+the pre-check exists to remove.
+
+⚠️ **A username rejection still spends an `/otp` token.** The bucket is middleware and runs
+before the handler, and `/otp` has the tightest one in the service because a call normally
+means a paid email. This is also the only rejection a user *retries* — email clashes send
+them to the login tab, so they never loop. Four attempts in a minute is more names than
+anyone tries, but a live "is this name free" check as the user types must NOT call `/otp`
+per keystroke; it needs its own route under the looser `/v1/auth/*` bucket.
 
 **What still bounds enumeration:** the IP bucket on `/v1/auth/*` (`/otp` is 4 tokens
 refilling at 0.02/s — about one probe every 50s per address), the per-account lockout, and
@@ -433,7 +683,9 @@ the fact that neither a password nor a mailbox gets easier to guess for knowing 
 is real. `dummyHash()` is no longer called by `/login` — it only ever existed to hide what
 `/otp` now says outright — but it stays exported and selfchecked.
 
-Usernames were always nameable (they are public); that is unchanged.
+Usernames were always nameable — they are public, the account screen prints them back as
+`@name` — which is why `USERNAME_TAKEN` costs nothing in enumeration terms: it confirms
+what that screen already shows, and there is no inbox behind it.
 
 **`lib/password.ts` is `node:crypto` scrypt and nothing else.** N=2^15 needs 32MB, which
 is exactly Node's default `maxmem` — so `MAXMEM` is set explicitly and every call passes
@@ -605,15 +857,21 @@ signal.
 (`/paywall?source=…`), so a new entry point is attributed for free and `paywall_viewed` cannot
 drift from `paywall_dismissed`. Do not instrument the `router.push` call sites.
 
-**The activation funnel is `gate_seen → first_result → account_* → credits_exhausted`**, and
-each one is fired from exactly one place on purpose:
+**The activation funnel is `welcome_seen → gate_seen → first_result → account_* →
+credits_exhausted`**, and each one is fired from exactly one place on purpose:
 
 | Event | Fired from | Why there |
 |---|---|---|
+| `welcome_seen` / `welcome_done` | `welcome.tsx` on mount and on its CTA | The first frame after the splash, so it is the only event that counts *installs* rather than installs-that-reached-the-signup-form. `ms` separates "the demo sold it" from "the demo was an obstacle" |
 | `gate_seen` | `account.tsx`, inside the `isOnboarding` branch | Opened as a modal from Profile Scan this is not a gate; counting it would pad the denominator |
 | `first_result` | `callApi` in `services/api.ts` | One choke point that already knows the engine. `feed` is excluded — a background daily fetch is not activation |
 | `account_created` / `account_login` | `account.tsx` `submit()`, after the await | Before the await it would count rejected attempts as conversions |
 | `credits_exhausted` | `useCreditGate` | The moment the tier REFUSES someone, which is a different number from `paywall_viewed` — the gap is everyone who hit the wall and never read the offer |
+
+`welcome_seen` is now the top of the funnel; `gate_seen` remains the denominator for signup
+conversion but is no longer the denominator for install conversion. The gap between the two
+is the demo's own drop-off, and it is the number that decides whether that screen earns its
+place.
 
 ⚠️ **`first_result` needs `hasActivated` in `partialize`** or every launch re-reports the
 user as newly activated. It is the only analytics flag that must survive a reload; a
@@ -628,6 +886,34 @@ part by `coachParts()` in `backend/src/ai/prompts.ts`. A question whose answer i
 is three taps of friction in front of the paywall that buys nothing — and it fails silently:
 the app works, the output is just generic. `backend/src/ai/prompts.selfcheck.ts` is the only
 thing that notices.
+
+**Never ask a returning user the questions again — ask the SERVER first.** The setup gate in
+`_layout.tsx` awaits `refreshCredits(true)` rather than a timer, and re-reads `coach` from the
+store in the callback. `adoptCoach()` in `useRizzStore` adopts the server's answers, but they
+ride on `/v1/user/credits` only, and nothing forced that call after a login: the refresh effect
+runs on mount and on resume, and on a fresh install the mount happens while there is still no
+account to authenticate with. So the answers landed on the next resume at the earliest — long
+after the push. Someone who answered months ago on another device reinstalled and was asked all
+three again. **Do not put the timer back.** The re-read inside the callback is also required,
+not defensive: `adoptCoach` writes the store from that very response, so the `coachStepDone`
+captured in the closure is a snapshot from before it.
+
+Offline resolves too, with `coach` still null, and then we ask — the right fallback, since three
+questions is a smaller harm than an unpersonalised account and the answers upsert either way.
+
+**The mirror of that rule: ALWAYS ask a genuinely new user, which means `coach` must be cleared
+on sign-out.** It is persisted and doubles as the "have they done the quiz" flag, so it used to
+outlive a sign-out — and the next account created on that device found `coachStepDone` already
+true, was never asked, and got the previous user's `style` and `struggle`. Sign-out now goes
+through `onAccountCleared` in `session.ts` alongside delete, wiping `coach`, `savedItems` and
+`scanHistory` together. The old reasoning ("the rows come back from the server on the next
+login") only ever held for signing back into the SAME account; the vault leaked across accounts
+in exactly the same way, since `fetchVault` keeps local rows the server page lacks and
+`toggleSave` mirrors them up.
+
+⚠️ **That wipe is account-owned state only.** `analysisCount` and `isPro` stay — they are
+install-scoped for the same reason `logOut` keeps the install id, and wiping them would make
+sign-out a way to reset the free tier.
 
 **Closed enums on both sides, and they are a wire contract.** `COACH_APPS`,
 `COACH_STRUGGLES`, `COACH_STYLES` are zod enums on the server; `CoachApp`, `CoachStruggle`,

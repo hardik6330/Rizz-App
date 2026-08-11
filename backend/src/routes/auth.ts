@@ -201,7 +201,29 @@ const codeField = z
   .trim()
   .regex(/^\d{6}$/, 'Enter the 6-digit code from your email');
 
-const OtpBody = z.object({ email: emailField, purpose: z.enum(['signup', 'login']) });
+/**
+ * The username rules, shared by `/otp` and `/signup`.
+ *
+ * One definition because `/otp` now pre-checks the name the user typed: two
+ * copies would drift, and the failure would be a name accepted at the pre-check
+ * and rejected after the code — which is the exact experience this pre-check
+ * exists to remove.
+ */
+const usernameField = z
+  .string()
+  .min(3, 'Username must be at least 3 characters')
+  .max(32, 'Username must be 32 characters or fewer')
+  .regex(/^[a-z0-9_]+$/i, 'Username can use letters, numbers and _ only');
+
+const OtpBody = z.object({
+  email: emailField,
+  purpose: z.enum(['signup', 'login']),
+  /**
+   * Signup only, and optional so an older client still works — it just gets the
+   * pre-check it always got, which is none.
+   */
+  username: usernameField.optional(),
+});
 
 /**
  * Mail a code, or say why one is not coming.
@@ -230,7 +252,7 @@ const OtpBody = z.object({ email: emailField, purpose: z.enum(['signup', 'login'
 auth.post('/otp', async (c) => {
   const parsed = OtpBody.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) throw Errors.badRequest(parsed.error.issues[0]?.message ?? 'Check your email');
-  const { email, purpose } = parsed.data;
+  const { email, purpose, username } = parsed.data;
 
   const rows = await db.execute(sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`);
   const taken = ((rows as unknown as [Array<{ id: string }>])[0]?.[0] ?? null) != null;
@@ -239,6 +261,43 @@ auth.post('/otp', async (c) => {
   // recovering one that does not exist. Named, not swallowed — see above.
   if (purpose === 'signup' && taken) throw Errors.emailTaken();
   if (purpose === 'login' && !taken) throw Errors.noAccount();
+
+  /*
+   * The username, checked BEFORE a code is mailed.
+   *
+   * The email clash above was already caught here, but a username clash was not
+   * — it surfaced from `ER_DUP_ENTRY` inside `/signup`, which only runs after
+   * the user has waited for a mail, switched apps to read it, and typed six
+   * digits. Being told "that username is taken" at that point means going back
+   * to a form whose code is now burnt, so the whole round trip repeats for a
+   * field they could have been told about immediately.
+   *
+   * Plain `=` rather than a LOWER() call, deliberately: the column's unique
+   * index `uq_users_username` compares under the table's case-insensitive
+   * collation, and the pre-check has to agree with the index or it will pass a
+   * name that the INSERT then rejects.
+   *
+   * Race is still possible — a name can be claimed between here and `/signup` —
+   * so the `ER_DUP_ENTRY` handler there stays as the backstop. This makes the
+   * common case immediate; it does not make the guarantee.
+   *
+   * ⚠️ A rejection here still costs an `/otp` token, because the bucket in
+   * app.ts runs as middleware and cannot know the handler was about to refuse.
+   * That bucket is the tightest in the service (4, refilling at one per ~50s)
+   * because a call normally means a paid email — and this is the one rejection
+   * a user RETRIES, since they fix the name and try again. Email clashes send
+   * them to the login tab instead, so they never loop. Four attempts inside a
+   * minute is more names than anyone tries, but if this endpoint ever needs to
+   * answer "is this name free" as the user types, it must move to its own route
+   * under the looser `/v1/auth/*` bucket rather than being called per keystroke
+   * here.
+   */
+  if (purpose === 'signup' && username) {
+    const found = await db.execute(sql`SELECT id FROM users WHERE username = ${username} LIMIT 1`);
+    if (((found as unknown as [Array<{ id: string }>])[0]?.[0] ?? null) != null) {
+      throw Errors.usernameTaken();
+    }
+  }
 
   const code = await issueOtp(email, purpose as OtpPurpose);
   // null = cooldown; a code is already in flight, so this really is a no-op.
@@ -258,11 +317,7 @@ auth.post('/otp', async (c) => {
  * and a password manager toward nothing. 10 characters, anything in them.
  */
 const SignupBody = z.object({
-  username: z
-    .string()
-    .min(3, 'Username must be at least 3 characters')
-    .max(32, 'Username must be 32 characters or fewer')
-    .regex(/^[a-z0-9_]+$/i, 'Username can use letters, numbers and _ only'),
+  username: usernameField,
   email: emailField,
   password: z
     .string()
@@ -352,12 +407,14 @@ auth.post('/signup', requireAuth, async (c) => {
   } catch (err) {
     if (err instanceof ApiError) throw err;
     if ((err as { code?: string }).code === 'ER_DUP_ENTRY') {
-      // Both clashes are named now. The email one is only reachable if somebody
-      // claimed the address between `/otp` and here — `/otp` refuses it up front
-      // — so it is rare, and answering it vaguely would leave the user staring at
-      // "could not create the account" with a valid code and no idea why.
+      // Both clashes are named, and both are now only reachable if somebody
+      // claimed the address or the name between `/otp` and here — `/otp` refuses
+      // both up front. So this is the race backstop rather than the usual path,
+      // and it answers with the same codes the pre-check does: a client that
+      // knows how to highlight the username field must not have to learn a
+      // second way of being told the same thing.
       throw String((err as Error).message).includes('uq_users_username')
-        ? Errors.badRequest('That username is taken')
+        ? Errors.usernameTaken()
         : Errors.emailTaken();
     }
     throw err;

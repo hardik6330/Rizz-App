@@ -32,17 +32,21 @@ const targetId = randomUUID();
 const subscriberId = randomUUID();
 const newcomerId = randomUUID();
 const written = [anonId, otherAccountId, targetId, subscriberId, newcomerId];
+/** Seeded on `targetId` so `/otp` has a real name to clash against. */
+const TAKEN_NAME = `taken_${randomUUID().slice(0, 8)}`;
 
 async function seed(
   id: string,
   installId: string,
   email: string | null,
   rcAppUserId: string | null = null,
+  /** Null for the anonymous rows — `uq_users_username` allows repeated NULLs. */
+  username: string | null = null,
 ): Promise<void> {
   const now = Date.now();
   await db.execute(sql`
-    INSERT INTO users (id, install_id, platform, email, rc_app_user_id, analysis_count, created_at, updated_at)
-    VALUES (${id}, ${installId}, 'android', ${email}, ${rcAppUserId}, 2, ${now}, ${now})
+    INSERT INTO users (id, install_id, platform, email, username, rc_app_user_id, analysis_count, created_at, updated_at)
+    VALUES (${id}, ${installId}, 'android', ${email}, ${username}, ${rcAppUserId}, 2, ${now}, ${now})
   `);
 }
 
@@ -54,7 +58,7 @@ async function installOf(id: string): Promise<string | undefined> {
 try {
   // ── 1. The device's row is anonymous: it is deleted and the id handed over ──
   await seed(anonId, DEVICE, null);
-  await seed(targetId, randomUUID(), 'target@example.test');
+  await seed(targetId, randomUUID(), 'target@example.test', null, TAKEN_NAME);
   await claimInstall(targetId, DEVICE, Date.now());
 
   assert.equal(await installOf(targetId), DEVICE, 'the account now owns the device');
@@ -107,13 +111,14 @@ try {
   //
   // `/otp` and `/login` used to answer identically whether or not an address had
   // an account, which is why a signup into a taken address produced "check your
-  // email" and no email. Four codes now say which case it is, and the CLIENT
+  // email" and no email. Five codes now say which case it is, and the CLIENT
   // branches on them — account.tsx moves the user to the other tab on
-  // EMAIL_TAKEN / NO_ACCOUNT — so a rename here is a silently broken screen.
+  // EMAIL_TAKEN / NO_ACCOUNT, and back to the details step on USERNAME_TAKEN —
+  // so a rename here is a silently broken screen.
   //
   // Through the full `app`, not the `auth` router: the codes are written by
   // `onError`, which only exists on the app. Under the IP buckets too (otp 4,
-  // login 8), so this stays at two calls each.
+  // login 8), so this stays at three otp calls and two login.
   const { app } = await import('../app.ts');
   const post = async (path: string, body: unknown) => {
     const res = await app.request(path, {
@@ -137,6 +142,25 @@ try {
     await post('/v1/auth/otp', { email: unknown, purpose: 'login' }),
     { status: 404, code: 'NO_ACCOUNT' },
     'recovery code for an address with no account',
+  );
+  /*
+   * The username pre-check. A FRESH address on purpose: it has to get past the
+   * email branch above to reach the username one, and asserting it with a taken
+   * address would pass for the wrong reason.
+   *
+   * This is the case the pre-check exists for. Without it the clash came from
+   * the INSERT inside `/signup` — after the code was mailed, read and typed —
+   * so the user was told to pick another name at the one moment their code had
+   * just been burnt.
+   */
+  assert.deepEqual(
+    await post('/v1/auth/otp', {
+      email: `fresh-${randomUUID()}@example.test`,
+      purpose: 'signup',
+      username: TAKEN_NAME,
+    }),
+    { status: 409, code: 'USERNAME_TAKEN' },
+    'signup code for a username that already exists',
   );
   assert.deepEqual(
     await post('/v1/auth/login', { email: unknown, password: 'whatever-long-enough' }),

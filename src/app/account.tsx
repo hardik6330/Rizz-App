@@ -294,7 +294,10 @@ export default function AccountScreen() {
       setBusy(true);
       setError(null);
       try {
-        await requestOtp(mail, isSignup ? 'signup' : 'login');
+        /* The username rides along on signup so the server can reject a taken
+           name here, while the user is still looking at the field, rather than
+           from the INSERT after they have typed the code. */
+        await requestOtp(mail, isSignup ? 'signup' : 'login', isSignup ? username.trim() : undefined);
         haptic.success();
         setStep('code');
         if (!announce) return;
@@ -307,7 +310,7 @@ export default function AccountScreen() {
         setBusy(false);
       }
     },
-    [email, isSignup, nudgeMode, toast],
+    [email, isSignup, nudgeMode, toast, username],
   );
 
   const submit = useCallback(async () => {
@@ -402,6 +405,18 @@ export default function AccountScreen() {
       // which never touches /otp, and on a signup whose address was claimed in
       // the seconds between the code being sent and this submit.
       if (err instanceof AuthError) nudgeMode(err.code);
+      /*
+       * A taken username is now refused by `/otp` before a code is ever sent, so
+       * reaching it here means somebody claimed the name in the seconds since.
+       * Rare, but it strands the user: they are on the code step, the field they
+       * have to change is on the form behind it, and the code they typed is
+       * burnt either way. So send them back to it — with everything else still
+       * filled in, since the details step stays mounted.
+       */
+      if (err instanceof AuthError && err.code === 'USERNAME_TAKEN') {
+        setStep('form');
+        setCode('');
+      }
       // The server writes these for the user and never quotes what was typed.
       setError(err instanceof AuthError ? err.message : 'Something went wrong — try again');
     }
