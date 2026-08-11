@@ -19,13 +19,13 @@ import { spacing } from './tokens';
 export const CONTENT_MAX = 560;
 
 /** Below this width the standard 24pt gutter takes too much of the screen. */
-export const COMPACT_WIDTH = 360;
+const COMPACT_WIDTH = 360;
 
 /** Shortest side at or above this is a tablet or an unfolded foldable. */
-export const TABLET_WIDTH = 700;
+const TABLET_WIDTH = 700;
 
 /** Pill height of the floating tab bar at fontScale 1 — see FloatingTabBar. */
-export const TAB_BAR_HEIGHT = 56;
+const TAB_BAR_HEIGHT = 56;
 
 /** Width the Discover action rail reserves on the right of a feed card. */
 export const RAIL_WIDTH = 52;
@@ -47,7 +47,7 @@ export function gutterFor(width: number): number {
  * the pill, which the OS font scale stretches (capped — past ~1.4 the bar stops
  * growing because its label is capped too).
  */
-export function clearanceFor(
+function clearanceFor(
   bottomInset: number,
   fontScale: number,
   // Annotated: `spacing` is `as const`, so an inferred default narrows to `32`.

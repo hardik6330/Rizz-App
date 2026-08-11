@@ -85,7 +85,7 @@ export function glow(color: string, opacity = 0.45, radius = 22): ViewStyle {
 }
 
 /** Per-category accent colors used by the feed, vault and chips. */
-export const categoryTheme: Record<string, string> = {
+const categoryTheme: Record<string, string> = {
   Opener: palette.violet,
   Comeback: palette.pink,
   Recovery: palette.cyan,

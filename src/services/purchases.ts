@@ -55,7 +55,7 @@ export interface Plan {
  * offering returns (`fetchPlans`), so changing a price is a dashboard edit, not
  * a release — keep these in step anyway or the preview build sells a fiction.
  */
-export const MOCK_PLANS: Plan[] = [
+const MOCK_PLANS: Plan[] = [
   { id: 'weekly', title: 'Weekly', price: '$6.99', period: '/ week', sub: 'Commitment issues? Respect.' },
   { id: 'annual', title: 'Annual', price: '$79.99', period: '/ year', sub: 'Works out to $1.53 a week', badge: 'BEST VALUE' },
 ];

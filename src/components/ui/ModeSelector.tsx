@@ -7,7 +7,7 @@ import { haptic } from '@/utils/haptics';
 import { HapticPressable } from './HapticPressable';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
-export const MODES: { key: EngineMode; label: string; emoji: string; color: string }[] = [
+const MODES: { key: EngineMode; label: string; emoji: string; color: string }[] = [
   { key: 'rizz', label: 'Rizz', emoji: '💬', color: palette.violet },
   { key: 'vibe', label: 'Vibe Check', emoji: '🔮', color: palette.cyan },
   { key: 'roast', label: 'Roast', emoji: '🔥', color: palette.ember },
