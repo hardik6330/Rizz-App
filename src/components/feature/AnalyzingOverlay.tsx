@@ -14,7 +14,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { ANALYZE_STAGES } from '@/data/mockAnalysis';
+import { ANALYZE_STAGES } from '@/services/engine';
 import { cardHeightFor, useLayout } from '@/theme/layout';
 import { absoluteFill, palette, radii, spacing } from '@/theme/tokens';
 

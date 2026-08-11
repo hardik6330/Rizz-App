@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Text, View } from 'react-native';
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 
-import { ANALYZE_STAGES } from '@/data/mockAnalysis';
+import { ANALYZE_STAGES } from '@/services/engine';
 import { palette } from '@/theme/tokens';
 import type { ReplyStyle } from '@/types';
 import { Page, Stages, usePhaseLoop, type Line, type PageProps } from './shared';

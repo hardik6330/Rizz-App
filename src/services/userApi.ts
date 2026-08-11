@@ -1,4 +1,4 @@
-import type { CoachProfile } from '@/types';
+import type { CoachProfile, ProfileScanResult, ScanMode } from '@/types';
 
 import {
   accessToken,
@@ -63,9 +63,16 @@ export async function refreshCredits(force = false): Promise<void> {
 
 export interface SavedScanItem {
   id: string;
-  mode: 'self' | 'them';
+  mode: ScanMode;
   title: string;
-  summary: any;
+  /**
+   * The report body as `POST /v1/ai/profile` stored it — the whole result
+   * payload, so it carries its own `id` and `name` and the caller spreads it
+   * last. Typed rather than `any` so `profile.tsx` reassembling a
+   * `ProfileScanResult` from it is checked; `createdAt` and `mode` are columns
+   * beside the blob, not inside it.
+   */
+  summary: Omit<ProfileScanResult, 'createdAt' | 'mode'>;
   createdAt: number;
 }
 

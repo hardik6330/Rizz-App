@@ -276,10 +276,13 @@ export default function ProfileScreen() {
         // on a failed fetch wiped the history the user was looking at and made
         // it look like their scans had been deleted.
         if (!scans) return;
+        // Spread LAST, so the stored report wins on every field it carries —
+        // including `name`, which is the real profile name where `title` is the
+        // "X's Profile" row label. It also carries `id` and `isProfile`, so
+        // those must not be written here: they were, and were silently
+        // overwritten. Only `mode` and `createdAt` live outside the blob.
         const formattedScans = scans.map((item) => ({
-          id: item.id,
           mode: item.mode,
-          isProfile: true,
           name: item.title,
           createdAt: item.createdAt,
           ...item.summary,
@@ -766,6 +769,4 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     color: palette.textTertiary,
   },
-
-  // --- Report ---
 });

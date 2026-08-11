@@ -40,7 +40,7 @@ noticed that the service reads more than was on screen. Full argument and the re
 [docs/play-accessibility-declaration.md](docs/play-accessibility-declaration.md).
 
 ⚠️ **Name Google Gemini on every surface that uploads, and never write "our AI".** Five places
-describe the same pipe — `app/ai-consent.tsx`, `components/AiNotice.tsx` (rendered by Lab,
+describe the same pipe — `app/ai-consent.tsx`, `components/feature/AiNotice.tsx` (rendered by Lab,
 Profile Scan and Bio Lab), `analyzer.tsx`, `/privacy` §4, and the Play declaration. Change one
 and change all five; a reviewer who finds them disagreeing has a reason to distrust every one
 of them. `AiNotice` replaced three per-screen copies of "Analyses are private. Never posted,
@@ -352,8 +352,8 @@ credit move had already fixed this — it had not, and that claim was wrong unti
 component dropped beside a screen becomes a navigable route — `app/account/AuthForm.tsx`
 would be reachable at `/account/AuthForm`. The pieces split out of `account.tsx` and
 `profile.tsx` are in `components/` for that reason, not for tidiness:
-`components/AuthFields.tsx` (`CredentialFields` + `CodeStep` + `Field`) and
-`components/ScanReport.tsx`. The screens keep the shell — hero copy, tabs, error row, CTA —
+`components/feature/AuthFields.tsx` (`CredentialFields` + `CodeStep` + `Field`) and
+`components/feature/ScanReport.tsx`. The screens keep the shell — hero copy, tabs, error row, CTA —
 because each of those reads three or four flags at once (`isSignup`, `step`, `useCode`,
 `isOnboarding`) and passing all four down to render one line of text is not a component.
 
@@ -402,7 +402,7 @@ un-declaring one screen and declaring the next in one commit. Two consequences t
 lifts the splash on its own mount. Both call it; only one of them is ever mounted first.
 
 **…except while `SplashIntro` is up, and then IT owns `hideAsync()`.** The animated splash
-(`components/SplashIntro.tsx`) is an overlay rendered above the navigator, so it is what the
+(`components/feature/SplashIntro.tsx`) is an overlay rendered above the navigator, so it is what the
 user is looking at; if a gate screen lifted the native splash first, there would be a frame of
 whatever the navigator had painted before the overlay covered it. All three call it — the gate
 screens are the fallback for any launch that skips the intro, and hiding an already-hidden
@@ -1160,7 +1160,7 @@ clips there — `LockOverlay` had to become a `ScrollView` for exactly this reas
 - Read tokens from `src/theme/tokens.ts`. Never hardcode hex or px in screens. Screen gutters
   and tab-bar clearance come from `layout.ts`, never from `spacing.xl` / a literal.
 - All touchables route through `HapticPressable` so touch feel stays consistent.
-- **Destructive actions confirm through `components/ConfirmDialog.tsx` — never `Alert.alert`,
+- **Destructive actions confirm through `components/ui/ConfirmDialog.tsx` — never `Alert.alert`,
   never a new local `<Modal>`.** Five of them delete a *server* row: remove a saved line,
   clear the vault, forget a scan, delete the account. The dialog is the only thing between a
   mis-tap and data that is gone. The native alert renders in the OS palette (white sheet, blue

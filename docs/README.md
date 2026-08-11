@@ -76,54 +76,71 @@ RizzCoach/
 │   │   ├── welcome.tsx           ★ 4 scripted demos, BEFORE the signup gate
 │   │   └── +not-found.tsx
 │   │
-│   ├── components/             25 shared UI pieces
-│   │   ├── HapticPressable.tsx   the base touchable — everything routes through it
-│   │   ├── ConfirmDialog.tsx     ★ the ONE destructive-confirm dialog — never Alert.alert
-│   │   ├── ScanReport.tsx        the Profile Scan report — split out of profile.tsx
-│   │   ├── AuthFields.tsx        CredentialFields · CodeStep · Field — split out of account.tsx
-│   │   ├── AppErrorBoundary.tsx  ★ the crash screen — exported as `ErrorBoundary` by NAME
-│   │   ├── ScreenHeader.tsx      wordmark + credit meter + vault, on all three AI tools
-│   │   ├── AiNotice.tsx          ★ the "sent to Google Gemini" line — all three AI tools
-│   │   ├── SplashIntro.tsx       ★ animated splash — must match app.json's native one exactly
-│   │   ├── GlowDropZone.tsx      the breathing screenshot drop pad
-│   │   ├── StagedLoader.tsx      text-only "thinking" card (Bio, Profile)
-│   │   ├── AnalyzingOverlay.tsx  beam sweep over the picked image (Lab)
-│   │   ├── ReplyCard · ABSimulator · VibeCheckCard · RoastCard        Lab results
-│   │   ├── FeedCard · ActionRail · LockOverlay                        Discover
-│   │   ├── LimitBadge · ProUpsellCard · PlanCard                      monetization
-│   │   ├── VaultItem · EmptyVault                                     vault
-│   │   └── FloatingTabBar · ModeSelector · CircleIconButton · Toast   chrome
+│   ├── components/             UI, split by who may use it
+│   │   ├── ui/                   primitives — reusable anywhere, know nothing about a feature
+│   │   │   ├── HapticPressable.tsx   the base touchable — everything routes through it
+│   │   │   ├── ConfirmDialog.tsx     ★ the ONE destructive-confirm dialog — never Alert.alert
+│   │   │   ├── AppErrorBoundary.tsx  ★ the crash screen — exported as `ErrorBoundary` by NAME
+│   │   │   ├── ScreenHeader.tsx      wordmark + credit meter + vault, on all three AI tools
+│   │   │   ├── GlowDropZone.tsx      the breathing screenshot drop pad
+│   │   │   ├── StagedLoader.tsx      text-only "thinking" card (Bio, Profile)
+│   │   │   └── Toast · CircleIconButton · LimitBadge · ModeSelector
+│   │   └── feature/              bound to one screen; imports from ui/, never the reverse
+│   │       ├── ScanReport.tsx        the Profile Scan report — split out of profile.tsx
+│   │       ├── AuthFields.tsx        CredentialFields · CodeStep · Field
+│   │       ├── AuthForm.tsx          the signup/login form — renders useAuthForm's state
+│   │       ├── SignedInPanel.tsx     signed-in view + sign-out and delete confirms
+│   │       ├── AiNotice.tsx        ★ the "sent to Google Gemini" line — all three AI tools
+│   │       ├── SplashIntro.tsx     ★ animated splash — must match app.json's native one
+│   │       ├── AnalyzingOverlay.tsx  beam sweep over the picked image (Lab)
+│   │       ├── ReplyCard · ABSimulator · VibeCheckCard · RoastCard        Lab results
+│   │       ├── FeedCard · ActionRail · LockOverlay                        Discover
+│   │       ├── ProUpsellCard · PlanCard                                   monetization
+│   │       └── VaultItem · EmptyVault · FloatingTabBar
+│   │
+│   ├── screens/                oversized route bodies, lifted out of app/
+│   │   └── welcome/              the four scripted demos — one file each
+│   │       ├── shared.tsx          Page · usePhaseLoop · useTicker · Stages · visualHeight
+│   │       ├── styles.ts           the ONE stylesheet — pages share phone/captionBox/sparkle
+│   │       └── BioPage · LabPage · ScanPage · DemoPage   script constants live with their page
 │   │
 │   ├── services/               everything that talks outward
-│   │   ├── api.ts                ★ callApi — the ONLY path to the backend
-│   │   ├── contracts.ts          ✓ response guards, called by callApi before rendering
-│   │   ├── engine.ts             Lab       →  POST /v1/ai/lab
-│   │   ├── profileEngine.ts      Profile   →  POST /v1/ai/profile
-│   │   ├── bioEngine.ts          Bio       →  POST /v1/ai/bio
-│   │   ├── feedEngine.ts         Discover  →  POST /v1/ai/feed
-│   │   ├── analytics.ts          track() over a FIXED event union — never free-form
-│   │   ├── purchases.ts          RevenueCat
-│   │   └── widgetBridge.ts       iOS home-screen widget (no-ops without the module)
+│   │   ├── auth.ts              ★ tokens · install id · account lifecycle · authedFetch
+│   │   ├── api.ts               ★ callApi — the ONLY path to /v1/ai/*
+│   │   ├── userApi.ts             /v1/user/* — vault · scans · coach · credits · pro sync
+│   │   ├── contracts.ts         ✓ response guards, called by callApi before rendering
+│   │   ├── engine.ts              Lab       →  POST /v1/ai/lab  (+ ANALYZE_STAGES)
+│   │   ├── profileEngine.ts       Profile   →  POST /v1/ai/profile
+│   │   ├── bioEngine.ts           Bio       →  POST /v1/ai/bio
+│   │   ├── feedEngine.ts          Discover  →  POST /v1/ai/feed
+│   │   ├── seedRotator.ts         demo-mode seed rotation, shared by the engines
+│   │   ├── analytics.ts           track() over a FIXED event union — never free-form
+│   │   ├── purchases.ts           RevenueCat
+│   │   └── widgetBridge.ts        iOS home-screen widget (no-ops without the module)
 │   │
-│   ├── state/
+│   ├── state/                  local state only — the network lives in services/
 │   │   ├── useRizzStore.ts       Zustand + MMKV — persist ⇒ add it to `partialize`
-│   │   ├── session.ts            install id, JWT, isLiveApi, syncPro, refreshCredits
 │   │   ├── limits.ts             swipe allowance + isLiveRevenueCatKey
 │   │   ├── storage.ts            the MMKV instance
 │   │   └── limits.selfcheck.ts   ✓ runnable
+│   │
+│   ├── hooks/                  React hooks (pure helpers live in utils/)
+│   │   ├── useCreditGate.ts    ★ the ONE free-tier block → paywall, with attribution
+│   │   ├── useAiConsent.ts     ★ the ONE upload-consent block → /ai-consent (NOT a paywall)
+│   │   ├── useAuthForm.ts        the signup/login/code state machine
+│   │   ├── useStagedProgress.ts  the "thinking" stage ticker (owns the timer, nothing else)
+│   │   └── useBackToIdle.ts · useKeyboardInset.ts
 │   │
 │   ├── theme/
 │   │   ├── tokens.ts             colour · type · spacing · radii
 │   │   ├── layout.ts             gutter · tab-bar clearance · card heights · font scale
 │   │   └── contrast.selfcheck.ts ✓ runnable — WCAG AA vs tokens.ts
 │   │
-│   ├── data/                   mockAnalysis.ts · feed.ts · assets.ts · interests.ts
-│   ├── utils/                  hooks + helpers
-│   │   ├── useCreditGate.ts      ★ the ONE free-tier block → paywall, with attribution
-│   │   ├── useAiConsent.ts      ★ the ONE upload-consent block → /ai-consent (NOT a paywall)
-│   │   ├── useStagedProgress.ts  the "thinking" stage ticker (owns the timer, nothing else)
+│   ├── data/                   feed.ts · assets.ts · interests.ts  (shipped content only —
+│   │                           each engine owns its own stage list and demo seeds)
+│   ├── utils/                  pure helpers, no React
 │   │   ├── contentId.ts        ★ stable id from text — savable things, never uid()
-│   │   └── useBackToIdle.ts · useKeyboardInset.ts · haptics.ts · misc.ts
+│   │   └── haptics.ts · misc.ts (shareText · copyLine · uid · wait · timeAgo)
 │   ├── constants.ts            FREE_ANALYSIS_LIMIT (3) · FREE_SWIPE_LIMIT (10)
 │   └── types.ts                result shapes — must match the server schemas exactly
 │
@@ -370,7 +387,7 @@ Accessibility rules that are enforced, not aspirational:
   native alert renders in the OS palette — white sheet, blue text, ALL-CAPS Android buttons —
   in the middle of a dark app, and cannot read `tokens.ts` at all. Five hand-rolled copies
   across three screens collapsed into
-  [components/ConfirmDialog.tsx](../src/components/ConfirmDialog.tsx); pass `busy` for an async
+  [components/ui/ConfirmDialog.tsx](../src/components/ui/ConfirmDialog.tsx); pass `busy` for an async
   confirm and it disables both buttons, spins the danger one, and stops the scrim and Android
   back from dismissing a request that is already in flight. Add a prop rather than a sixth copy.
 - **Keyboard handling needs both halves.** `automaticallyAdjustKeyboardInsets` is iOS-only, and

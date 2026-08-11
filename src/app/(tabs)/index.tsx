@@ -20,7 +20,7 @@ import { useToast } from '@/components/ui/Toast';
 import { VibeCheckCard } from '@/components/feature/VibeCheckCard';
 import { APP_NAME } from '@/constants';
 import { BG } from '@/data/assets';
-import { ANALYZE_STAGES } from '@/data/mockAnalysis';
+import { ANALYZE_STAGES } from '@/services/engine';
 import { analyzeScreenshot, type EngineInput } from '@/services/engine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
