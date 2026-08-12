@@ -158,13 +158,30 @@ async function sessionFor(
  * ponytail: no index on updated_at, so this is a bounded scan every 6h. Add
  * ix_users_gc if the table ever gets big enough to feel it.
  */
+
+/**
+ * How long an untouched anonymous row is kept. Was 30 days.
+ *
+ * `/device` bumps `updated_at` on every cold launch, so this is time since the
+ * install last opened the app — not since it was created. Ten days is a phone
+ * left in a drawer over a long holiday; the row it deletes has spent nothing
+ * (`analysis_count = 0` is in the predicate), so a reappearing install with the
+ * same MMKV `install_id` is re-minted at exactly the state it left, and one that
+ * lost its MMKV was getting a new row either way.
+ *
+ * Shortening it costs nothing except the ability to look at an old abandoned
+ * install in the table. Anything the row could still be worth — an email, a
+ * subscription, a spent credit — is a separate clause above and is unaffected.
+ */
+const ANON_TTL_MS = 10 * 24 * 60 * 60 * 1000;
+
 export const anonymousGc = (now: number) => sql`
   DELETE FROM users
    WHERE email IS NULL
      AND rc_app_user_id IS NULL
      AND is_pro = 0
      AND analysis_count = 0
-     AND updated_at < ${now - 30 * 24 * 60 * 60 * 1000}
+     AND updated_at < ${now - ANON_TTL_MS}
    LIMIT 500
 `;
 
