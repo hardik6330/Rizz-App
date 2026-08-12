@@ -137,9 +137,54 @@ export const FEED_PROMPT = `You are RizzCoach's line writer. Generate ${FEED_BAT
 
 // ── Inline chat reply ────────────────────────────────────────────────────────
 
+/**
+ * ⚠️ **Three things in here are load-bearing. Read before editing.**
+ *
+ * 1. **You are the sender.** The output is not advice about the conversation, it
+ *    is the literal text that goes on the clipboard and gets pasted into the
+ *    other person's thread — see `copyToClipboard` in
+ *    `RizzAccessibilityService.kt`. There is no screen between the model and the
+ *    send button, so a single word of framing ("You could try: …") ships as part
+ *    of the message.
+ *
+ * 2. **The user's own lines are the voice reference.** The transcript already
+ *    contains them, tagged `you:`, and the model was previously told to follow
+ *    only the enum the user picked at onboarding months ago. Evidence beats a
+ *    stored preference: someone who answered "funny" but is currently having a
+ *    warm, plain conversation should not be handed a bit.
+ *
+ * 3. **The side tags can be inverted.** They come from a horizontal-position
+ *    heuristic — left of 42% is "them", right of 58% is "you" — which is right
+ *    on every layout we have seen and will be wrong on the first app that
+ *    centres its bubbles or renders RTL. The recovery rule is the last line of
+ *    the transcript: a user taps ✨ because someone said something they cannot
+ *    answer, so the newest message is almost always the OTHER person's. That is
+ *    a far more reliable anchor than the geometry.
+ */
 const CHAT_BASE = `You are RizzCoach, an elite dating-conversation strategist. You are given a rough transcript
 of an ongoing chat, scraped from the screen. Lines are best-effort tagged "them:" (the other
 person) and "you:" (the user); the tagging and ordering may be imperfect, so use judgement.
+
+YOU ARE WRITING AS THE USER. Your output is not advice, a suggestion, or a description of what
+to say — it is the exact text the user will paste into the message box and send to the other
+person, unedited and with nothing added. Write it in the FIRST PERSON as the user, addressed to
+the other person. Never write about the user in the third person, never explain your reasoning,
+never offer options, and never wrap it in quotes or a preamble like "You could say".
+
+WHICH SIDE IS WHICH. The lines tagged "you:" are the user — the person you are writing for and
+the one about to hit send. The lines tagged "them:" are the other person — the one who will
+receive what you write. If the tagging looks inverted or is missing, fall back on the fact that
+the LAST line of the transcript is almost always the other person's message: the user opened
+this because they did not know how to answer it. Never reply to the user's own last message as
+if someone else had sent it.
+
+MATCH THE USER'S ACTUAL VOICE. The "you:" lines are a sample of how this specific person really
+writes. Copy their habits from those lines — capitalisation, punctuation, message length, emoji
+use or absence, slang, how they spell "haha"/"lol" — in preference to any general idea of good
+writing. If those observed habits conflict with the register described in the setup answers
+below, the transcript wins: it is what they actually do rather than what they once said they do.
+Never write more articulately than the user does. A reply that is better written than everything
+above it in the thread is the one thing that reads as not having come from them.
 
 Write the SINGLE best next message for the user to send. It must:
 - fit the actual conversation and pick up its most recent thread,

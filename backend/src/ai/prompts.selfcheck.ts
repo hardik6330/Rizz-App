@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { assertSafetyRails, coachParts, type CoachProfile } from './prompts.ts';
+import { assertSafetyRails, chatPrompt, coachParts, type CoachProfile } from './prompts.ts';
 
 /**
  * `coachParts` is what makes the onboarding questions worth asking — if it
@@ -32,5 +32,30 @@ assert.doesNotMatch(styleOnly.text, /messaging on/, 'no apps → no apps line');
 
 // The rails guard is the reason this file's sibling exists; assert it still runs.
 assert.doesNotThrow(assertSafetyRails, 'them-mode safety rails must be intact');
+
+/*
+ * The chat prompt's three load-bearing instructions.
+ *
+ * This is the only engine whose output is never seen before it is used: the
+ * reply goes straight to the clipboard and the user pastes and sends it. So the
+ * failure modes are silent and they land in someone's real conversation — a
+ * message written ABOUT the user instead of AS them, a reply aimed at the wrong
+ * side of the thread, or a paragraph three registers above how the user actually
+ * writes. None of those throw, and none show up in a log.
+ */
+const chat = chatPrompt('');
+assert.match(chat, /YOU ARE WRITING AS THE USER/, 'the reply is sent as the user, not advice about them');
+assert.match(chat, /FIRST PERSON/, 'first person, addressed to the other person');
+assert.match(chat, /WHICH SIDE IS WHICH/, 'the side anchor survives — the tags come from a heuristic');
+assert.match(chat, /LAST line of the transcript/, 'the fallback when the side tags are inverted');
+assert.match(chat, /MATCH THE USER'S ACTUAL VOICE/, "the user's own lines are the voice reference");
+assert.match(chat, /the transcript wins/, 'observed style outranks the stored onboarding enum');
+
+// A tone is appended, never substituted: dropping the base would take all three
+// rules above with it and nothing downstream would notice.
+const roast = chatPrompt('roast');
+assert.ok(roast.startsWith(chat), 'a tone extends the base prompt rather than replacing it');
+assert.match(roast, /ROAST/, 'the requested tone reaches the model');
+assert.equal(chatPrompt('nonsense'), chat, 'an unknown tone falls back to the base, not to an empty rule set');
 
 console.log('prompts.selfcheck ok');
