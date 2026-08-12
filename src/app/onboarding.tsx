@@ -6,10 +6,12 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
+import { Chip } from '@/components/ui/Chip';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { APP_NAME } from '@/constants';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
+import { duration } from '@/theme/motion';
 import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { CoachApp, CoachStruggle, CoachStyle } from '@/types';
 import { haptic } from '@/utils/haptics';
@@ -68,6 +70,17 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(0);
   const [apps, setApps] = useState<CoachApp[]>([]);
   const [struggle, setStruggle] = useState<CoachStruggle | null>(null);
+  /**
+   * The last answer, held for one beat before it is committed.
+   *
+   * Steps 1 and 2 can show their selection because the screen stays up
+   * afterwards. Step 3 could not: `setCoach` un-declares this whole route in the
+   * same commit, so the row the user tapped was replaced by the app before it
+   * could ever draw as selected — the tap on the final question of a mandatory
+   * flow was the one tap in the app that acknowledged nothing. This holds the
+   * answer in local state, renders it selected, and commits on the next tick.
+   */
+  const [style, setStyle] = useState<CoachStyle | null>(null);
 
   /*
    * Mandatory, so Android's back button must not dismiss it — same rule and
@@ -114,12 +127,16 @@ export default function OnboardingScreen() {
    * layout waits for that response before declaring this route at all.
    */
 
-  const finish = (style: CoachStyle) => {
+  const finish = (picked: CoachStyle) => {
+    if (style != null) return; // already committing — a double-tap must not re-fire
     haptic.success();
+    setStyle(picked);
     // `struggle` cannot be null here — step 2 is only reachable through
     // `pickStruggle` — but the store type does not know that, and a fallback is
     // cheaper than a non-null assertion that a future re-order would make a lie.
-    setCoach({ apps, struggle: struggle ?? 'opening', style });
+    // One `quick` beat: long enough for the tick to register as an answer, short
+    // enough that nobody experiences it as the app hesitating. See theme/motion.
+    setTimeout(() => setCoach({ apps, struggle: struggle ?? 'opening', style: picked }), duration.quick);
   };
 
   return (
@@ -149,26 +166,17 @@ export default function OnboardingScreen() {
               A Hinge prompt and a WhatsApp thread need different messages. Pick every one you use.
             </Text>
             <View style={styles.chips}>
-              {APPS.map((app) => {
-                const on = apps.includes(app.key);
-                return (
-                  <HapticPressable
-                    key={app.key}
-                    onPress={() => toggleApp(app.key)}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: on }}
-                    accessibilityLabel={app.label}
-                    style={[styles.chip, on && styles.chipOn]}
-                  >
-                    <Ionicons
-                      name={app.icon}
-                      size={16}
-                      color={on ? palette.textPrimary : palette.textTertiary}
-                    />
-                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{app.label}</Text>
-                  </HapticPressable>
-                );
-              })}
+              {APPS.map((app) => (
+                <Chip
+                  key={app.key}
+                  label={app.label}
+                  icon={app.icon}
+                  size="md"
+                  on={apps.includes(app.key)}
+                  accessibilityRole="checkbox"
+                  onPress={() => toggleApp(app.key)}
+                />
+              ))}
             </View>
             <Button
               label={apps.length === 0 ? 'Pick at least one' : 'Continue'}
@@ -211,7 +219,7 @@ export default function OnboardingScreen() {
                 key={item.key}
                 label={item.label}
                 sub={item.sub}
-                on={false}
+                on={style === item.key}
                 onPress={() => finish(item.key)}
               />
             ))}
@@ -266,20 +274,6 @@ const styles = StyleSheet.create({
   },
   body: { ...typo.bodyMuted, marginBottom: spacing.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 11,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.full,
-    backgroundColor: palette.surface,
-    borderWidth: 1,
-    borderColor: palette.hairline,
-  },
-  chipOn: { backgroundColor: palette.surfaceHigh, borderColor: palette.violet },
-  chipText: { ...typo.label, fontWeight: '700', color: palette.textSecondary },
-  chipTextOn: { color: palette.textPrimary },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

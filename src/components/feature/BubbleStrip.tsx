@@ -5,7 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { useBubbleState } from '@/hooks/useBubbleState';
-import { palette, radii, spacing, type as typo } from '@/theme/tokens';
+import { palette, radii, semantic, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
 /**
@@ -45,7 +45,7 @@ export function BubbleStrip() {
   const { icon, tint, text } = killed
     ? {
         icon: 'warning' as const,
-        tint: palette.gold,
+        tint: semantic.warning,
         text: 'Bubble stopped by your phone — tap to restart it',
       }
     : watching

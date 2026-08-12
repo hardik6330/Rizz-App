@@ -161,12 +161,17 @@ export default function LabScreen() {
     if (outcome === 'copied') toast.show("Copied. Go get 'em.");
   };
 
-  const toggleSaveReply = (option: ReplyOption) => {
+  /*
+   * `text` rather than `option.text`: the card owns a local draft now, so what
+   * gets banked is the line as the user last left it. Still keyed on the option
+   * id, so editing a saved line updates that row instead of adding a second.
+   */
+  const toggleSaveReply = (option: ReplyOption, text: string) => {
     if (!result) return;
     haptic.light();
     toggleSave({
       id: `engine-${result.id}-${option.id}`,
-      text: option.text,
+      text,
       category: 'Engine',
     });
   };
@@ -269,8 +274,8 @@ export default function LabScreen() {
                     option={option}
                     index={index}
                     saved={isReplySaved(option)}
-                    onCopy={() => void copyText(option.text)}
-                    onToggleSave={() => toggleSaveReply(option)}
+                    onCopy={(text) => void copyText(text)}
+                    onToggleSave={(text) => toggleSaveReply(option, text)}
                   />
                 ))}
                 {result.sims != null && result.sims.length > 0 && (

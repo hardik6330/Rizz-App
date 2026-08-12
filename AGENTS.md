@@ -1197,6 +1197,33 @@ clips there — `LockOverlay` had to become a `ScrollView` for exactly this reas
   `screens/welcome/styles.ts` is a scale model of a phone drawn inside a card, where its
   overrides still sit on top of a token. If a new size feels necessary, add a *role* to `type`
   with a reason — do not reintroduce a number.
+- **A raw `.duration(<number>)` is an ESLint error too, same rule and same reason.** Pick one of
+  the four roles in `theme/motion.ts` — `instant` (120, confirming a touch) · `quick` (200,
+  something small arriving) · `standard` (280, the default) · `deliberate` (420, the reveal
+  after a wait) — or `EXIT` (160) for anything leaving. Twelve hand-picked millisecond counts
+  were in the tree before this and nobody had decided that a toast took 250ms and a card 260;
+  that is one intention typed twice. **`screens/welcome/**` is exempt in full**, because its
+  600 and 700ms ripples are beats in a choreographed demo synced to the phase holds in
+  `shared.tsx`, not durations somebody failed to tokenise. Retiming them desynchronises the
+  demo to make a grep look tidy.
+- **`Button` and `Chip` are the two shapes, and neither is optional.** Seven hand-built CTAs
+  and four hand-built pills existed before them, all at different heights. `Button` owns label
+  colour per variant (`accent` fills are light and take ink; `primary` is violet and takes
+  white) — the caller never passes it. `Chip` has `sm` for filter rows you scan, which carries
+  `CHIP_HIT_SLOP` so a 30pt pill is still a 44pt target, and `md` for a choice you make, where
+  the pill IS the target. `overImage` is a real variant, not drift: Discover's filters float
+  over a photo and need the darkened ground. The two gradient CTAs in `paywall.tsx` and
+  `LockOverlay.tsx` stay outside `Button` — they are cinematic by design, and folding them in
+  would drag gradients and shadows into the primitive to serve two call sites.
+- **`palette.scrim` is the modal backdrop; `palette.surfaceInset` is anything recessed.** The
+  elevation model had no way to say "below ground", so an input well had to borrow
+  `surfaceHigh` — the token for something *raised* — and every text field read as a button.
+  `LockOverlay` deliberately keeps a lighter veil than `scrim`: it is selling the feed behind
+  it, and hiding that removes the reason to unlock.
+- **State colours come from `semantic`, not from the brand palette.** `gold` was simultaneously
+  "the bubble was killed, act on this" and "this line is a Closer"; one entry with two meanings
+  is how the next person picks the wrong one. `semantic.{success,warning,error,info,disabled}`
+  for status, raw brand colours for fills, category tints and gradients.
 - **`type.reply` is for generated text — a reply, a bio, a saved line, a roast, a scan summary.**
   It is the one role at 17/25 regular, and it exists so what the user sends is never rendered in
   the same style as the UI describing it. Do not use it for chrome.

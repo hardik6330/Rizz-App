@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
 
+import { EXIT } from '@/theme/motion';
 import { categoryColor, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { SavedItem } from '@/types';
 import { timeAgo } from '@/utils/misc';
@@ -21,7 +22,7 @@ export function VaultItem({ item, index, onCopy, onShare, onRemove }: VaultItemP
   return (
     <Animated.View
       entering={FadeInDown.delay(Math.min(index, 8) * 45).springify().damping(17)}
-      exiting={FadeOut.duration(160)}
+      exiting={FadeOut.duration(EXIT)}
       layout={LinearTransition.springify().damping(18)}
       style={styles.card}
     >

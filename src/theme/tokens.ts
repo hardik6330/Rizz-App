@@ -11,8 +11,19 @@ export const palette = {
   ink: '#0A0A12', // app background
   surface: '#13131E', // cards
   surfaceHigh: '#1B1B2A', // elevated cards / chips
+  /**
+   * Below ground, not above it — input wells, quote blocks, the search field.
+   *
+   * The elevation model had no way to say "recessed": a well drawn on `surface`
+   * had to be `surfaceHigh`, which is the token for something raised, so an
+   * input read as a button. Darker than `ink` so it reads as a hole in the card
+   * rather than another card.
+   */
+  surfaceInset: '#0E0E18',
   hairline: 'rgba(255,255,255,0.08)',
   hairlineStrong: 'rgba(255,255,255,0.14)',
+  /** The one modal backdrop. Was written by hand, differently, on three screens. */
+  scrim: 'rgba(5,5,8,0.72)',
 
   // Brand
   violet: '#8B5CF6',
@@ -37,6 +48,23 @@ export const palette = {
    * greys collapse into one. Check any new grey against all three surfaces.
    */
   textTertiary: '#868697',
+} as const;
+
+/**
+ * Status colours, named for what they MEAN rather than what they are.
+ *
+ * `gold` was doing two unrelated jobs — "the bubble was killed, act on this" and
+ * "this line is a Closer" — and a palette entry with two meanings is how the
+ * next person picks the wrong one. Screens showing state read from here; the raw
+ * brand colours stay for fills, category tints and gradients.
+ */
+export const semantic = {
+  success: palette.mint,
+  warning: palette.gold,
+  error: palette.danger,
+  info: palette.cyan,
+  /** Flat, not the brand colour at low opacity — see the note in Button.tsx. */
+  disabled: palette.surfaceHigh,
 } as const;
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 } as const;

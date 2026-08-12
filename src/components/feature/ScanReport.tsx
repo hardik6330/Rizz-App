@@ -11,6 +11,7 @@ import { track } from '@/services/analytics';
 import { PROFILE_LABELS } from '@/services/profileEngine';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
+import { duration } from '@/theme/motion';
 import { glyph, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { ProfileScanResult, ProfileScore, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
@@ -208,7 +209,7 @@ export function ScanReport({
         })}
       </View>
 
-      <Animated.View key={tab} entering={FadeInDown.duration(240)} style={styles.section}>
+      <Animated.View key={tab} entering={FadeInDown.duration(duration.quick)} style={styles.section}>
         {/* The active pill already names the section; repeating it verbatim below
             just cost a line of vertical space. Only show the fuller heading when it
             actually says more than the pill does. */}

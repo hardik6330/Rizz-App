@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleIconButton } from '@/components/ui/CircleIconButton';
 import { AiNotice } from '@/components/feature/AiNotice';
 import { Button } from '@/components/ui/Button';
+import { Chip } from '@/components/ui/Chip';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { INTERESTS } from '@/data/interests';
 import { ProUpsellCard } from '@/components/feature/ProUpsellCard';
@@ -22,7 +23,7 @@ import { useToast } from '@/components/ui/Toast';
 import { BIO_STAGES, optimizeBio } from '@/services/bioEngine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
-import { glyph, palette, radii, spacing, type as typo } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { BioOption, BioResult, BioVibe } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { copyLine } from '@/utils/misc';
@@ -226,31 +227,18 @@ export default function BioScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>YOUR INTERESTS</Text>
               <View style={styles.chipWrap}>
-                {INTERESTS.map((item) => {
-                  const active = selected.includes(item.label);
-                  return (
-                    <HapticPressable
-                      key={item.label}
-                      feedback="none"
-                      accessibilityRole="button"
-                      accessibilityLabel={item.label}
-                      accessibilityState={{ selected: active }}
-                      onPress={() => toggleInterest(item.label)}
-                      style={[
-                        styles.chip,
-                        active && {
-                          backgroundColor: `${palette.mint}24`,
-                          borderColor: `${palette.mint}88`,
-                        },
-                      ]}
-                    >
-                      <Text style={styles.chipEmoji}>{item.emoji}</Text>
-                      <Text style={[styles.chipLabel, active && { color: palette.textPrimary }]}>
-                        {item.label}
-                      </Text>
-                    </HapticPressable>
-                  );
-                })}
+                {INTERESTS.map((item) => (
+                  <Chip
+                    key={item.label}
+                    label={item.label}
+                    emoji={item.emoji}
+                    size="md"
+                    accent={palette.mint}
+                    on={selected.includes(item.label)}
+                    accessibilityRole="checkbox"
+                    onPress={() => toggleInterest(item.label)}
+                  />
+                ))}
               </View>
               <TextInput
                 value={custom}
@@ -406,25 +394,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: radii.full,
-    backgroundColor: palette.surface,
-    borderWidth: 1,
-    borderColor: palette.hairline,
-  },
-  chipEmoji: {
-    fontSize: glyph.md,
-  },
-  chipLabel: {
-    ...typo.label,
-    fontWeight: '700',
-    color: palette.textSecondary,
   },
   input: {
     backgroundColor: palette.surface,

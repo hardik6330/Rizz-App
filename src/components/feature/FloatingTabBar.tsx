@@ -3,10 +3,12 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useLayout } from '@/theme/layout';
+import { duration } from '@/theme/motion';
 import { absoluteFill, glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 import { HapticPressable } from '@/components/ui/HapticPressable';
@@ -67,6 +69,18 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
               accessibilityRole="tab"
               accessibilityLabel={label}
               accessibilityState={{ selected: focused }}
+              /*
+               * The pill travels instead of cutting.
+               *
+               * A true sliding indicator is not available here: the active item
+               * is WIDER than the others because it gains a label, so an
+               * absolutely-positioned bar would need next-frame geometry it
+               * cannot have and would snap to the wrong width before correcting.
+               * Animating the layout itself gets the same read — the gradient
+               * grows out of the tapped icon and collapses into the one you
+               * left — with no measurement and no second source of truth.
+               */
+              layout={LinearTransition.duration(duration.standard)}
               style={styles.itemWrap}
             >
               {focused ? (
@@ -77,9 +91,16 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                   style={[styles.itemActive, { paddingHorizontal: itemPad }]}
                 >
                   <Ionicons name={icons.filled} size={17} color={palette.textPrimary} />
-                  <Text style={styles.labelActive} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+                  {/* Fades in behind the growing pill rather than appearing at
+                      full width on frame one, which read as a pop. */}
+                  <Animated.Text
+                    entering={FadeIn.duration(duration.quick)}
+                    style={styles.labelActive}
+                    numberOfLines={1}
+                    maxFontSizeMultiplier={1.15}
+                  >
                     {label}
-                  </Text>
+                  </Animated.Text>
                 </LinearGradient>
               ) : (
                 <View style={[styles.item, { paddingHorizontal: itemPad }]}>

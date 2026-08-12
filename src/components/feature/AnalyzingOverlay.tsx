@@ -16,6 +16,7 @@ import Animated, {
 
 import { ANALYZE_STAGES } from '@/services/engine';
 import { cardHeightFor, useLayout } from '@/theme/layout';
+import { duration } from '@/theme/motion';
 import { absoluteFill, palette, radii, spacing, type as typo } from '@/theme/tokens';
 
 /** Designed height on a normal portrait phone; short screens get less. */
@@ -94,14 +95,26 @@ export function AnalyzingOverlay({ uri, stage }: AnalyzingOverlayProps) {
       <View style={styles.panel}>
         <Animated.Text
           key={stageText}
-          entering={FadeInDown.duration(260)}
+        /*
+           * Announced, not just drawn.
+           *
+           * This line is the only thing telling the user the engine is still
+           * working, and it changes every ~1.6s for six to ten seconds. To a
+           * screen reader it was silent — the whole wait was a blank screen with
+           * no indication anything was happening, which is indistinguishable from
+           * a hang. `polite` rather than `assertive` because it is progress, not
+           * an alert: it should queue behind whatever is being read, not cut it.
+           */
+          accessibilityLiveRegion="polite"
+          accessibilityRole="progressbar"
+          entering={FadeInDown.duration(duration.standard)}
           style={styles.stageText}
         >
           {stageText}
         </Animated.Text>
         <View style={styles.track}>
           <Animated.View
-            layout={LinearTransition.duration(500)}
+            layout={LinearTransition.duration(duration.deliberate)}
             style={[styles.fill, { width: `${progress * 100}%` }]}
           >
             <LinearGradient

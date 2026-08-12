@@ -9,6 +9,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { duration } from '@/theme/motion';
 import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 
 interface StagedLoaderProps {
@@ -49,13 +50,29 @@ export function StagedLoader({ stages, stage, badge, tint }: StagedLoaderProps) 
         <Text style={styles.badgeText}>{badge}</Text>
       </View>
 
-      <Animated.Text key={stageText} entering={FadeInDown.duration(260)} style={styles.stageText}>
+      <Animated.Text
+        key={stageText}
+        /*
+         * Announced, not just drawn.
+         *
+         * This line is the only thing telling the user the engine is still
+         * working, and it changes every ~1.6s for six to ten seconds. To a
+         * screen reader it was silent — the whole wait was a blank screen with
+         * no indication anything was happening, which is indistinguishable from
+         * a hang. `polite` rather than `assertive` because it is progress, not
+         * an alert: it should queue behind whatever is being read, not cut it.
+         */
+        accessibilityLiveRegion="polite"
+        accessibilityRole="progressbar"
+        style={styles.stageText}
+        entering={FadeInDown.duration(duration.standard)}
+      >
         {stageText}
       </Animated.Text>
 
       <View style={styles.track}>
         <Animated.View
-          layout={LinearTransition.duration(500)}
+          layout={LinearTransition.duration(duration.deliberate)}
           style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: tint }]}
         />
       </View>

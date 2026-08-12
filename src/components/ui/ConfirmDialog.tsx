@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     // Darker than the app background so the card reads as lifted off it — a
     // surface-coloured sheet on an ink scrim would just look like a panel.
-    backgroundColor: 'rgba(3,3,8,0.72)',
+    backgroundColor: palette.scrim,
   },
   dialog: {
     alignSelf: 'stretch',

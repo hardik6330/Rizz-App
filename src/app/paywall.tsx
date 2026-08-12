@@ -25,6 +25,7 @@ import { BG } from '@/data/assets';
 import { track, type PaywallSource } from '@/services/analytics';
 import { fetchPlans, purchasePlan, restorePurchases, type Plan } from '@/services/purchases';
 import { CONTENT_MAX, useLayout } from '@/theme/layout';
+import { duration } from '@/theme/motion';
 import { glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
@@ -267,7 +268,7 @@ export default function PaywallScreen() {
         needs time to land, earn it with the offer — not with a hidden exit.
       */}
       <Animated.View
-        entering={FadeIn.duration(240)}
+        entering={FadeIn.duration(duration.quick)}
         style={[styles.close, { top: insets.top + spacing.sm, left: gutter }]}
       >
         <CircleIconButton

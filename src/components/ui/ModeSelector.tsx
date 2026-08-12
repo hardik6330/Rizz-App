@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 
+import { duration } from '@/theme/motion';
 import { glyph, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { EngineMode } from '@/types';
 import { haptic } from '@/utils/haptics';
@@ -21,7 +22,7 @@ interface ModeSelectorProps {
 /** Segmented pills that pick which engine output is shown. */
 export function ModeSelector({ mode, onChange }: ModeSelectorProps) {
   return (
-    <Animated.View entering={FadeIn.duration(250)} style={styles.row}>
+    <Animated.View entering={FadeIn.duration(duration.quick)} style={styles.row}>
       {MODES.map((item) => {
         const active = item.key === mode;
         return (

@@ -44,7 +44,7 @@ function ratio(a: string, b: string): number {
 }
 
 /* Every surface a text colour can land on. surfaceHigh is the worst case. */
-const SURFACES = ['ink', 'surface', 'surfaceHigh'] as const;
+const SURFACES = ['ink', 'surface', 'surfaceHigh', 'surfaceInset'] as const;
 
 /*
  * 4.5 for anything used as normal-size text. All three text tokens qualify:

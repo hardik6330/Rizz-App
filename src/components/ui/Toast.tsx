@@ -5,7 +5,8 @@ import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useLayout } from '@/theme/layout';
-import { glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
+import { EXIT } from '@/theme/motion';
+import { glow, palette, radii, semantic, spacing, type as typo } from '@/theme/tokens';
 
 /**
  * What happened, which decides the icon and its colour.
@@ -17,9 +18,9 @@ import { glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
  * something went wrong is worse than saying nothing.
  */
 const TONES = {
-  success: { icon: 'checkmark-circle', color: palette.mint },
-  error: { icon: 'alert-circle', color: palette.danger },
-  info: { icon: 'information-circle', color: palette.violetBright },
+  success: { icon: 'checkmark-circle', color: semantic.success },
+  error: { icon: 'alert-circle', color: semantic.error },
+  info: { icon: 'information-circle', color: semantic.info },
 } as const satisfies Record<string, { icon: keyof typeof Ionicons.glyphMap; color: string }>;
 
 export type ToastTone = keyof typeof TONES;
@@ -73,7 +74,7 @@ export function useToast() {
     <View pointerEvents="none" style={[styles.host, { bottom, paddingHorizontal: gutter }]}>
       <Animated.View
         entering={FadeInUp.springify().damping(16)}
-        exiting={FadeOut.duration(160)}
+        exiting={FadeOut.duration(EXIT)}
         style={styles.toast}
         /*
          * Announced, not just drawn.

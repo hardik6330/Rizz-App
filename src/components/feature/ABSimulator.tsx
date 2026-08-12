@@ -14,6 +14,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { duration } from '@/theme/motion';
 import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { ReplyOption, SimThread } from '@/types';
 import { haptic } from '@/utils/haptics';
@@ -71,7 +72,7 @@ export function ABSimulator({ replies, sims }: ABSimulatorProps) {
       </HapticPressable>
 
       {open && (
-        <Animated.View entering={FadeIn.duration(220)} style={styles.body}>
+        <Animated.View entering={FadeIn.duration(duration.quick)} style={styles.body}>
           {/* A/B selector */}
           <View style={styles.segments}>
             {sims.slice(0, 2).map((thread, index) => {
@@ -165,7 +166,7 @@ function ChatBubble({ from, text, delay }: { from: 'you' | 'them'; text: string;
 
 function TypingIndicator() {
   return (
-    <Animated.View entering={FadeIn.duration(250)} style={[styles.bubble, styles.bubbleThem, styles.typing]}>
+    <Animated.View entering={FadeIn.duration(duration.quick)} style={[styles.bubble, styles.bubbleThem, styles.typing]}>
       {[0, 1, 2].map((index) => (
         <TypingDot key={index} index={index} />
       ))}

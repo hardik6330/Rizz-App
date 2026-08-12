@@ -1,17 +1,19 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Chip } from '@/components/ui/Chip';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import { CircleIconButton } from '@/components/ui/CircleIconButton';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyVault } from '@/components/feature/EmptyVault';
 import { useToast } from '@/components/ui/Toast';
-import { HapticPressable } from '@/components/ui/HapticPressable';
 import { VaultItem } from '@/components/feature/VaultItem';
 import { APP_NAME } from '@/constants';
 import { hydrateVault, useRizzStore } from '@/state/useRizzStore';
-import { CHIP_HIT_SLOP, useLayout } from '@/theme/layout';
+import { useLayout } from '@/theme/layout';
 import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { SavedItem } from '@/types';
 import { haptic } from '@/utils/haptics';
@@ -25,22 +27,50 @@ export default function VaultScreen() {
   const { gutter } = useLayout();
   const toast = useToast();
   const [filter, setFilter] = useState<Filter>('All');
+  const [query, setQuery] = useState('');
+  /**
+   * The server pull, which is a different thing from the MMKV read.
+   *
+   * MMKV rehydrates synchronously, so a user who saved on THIS device has their
+   * lines on the first frame and never sees a skeleton. The case this exists for
+   * is the reinstall: local store empty, forty lines on the server, and the
+   * screen confidently rendering "Zero lines banked (for now)" with a Browse
+   * button until the fetch lands. That is not a slow screen, it is a screen
+   * telling someone their vault is gone.
+   */
+  const [hydrating, setHydrating] = useState(true);
 
   const savedItems = useRizzStore((state) => state.savedItems);
   const removeSaved = useRizzStore((state) => state.removeSaved);
   const clearVault = useRizzStore((state) => state.clearVault);
 
   React.useEffect(() => {
-    void hydrateVault();
+    let alive = true;
+    // `finally`, not `then`: a failed fetch is also done hydrating, and leaving
+    // this true for ever would replace the empty state with a permanent
+    // skeleton — the worse of the two wrong answers.
+    void hydrateVault().finally(() => {
+      if (alive) setHydrating(false);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const [itemToDelete, setItemToDelete] = useState<SavedItem | null>(null);
   const [isClearConfirming, setIsClearConfirming] = useState(false);
 
   const items = useMemo(() => {
-    const sorted = [...savedItems].sort((a, b) => b.savedAt - a.savedAt);
-    return filter === 'All' ? sorted : sorted.filter((item) => item.category === filter);
-  }, [savedItems, filter]);
+    const needle = query.trim().toLowerCase();
+    return [...savedItems]
+      .sort((a, b) => b.savedAt - a.savedAt)
+      .filter((item) => filter === 'All' || item.category === filter)
+      // Substring, case-insensitive, on the line itself. Deliberately not fuzzy
+      // and not tokenised: the user is looking for a line they have read, and
+      // they type the words they remember from it. A vault is hundreds of rows
+      // at most, so this runs on every keystroke without being felt.
+      .filter((item) => needle === '' || item.text.toLowerCase().includes(needle));
+  }, [savedItems, filter, query]);
 
   const copyItem = (item: SavedItem) => copyLine(item.text, toast.show);
 
@@ -114,28 +144,49 @@ export default function VaultScreen() {
         />
       </View>
 
+      {savedItems.length > 0 && (
+        <View style={[styles.searchWrap, { marginHorizontal: gutter }]}>
+          <Ionicons name="search" size={16} color={palette.textTertiary} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search your lines…"
+            placeholderTextColor={palette.textTertiary}
+            style={styles.search}
+            autoCorrect={false}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+            accessibilityLabel="Search saved lines"
+          />
+          {/* Android has no `clearButtonMode`, and a field you can only empty by
+              holding backspace is a field people leave filtered by accident. */}
+          {query.length > 0 && (
+            <CircleIconButton
+              icon="close"
+              size={26}
+              onPress={() => setQuery('')}
+              accessibilityLabel="Clear search"
+            />
+          )}
+        </View>
+      )}
+
       {/* Category filters */}
       {savedItems.length > 0 && (
         <View style={[styles.filters, { paddingHorizontal: gutter }]}>
-          {FILTERS.map((value) => {
-            const active = value === filter;
-            return (
-              <HapticPressable
-                key={value}
-                feedback="none"
-                onPress={() => {
-                  haptic.selection();
-                  setFilter(value);
-                }}
-                accessibilityLabel={`Filter: ${value}`}
-                accessibilityState={{ selected: active }}
-                hitSlop={CHIP_HIT_SLOP}
-                style={[styles.filterChip, active && styles.filterChipActive]}
-              >
-                <Text style={[styles.filterText, active && styles.filterTextActive]}>{value}</Text>
-              </HapticPressable>
-            );
-          })}
+          {FILTERS.map((value) => (
+            <Chip
+              key={value}
+              label={value}
+              on={value === filter}
+              accessibilityRole="tab"
+              accessibilityLabel={`Filter: ${value}`}
+              onPress={() => {
+                haptic.selection();
+                setFilter(value);
+              }}
+            />
+          ))}
         </View>
       )}
 
@@ -153,10 +204,16 @@ export default function VaultScreen() {
         windowSize={5}
         removeClippedSubviews
         ListEmptyComponent={
-          savedItems.length === 0 ? (
+          hydrating && savedItems.length === 0 ? (
+            <SkeletonList />
+          ) : savedItems.length === 0 ? (
             <EmptyVault onBrowse={browseFeed} />
           ) : (
-            <Text style={styles.noMatches}>Nothing saved in this category yet.</Text>
+            <Text style={styles.noMatches}>
+              {query.trim() === ''
+                ? 'Nothing saved in this category yet.'
+                : `No saved line matches "${query.trim()}".`}
+            </Text>
           )
         }
         renderItem={({ item, index }) => (
@@ -236,30 +293,33 @@ const styles = StyleSheet.create({
     ...typo.caption,
     fontWeight: '400',
   },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
+    marginBottom: spacing.md,
+    borderRadius: radii.full,
+    // Recessed, not raised: this is a hole you type into. See `surfaceInset`.
+    backgroundColor: palette.surfaceInset,
+    borderWidth: 1,
+    borderColor: palette.hairline,
+  },
+  search: {
+    ...typo.body,
+    flex: 1,
+    paddingVertical: 10,
+  },
   filters: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
     paddingBottom: spacing.md,
   },
-  filterChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
-    borderRadius: radii.full,
-    backgroundColor: palette.surface,
-    borderWidth: 1,
-    borderColor: palette.hairline,
-  },
   filterChipActive: {
     backgroundColor: `${palette.violet}24`,
     borderColor: `${palette.violet}88`,
-  },
-  filterText: {
-    ...typo.caption,
-    fontWeight: '600',
-  },
-  filterTextActive: {
-    color: palette.textPrimary,
   },
   list: {
     paddingTop: spacing.xs,

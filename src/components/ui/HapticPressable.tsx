@@ -1,6 +1,11 @@
 import React from 'react';
 import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  type AnimatedProps,
+} from 'react-native-reanimated';
 
 import { haptic } from '@/utils/haptics';
 
@@ -8,6 +13,12 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface HapticPressableProps extends Omit<PressableProps, 'style'> {
   style?: StyleProp<ViewStyle>;
+  /**
+   * Reanimated layout transition, forwarded to the underlying animated
+   * Pressable. Exposed because this component IS one — the tab bar's active item
+   * changes width when it gains its label, and without this the pill jumps.
+   */
+  layout?: AnimatedProps<PressableProps>['layout'];
   /** Pressed-state scale target. */
   scaleTo?: number;
   feedback?: 'light' | 'medium' | 'none';

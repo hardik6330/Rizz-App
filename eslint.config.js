@@ -101,7 +101,7 @@ module.exports = defineConfig([
      * come from the scale.
      */
     files: ['src/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}'],
-    ignores: ['src/theme/**', 'src/screens/welcome/styles.ts'],
+    ignores: ['src/theme/**', 'src/screens/welcome/**'],
     rules: {
       'no-restricted-syntax': [
         'error',
@@ -109,6 +109,18 @@ module.exports = defineConfig([
           selector: "Property[key.name='fontSize'][value.type='Literal']",
           message:
             'Pick a role from `type` in theme/tokens.ts (or `glyph` for an emoji) instead of a raw fontSize. Twelve roles cover every screen; a new number starts the drift again.',
+        },
+        {
+          /*
+           * Same rule, one axis later. Twelve hand-picked durations were in the
+           * tree (160…700) and nobody had decided that a toast took 250ms and a
+           * card 260 — that is one intention typed twice. `screens/welcome/**`
+           * is ignored above because its timings are a choreographed
+           * performance, not UI feedback; see the note in theme/motion.ts.
+           */
+          selector: "CallExpression[callee.property.name='duration'] > Literal",
+          message:
+            'Pick a role from `duration` in theme/motion.ts (or EXIT for something leaving) instead of a raw millisecond count.',
         },
       ],
     },

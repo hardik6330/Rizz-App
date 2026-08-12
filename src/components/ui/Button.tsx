@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { palette, radii, spacing, type as typo } from '@/theme/tokens';
+import { palette, radii, semantic, spacing, type as typo } from '@/theme/tokens';
 import { HapticPressable } from './HapticPressable';
 
 /**
@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
   },
   off: {
-    backgroundColor: palette.surfaceHigh,
+    backgroundColor: semantic.disabled,
     borderWidth: 0,
   },
   label: {

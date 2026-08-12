@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FeedCard } from '@/components/feature/FeedCard';
 import { Button } from '@/components/ui/Button';
-import { HapticPressable } from '@/components/ui/HapticPressable';
+import { Chip } from '@/components/ui/Chip';
 import { LimitBadge, ProChip } from '@/components/ui/LimitBadge';
 import { LockOverlay } from '@/components/feature/LockOverlay';
 import { useToast } from '@/components/ui/Toast';
@@ -16,8 +16,8 @@ import { generateFreshOpeners } from '@/services/feedEngine';
 import { restorePurchases } from '@/services/purchases';
 import { swipesUsedToday, todayKey } from '@/state/limits';
 import { useRizzStore } from '@/state/useRizzStore';
-import { CHIP_HIT_SLOP, useLayout, useTabBarClearance } from '@/theme/layout';
-import { glyph, categoryColor, palette, radii, spacing, type as typo } from '@/theme/tokens';
+import { useLayout, useTabBarClearance } from '@/theme/layout';
+import { glyph, categoryColor, palette, spacing, type as typo } from '@/theme/tokens';
 import type { FeedCategory, FeedItem } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { copyLine, shareText } from '@/utils/misc';
@@ -253,11 +253,15 @@ export default function DiscoverScreen() {
           </View>
           <View style={styles.topRight}>
             {isPro ? <ProChip /> : <LimitBadge used={swipesToday} limit={FREE_SWIPE_LIMIT} icon="flame" />}
-            <View style={styles.counterChip}>
-              <Text style={styles.counterText} maxFontSizeMultiplier={1.2}>
-                {data.length === 0 ? '0/0' : `${Math.min(index + 1, data.length)}/${data.length}`}
-              </Text>
-            </View>
+            {/*
+              Position, NOT progress. This used to read `12/48`, and a
+              denominator turns a feed into a deck you can finish — a user 25%
+              of the way through something finite behaves completely differently
+              from one browsing. The feed is refilled and reshuffled, so the
+              denominator was never even true. The `LimitBadge` beside this
+              already states the only ceiling that is real.
+            */}
+            <Chip label={`#${Math.min(index + 1, Math.max(data.length, 1))}`} overImage tabularNums />
           </View>
         </View>
 
@@ -266,31 +270,17 @@ export default function DiscoverScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={[styles.filterRow, { paddingHorizontal: gutter }]}
         >
-          {FILTERS.map(({ key, label }) => {
-            const active = key === filter;
-            const accent = key === 'All' ? palette.violet : categoryColor(key);
-            return (
-              <HapticPressable
-                key={key}
-                feedback="none"
-                accessibilityRole="tab"
-                accessibilityState={{ selected: active }}
-                onPress={() => changeFilter(key)}
-                hitSlop={CHIP_HIT_SLOP}
-                style={[
-                  styles.filterChip,
-                  active && { backgroundColor: `${accent}2E`, borderColor: `${accent}88` },
-                ]}
-              >
-                <Text
-                  style={[styles.filterText, active && { color: palette.textPrimary }]}
-                  maxFontSizeMultiplier={1.2}
-                >
-                  {label}
-                </Text>
-              </HapticPressable>
-            );
-          })}
+          {FILTERS.map(({ key, label }) => (
+            <Chip
+              key={key}
+              label={label}
+              on={key === filter}
+              accent={key === 'All' ? palette.violet : categoryColor(key)}
+              overImage
+              accessibilityRole="tab"
+              onPress={() => changeFilter(key)}
+            />
+          ))}
         </ScrollView>
       </View>
 
@@ -389,18 +379,6 @@ const styles = StyleSheet.create({
   filterRow: {
     gap: spacing.sm,
   },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: radii.full,
-    backgroundColor: 'rgba(10,10,18,0.55)',
-    borderWidth: 1,
-    borderColor: palette.hairlineStrong,
-  },
-  filterText: {
-    ...typo.caption,
-    fontWeight: '700',
-  },
   title: {
     ...typo.h2,
     fontWeight: '900',
@@ -413,18 +391,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexShrink: 0,
     gap: spacing.sm,
-  },
-  counterChip: {
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 6,
-    borderRadius: radii.full,
-    backgroundColor: 'rgba(10,10,18,0.6)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: palette.hairlineStrong,
-  },
-  counterText: {
-    ...typo.caption,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
   },
 });

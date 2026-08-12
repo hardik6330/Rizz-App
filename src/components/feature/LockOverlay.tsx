@@ -6,6 +6,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { CONTENT_MAX, useLayout } from '@/theme/layout';
+import { duration } from '@/theme/motion';
 import { absoluteFill, glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 
@@ -18,7 +19,7 @@ interface LockOverlayProps {
 export function LockOverlay({ onUnlock, onRestore }: LockOverlayProps) {
   const { gutter } = useLayout();
   return (
-    <Animated.View entering={FadeIn.duration(320)} style={StyleSheet.absoluteFill}>
+    <Animated.View entering={FadeIn.duration(duration.standard)} style={StyleSheet.absoluteFill}>
       <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
       <View style={styles.veil} />
 
@@ -85,6 +86,9 @@ export function LockOverlay({ onUnlock, onRestore }: LockOverlayProps) {
 const styles = StyleSheet.create({
   veil: {
     ...absoluteFill,
+    /* Deliberately lighter than `palette.scrim`. That token is for a modal
+       backdrop, where the content behind is inert; this veils the feed it is
+       trying to sell, and hiding it would remove the reason to unlock. */
     backgroundColor: 'rgba(7,7,11,0.6)',
   },
   content: {
