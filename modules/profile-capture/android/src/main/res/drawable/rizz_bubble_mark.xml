@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The RizzCoach bolt — the app's own mark, redrawn as a vector.
+
+  ## ⚠️ There are two icon folders and only one of them is real
+
+  `assets/icons/` is RizzCoach: a black bolt on a violet→pink gradient, and it is
+  what `app.json` actually points `icon` / `adaptiveIcon` at. `assets/images/` is
+  leftover Expo template art — a blue chevron — and nothing ships from it. They
+  hold files with IDENTICAL names (`icon.png`, `android-icon-monochrome.png`), so
+  reading the wrong one gives you a plausible mark that is not this product's.
+  This file was drawn from the wrong folder once; check `app.json` before
+  trusting either.
+
+  ## Why a vector rather than the PNG
+
+  No density buckets, and this is the only drawable in the module — shipping five
+  mipmap folders to draw one bolt is not worth it. Filled rather than stroked,
+  matching the source: the mark's weight is in the shape itself, and a stroked
+  approximation loses the asymmetric taper that makes it read as a bolt at 28dp
+  instead of a lightning-emoji.
+
+  The path is the foreground art normalised from its 1024 box to 24.
+
+  No `android:tint` here on purpose — the mark is drawn in two colours. On the
+  bubble it is INK on the brand gradient, exactly as the launcher icon renders
+  it; in flight it is WHITE, because it crosses whatever the user's chat happens
+  to look like and a black bolt disappears on a dark thread. Callers tint.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:pathData="M11.84,2.46 L18.21,2.46 L13.94,9.61 L18.52,9.84 L7.27,23.67 L11.13,13.01 L5.86,13.12 Z"
+      android:fillColor="#FFFFFF" />
+</vector>

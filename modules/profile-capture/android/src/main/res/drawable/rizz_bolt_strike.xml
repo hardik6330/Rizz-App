@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The strike, as an AnimatedVectorDrawable over `rizz_bolt_arc`.
+
+  Both paths are animated as a pair: `trimPathEnd` 0→1 draws the stroke from the
+  bubble toward the card, and `trimPathStart` follows it a beat behind so the
+  tail erases as the head advances. That trailing gap is what makes it read as a
+  discharge rather than as a line being drawn — a stroke that stays fully lit
+  looks like an underline.
+
+  Decelerate on the head, accelerate on the tail: the strike arrives fast and
+  settles, then the tail catches up and snuffs it out.
+
+  Durations are the beat, not decoration. 180ms of draw is at the edge of what
+  reads as instantaneous while still being seen; longer and it becomes a loading
+  animation, shorter and half the users never register it happened.
+-->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/rizz_bolt_arc">
+
+  <target android:name="bolt">
+    <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:animation">
+      <set>
+        <objectAnimator
+            android:propertyName="trimPathEnd"
+            android:valueFrom="0"
+            android:valueTo="1"
+            android:duration="180"
+            android:interpolator="@android:interpolator/decelerate_quad" />
+        <objectAnimator
+            android:propertyName="trimPathStart"
+            android:valueFrom="0"
+            android:valueTo="1"
+            android:startOffset="140"
+            android:duration="200"
+            android:interpolator="@android:interpolator/accelerate_quad" />
+      </set>
+    </aapt:attr>
+  </target>
+
+  <target android:name="glow">
+    <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:animation">
+      <set>
+        <objectAnimator
+            android:propertyName="trimPathEnd"
+            android:valueFrom="0"
+            android:valueTo="1"
+            android:duration="180"
+            android:interpolator="@android:interpolator/decelerate_quad" />
+        <objectAnimator
+            android:propertyName="trimPathStart"
+            android:valueFrom="0"
+            android:valueTo="1"
+            android:startOffset="140"
+            android:duration="200"
+            android:interpolator="@android:interpolator/accelerate_quad" />
+        <!-- The glow fades out ahead of the bolt, so the last thing on screen is
+             a clean white line rather than a violet smear. -->
+        <objectAnimator
+            android:propertyName="strokeAlpha"
+            android:valueFrom="0.45"
+            android:valueTo="0"
+            android:startOffset="200"
+            android:duration="140" />
+      </set>
+    </aapt:attr>
+  </target>
+</animated-vector>

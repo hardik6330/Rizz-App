@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The arc the strike travels along — a jagged stroke, drawn rather than moved.
+
+  ## Why this replaced a translating glyph
+
+  The first version slid the bolt icon from the bubble to the card. It read as an
+  icon being moved, because that is what it was: real lightning does not travel
+  across your field of view, it APPEARS along a path all at once. Animating
+  `trimPathEnd` from 0 to 1 draws the stroke head-first in ~180ms, which is the
+  whole difference between a sticker in transit and a discharge.
+
+  ## Geometry
+
+  Drawn bottom-right → top-left in a 100×100 viewport, because the bubble parks
+  at a screen edge below the reply card. `playStrike` stretches this viewport
+  across the rectangle between the two and mirrors it with `scaleX = -1f` when
+  the bubble is on the left, so one path serves both sides.
+
+  Two paths: the bolt, and a wider, fainter copy underneath doing the job of a
+  glow (a real blur would mean a RenderEffect and API 31, and this is minSdk 24).
+  Both animate together — see `rizz_bolt_strike.xml`.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="100dp"
+    android:height="100dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+  <path
+      android:name="glow"
+      android:pathData="M92,92 L58,64 L74,50 L38,34 L52,20 L8,8"
+      android:strokeColor="#8B5CF6"
+      android:strokeWidth="11"
+      android:strokeAlpha="0.45"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round" />
+  <path
+      android:name="bolt"
+      android:pathData="M92,92 L58,64 L74,50 L38,34 L52,20 L8,8"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="4"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round" />
+</vector>

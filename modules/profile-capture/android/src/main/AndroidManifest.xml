@@ -11,6 +11,14 @@
   -->
   <uses-permission android:name="android.permission.INTERNET" />
 
+  <!--
+    The tick when the strike lands. `expo-haptics` already pulls this into the
+    app manifest, but that is a different package's dependency and the module
+    must not rely on it: drop expo-haptics from the app and the bubble would
+    stop vibrating with nothing to explain why. Declared where it is used.
+  -->
+  <uses-permission android:name="android.permission.VIBRATE" />
+
   <application>
     <!--
       Screen reader for the supported apps. Declares BIND_ACCESSIBILITY_SERVICE so

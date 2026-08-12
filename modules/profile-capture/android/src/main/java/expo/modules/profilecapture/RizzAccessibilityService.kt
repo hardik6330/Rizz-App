@@ -580,6 +580,10 @@ class RizzAccessibilityService : AccessibilityService() {
 
     capturing = true
     toast(getString(R.string.rizz_chat_reading))
+    // The visible half of the read. It loops until `finishChat` stops it, which
+    // is the only honest length for a wait that is three scrolls plus a network
+    // round trip. See OverlayController.showSweep.
+    overlay?.showSweep()
 
     // Read the visible screen first (the newest messages — the ones that matter
     // most), THEN scroll up for history. batches[0] is newest.
@@ -592,6 +596,9 @@ class RizzAccessibilityService : AccessibilityService() {
     main.postDelayed({
       if (capturing) {
         Log.w(TAG, "chat watchdog fired — resetting")
+        // The sweep is a whole-screen window; leaving it up after a wedged read
+        // is the worst outcome this watchdog exists to prevent.
+        overlay?.hideSweep()
         capturing = false
       }
     }, CHAT_WATCHDOG_MS)
@@ -629,6 +636,7 @@ class RizzAccessibilityService : AccessibilityService() {
 
     val transcript = buildTranscript(batches)
     if (transcript.isBlank()) {
+      overlay?.hideSweep()
       toast(getString(R.string.rizz_chat_unreadable))
       capturing = false
       return
@@ -637,6 +645,9 @@ class RizzAccessibilityService : AccessibilityService() {
     chatExecutor.execute {
       val result = GeminiChatClient.suggestReply(this, transcript, tone)
       main.post {
+        // Whatever happened, the read is over — stop the sweep before anything
+        // else, or a thrown branch below leaves it running over another app.
+        overlay?.hideSweep()
         if (result == null) {
           // A failure must NOT charge — the server refunds its own charge, and
           // nothing is applied here.
@@ -646,8 +657,24 @@ class RizzAccessibilityService : AccessibilityService() {
           // The server's balance, verbatim. Never a local decrement — that would
           // count the same generation twice.
           ChatEntitlement.applyServerCredits(this, result.isPro, result.remaining)
-          toast(getString(R.string.rizz_chat_copied))
-          hideBubble()
+          /*
+           * Show it before it is pasted.
+           *
+           * The toast alone meant the first sight anyone had of what this app had
+           * written for them was after it was already in the message box, one tap
+           * from a real person. The card carries the text; the burst says the
+           * bubble is what produced it. No toast here — the card says the same
+           * thing and does not stack with it.
+           *
+           * The bubble stays up until the card is done, because `playBurst`
+           * animates the bubble and `hideBubble` would take it mid-flight.
+           */
+          overlay?.playBurst()
+          // Cause, then effect: the bolt leaves the bubble and the card opens
+          // where it lands. Running both at once reads as two unrelated things.
+          overlay?.playStrike {
+            overlay?.showReply(result.reply) { copyToClipboard(result.reply) }
+          }
         }
         capturing = false
       }

@@ -24,11 +24,25 @@
   -->
   <string name="rizz_overlay_denied">RizzCoach needs \"Display over other apps\" — turn it on in the app</string>
 
+  <!--
+    Tone-menu labels, shown UNDER each emoji rather than only as a
+    contentDescription. 🔮 / 🔥 / 🎭 are not self-explanatory — three unlabelled
+    emoji make the user guess, and a wrong guess costs a credit and lands in a
+    real conversation. One word each: the menu floats over somebody else's app
+    and has to stay small enough not to cover the thread it is reading.
+  -->
+  <string name="rizz_tone_vibe">Vibe</string>
+  <string name="rizz_tone_roast">Roast</string>
+  <string name="rizz_tone_comedy">Funny</string>
+  <string name="rizz_tone_cancel">Close</string>
+
   <!-- Inline chat-reply toasts. Kept short — they flash over another app. -->
   <string name="rizz_chat_reading">Reading the chat…</string>
   <string name="rizz_chat_copied">✨ Reply copied — paste &amp; send</string>
   <string name="rizz_chat_failed">Couldn\'t reach the coach — try again</string>
   <string name="rizz_chat_unreadable">Couldn\'t read the conversation</string>
   <string name="rizz_chat_out_of_credits">Out of free replies — open RizzCoach to unlock</string>
+  <!-- Under the reply on the card. The clipboard is easily lost to the next copy. -->
+  <string name="rizz_chat_tap_to_copy">Tap to copy again</string>
   <string name="rizz_chat_no_key">RizzCoach isn\'t connected yet — open the app once</string>
 </resources>
