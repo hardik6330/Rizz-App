@@ -3,7 +3,13 @@ import { StyleSheet } from 'react-native';
 import { absoluteFill, glow, palette, radii, spacing, type } from '@/theme/tokens';
 
 /** The one stylesheet for all four welcome demos. Shared keys (phone, captionBox,
- *  sparkle, resultBar…) are why it is one module and not four. */
+ *  sparkle, resultBar…) are why it is one module and not four.
+ *
+ *  The remaining `fontSize` overrides are deliberate and must stay: every one of
+ *  them sits inside the phone mock-up, which is a scale model of a UI drawn
+ *  inside a card. App type at app sizes would not fit and would not read as a
+ *  phone. They override a token rather than replacing it, so the weights,
+ *  colours and tracking still come from the scale. */
 export const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.ink },
   pager: { flex: 1 },
@@ -65,7 +71,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   toneChipText: { ...type.caption, fontSize: 11, color: palette.violetBright },
-  bioText: { ...type.body, fontSize: 15, lineHeight: 22 },
+  bioText: { ...type.body },
   bioActions: { flexDirection: 'row', gap: spacing.sm },
   ghostButton: {
     flexDirection: 'row',
@@ -76,7 +82,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
   },
-  ghostButtonText: { ...type.caption, fontSize: 12, color: palette.textSecondary },
+  ghostButtonText: { ...type.caption },
 
   /* ── The Lab demo ──────────────────────────────────────────────────────── */
 
@@ -164,7 +170,7 @@ export const styles = StyleSheet.create({
     backgroundColor: 'rgba(10,10,18,0.78)',
   },
   profileCopy: { padding: spacing.md, gap: 6 },
-  profileName: { ...type.h2, fontSize: 22 },
+  profileName: { ...type.h2 },
   profileTag: { ...type.caption, color: palette.textTertiary },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
   chip: {
@@ -376,6 +382,6 @@ export const styles = StyleSheet.create({
     backgroundColor: palette.violet,
     ...glow(palette.violet, 0.4, 20),
   },
-  ctaText: { ...type.h3, fontSize: 17 },
+  ctaText: { ...type.h3 },
   footnote: { ...type.caption, color: palette.textTertiary, textAlign: 'center' },
 });

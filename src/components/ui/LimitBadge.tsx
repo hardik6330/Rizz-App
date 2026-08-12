@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 
 interface LimitBadgeProps {
   used: number;
@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
     backgroundColor: `${palette.gold}1A`,
   },
   text: {
-    fontSize: 12,
+    ...typo.caption,
     fontWeight: '800',
     letterSpacing: 0.4,
   },

@@ -9,7 +9,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 
 interface StagedLoaderProps {
   /** Status lines cycled while the engine works. */
@@ -92,15 +92,11 @@ const styles = StyleSheet.create({
     backgroundColor: palette.mint,
   },
   badgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    color: palette.textSecondary,
+    ...typo.micro,
   },
   stageText: {
-    fontSize: 15,
+    ...typo.body,
     fontWeight: '700',
-    color: palette.textPrimary,
     letterSpacing: -0.2,
   },
   track: {

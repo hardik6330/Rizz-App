@@ -44,6 +44,18 @@ export const Errors = {
     new ApiError(409, 'USERNAME_TAKEN', 'That username is taken — try another'),
   noAccount: () =>
     new ApiError(404, 'NO_ACCOUNT', 'No account uses that email — create one instead'),
+  /**
+   * Signup only. The message names the reason and the fix, because "that email
+   * does not look right" on a perfectly well-formed address reads as a bug in
+   * the app rather than a rule — and the user is one field edit away from
+   * succeeding. See `lib/disposable.ts` for what counts and why gmail does not.
+   */
+  disposableEmail: () =>
+    new ApiError(
+      400,
+      'DISPOSABLE_EMAIL',
+      'Temporary inboxes are not accepted — use an email you keep',
+    ),
   wrongPassword: () =>
     new ApiError(401, 'WRONG_PASSWORD', 'That password is wrong — or get in with an emailed code'),
   accountLocked: () =>

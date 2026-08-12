@@ -9,6 +9,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticPressable } from '@/components/ui/HapticPressable';
@@ -86,17 +87,24 @@ export default function WelcomeScreen() {
    * eight-second loop that never stops is the exact thing the setting exists to
    * turn off. So we hold the FINAL frame — the pasted reply, which is the point
    * of the whole sequence — rather than dropping them to a static empty chat.
-   * `null` while unknown so the first frame is not the wrong one.
+   *
+   * **Seeded synchronously, and that is the whole point.** This was
+   * `useState<boolean | null>(null)` filled in by the `isReduceMotionEnabled()`
+   * promise below, and `usePhaseLoop` refuses to tick until the answer is a
+   * definite `false` — correctly, since starting early shows the opening frames
+   * of an animation the user asked never to see. But that meant no page could
+   * begin its first hold until a native round trip resolved, so the first beat
+   * of every demo was late by however long that took, on top of the hold itself.
+   * Reanimated's `useReducedMotion()` reads the same system value from a cached
+   * native constant with no await, so the first frame already knows.
+   *
+   * The listener stays: `useReducedMotion` is captured at startup and does not
+   * follow a change made while the app is open.
    */
-  const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
+  const [reduceMotion, setReduceMotion] = useState<boolean>(useReducedMotion);
   useEffect(() => {
-    let alive = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((on) => alive && setReduceMotion(on));
     const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => {
-      alive = false;
-      sub.remove();
-    };
+    return () => sub.remove();
   }, []);
 
   /**

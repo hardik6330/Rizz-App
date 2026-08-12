@@ -3,7 +3,7 @@ import React from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { HapticPressable } from '@/components/ui/HapticPressable';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
 /**
@@ -63,6 +63,7 @@ export function CredentialFields({
   onToggleReveal,
   onToggleUseCode,
   onSubmit,
+  onFieldFocus,
 }: {
   isSignup: boolean;
   useCode: boolean;
@@ -76,11 +77,14 @@ export function CredentialFields({
   onToggleReveal: () => void;
   onToggleUseCode: () => void;
   onSubmit: () => void;
+  /** Scrolls the tapped field clear of the keyboard — see useKeyboardReveal. */
+  onFieldFocus?: () => void;
 }) {
   return (
     <>
       {isSignup && (
         <Field
+          onFocus={onFieldFocus}
           label="USERNAME"
           value={username}
           onChangeText={onUsername}
@@ -93,6 +97,7 @@ export function CredentialFields({
       )}
 
       <Field
+          onFocus={onFieldFocus}
         label="EMAIL"
         value={email}
         onChangeText={onEmail}
@@ -109,6 +114,7 @@ export function CredentialFields({
           remember something. */}
       {!useCode && (
         <Field
+          onFocus={onFieldFocus}
           label="PASSWORD"
           value={password}
           onChangeText={onPassword}
@@ -176,6 +182,7 @@ export function CodeStep({
   onSubmit,
   onBack,
   onResend,
+  onFieldFocus,
 }: {
   code: string;
   onCode: (v: string) => void;
@@ -183,10 +190,12 @@ export function CodeStep({
   onSubmit: () => void;
   onBack: () => void;
   onResend: () => void;
+  onFieldFocus?: () => void;
 }) {
   return (
     <>
       <Field
+          onFocus={onFieldFocus}
         label="6-DIGIT CODE"
         value={code}
         // Digits only, and never longer than six. Pasting from a mail client drags
@@ -237,7 +246,7 @@ export function CodeStep({
 
 const styles = StyleSheet.create({
   field: { gap: 7 },
-  fieldLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, color: palette.textTertiary },
+  fieldLabel: { ...typo.overline, fontWeight: '800', letterSpacing: 1.2, color: palette.textTertiary },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -248,12 +257,12 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: palette.hairlineStrong,
   },
-  input: { flex: 1, minWidth: 0, paddingVertical: 14, fontSize: 15, color: palette.textPrimary },
+  input: { ...typo.body, flex: 1, minWidth: 0, paddingVertical: 14 },
 
-  codeInput: { textAlign: 'center', fontSize: 26, fontWeight: '800', letterSpacing: 10 },
+  codeInput: { ...typo.h1, textAlign: 'center', fontWeight: '800', letterSpacing: 10 },
   codeActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
-  linkText: { fontSize: 13, fontWeight: '700', color: palette.textSecondary },
-  linkAccent: { fontSize: 13, fontWeight: '700', color: palette.violetBright },
+  linkText: { ...typo.label, fontWeight: '700', color: palette.textSecondary },
+  linkAccent: { ...typo.label, fontWeight: '700', color: palette.violetBright },
 });

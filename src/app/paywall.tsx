@@ -21,11 +21,11 @@ import { HapticPressable } from '@/components/ui/HapticPressable';
 import { PlanCard } from '@/components/feature/PlanCard';
 import { useToast } from '@/components/ui/Toast';
 import { PRIVACY_URL, TERMS_URL } from '@/constants';
-import { AVATARS, BG } from '@/data/assets';
+import { BG } from '@/data/assets';
 import { track, type PaywallSource } from '@/services/analytics';
 import { fetchPlans, purchasePlan, restorePurchases, type Plan } from '@/services/purchases';
 import { CONTENT_MAX, useLayout } from '@/theme/layout';
-import { glow, palette, radii, spacing } from '@/theme/tokens';
+import { glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
 /**
@@ -68,7 +68,6 @@ export default function PaywallScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
-  const [showClose, setShowClose] = useState(false);
   /** Read in the unmount cleanup, which closes over the first render's state. */
   const convertedRef = useRef(false);
 
@@ -80,10 +79,8 @@ export default function PaywallScreen() {
       setSelectedId(fetched.find((plan) => plan.badge)?.id ?? fetched[0]?.id ?? null);
     });
     track({ name: 'paywall_viewed', source: entry });
-    const closeTimer = setTimeout(() => setShowClose(true), 1400);
     return () => {
       mounted = false;
-      clearTimeout(closeTimer);
       // Fires on every exit — the ✕, the hardware back button, and the automatic
       // dismissal after a purchase. `converted` is what separates the three.
       track({ name: 'paywall_dismissed', source: entry, converted: convertedRef.current });
@@ -114,7 +111,7 @@ export default function PaywallScreen() {
       toast.show('Pro restored — welcome back');
       setTimeout(() => router.back(), 900);
     } else {
-      toast.show('No previous purchases found');
+      toast.show('No previous purchases found', { tone: 'info' });
     }
   };
 
@@ -172,20 +169,20 @@ export default function PaywallScreen() {
           ))}
         </View>
 
-        {/* Social proof */}
-        <View style={styles.proofRow}>
-          <View style={styles.avatarStack}>
-            {[AVATARS.maya, AVATARS.marcus, AVATARS.zara].map((avatar, index) => (
-              <Image
-                key={index}
-                source={avatar}
-                style={[styles.proofAvatar, { marginLeft: index === 0 ? 0 : -10 }]}
-                contentFit="cover"
-              />
-            ))}
-          </View>
-          <Text style={styles.proofText}>★ 4.9 · Loved by 120k+ hopeless romantics</Text>
-        </View>
+        {/*
+          A capability claim, not social proof.
+
+          This was "★ 4.9 · Loved by 120k+ hopeless romantics" over three of the
+          generated AVATARS portraits, presented as customers — on an app that has
+          shipped to neither store. Fabricated ratings and testimonials are covered
+          by App Store Review 2.3.1 and Play's Misrepresentation policy, and this is
+          the screen a reviewer reads hardest. It also contradicted the rule at the
+          top of this file: do not put a claim on the purchase screen that the code
+          cannot back. Put the numbers back when the numbers are real.
+        */}
+        <Text style={styles.proofText}>
+          Every reply is written from the conversation you upload — never a template.
+        </Text>
 
         {/* Plans */}
         <View style={styles.plans}>
@@ -260,21 +257,27 @@ export default function PaywallScreen() {
         </View>
       </ScrollView>
 
-      {/* Delayed close */}
-      {showClose && (
-        <Animated.View
-          entering={FadeIn.duration(400)}
-          style={[styles.close, { top: insets.top + spacing.sm, left: gutter }]}
-        >
-          <CircleIconButton
-            icon="close"
-            size={36}
-            color={palette.textSecondary}
-            onPress={() => router.back()}
-            accessibilityLabel="Close paywall"
-          />
-        </Animated.View>
-      )}
+      {/*
+        Present from the first frame.
+
+        It used to appear on a 1400ms timer. Deliberately withholding the way out
+        of a purchase screen is a documented App Store review flag and reads as a
+        dark pattern to the user, and the dwell it bought was worth far less than
+        having the most-scrutinised screen in the app re-reviewed. If the offer
+        needs time to land, earn it with the offer — not with a hidden exit.
+      */}
+      <Animated.View
+        entering={FadeIn.duration(240)}
+        style={[styles.close, { top: insets.top + spacing.sm, left: gutter }]}
+      >
+        <CircleIconButton
+          icon="close"
+          size={36}
+          color={palette.textSecondary}
+          onPress={() => router.back()}
+          accessibilityLabel="Close paywall"
+        />
+      </Animated.View>
 
       {toast.element}
     </View>
@@ -353,11 +356,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontSize: 33,
-    lineHeight: 39,
-    fontWeight: '900',
-    letterSpacing: -1,
-    color: palette.textPrimary,
+    ...typo.display,
     textAlign: 'center',
     marginTop: spacing.sm,
   },
@@ -365,8 +364,7 @@ const styles = StyleSheet.create({
     color: palette.gold,
   },
   subtitle: {
-    fontSize: 15,
-    color: palette.textSecondary,
+    ...typo.bodyMuted,
     textAlign: 'center',
     marginBottom: spacing.sm,
   },
@@ -394,32 +392,16 @@ const styles = StyleSheet.create({
     borderColor: `${palette.violet}44`,
   },
   featureText: {
+    ...typo.body,
     flex: 1,
-    fontSize: 14.5,
     fontWeight: '600',
-    color: palette.textPrimary,
-  },
-  proofRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginVertical: spacing.xs,
-  },
-  avatarStack: {
-    flexDirection: 'row',
-  },
-  proofAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: palette.ink,
   },
   proofText: {
-    fontSize: 12,
+    ...typo.caption,
     fontWeight: '600',
-    color: palette.textSecondary,
+    textAlign: 'center',
+    marginVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
   },
   plans: {
     gap: spacing.md,
@@ -440,10 +422,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   ctaText: {
-    fontSize: 16.5,
+    ...typo.h3,
     fontWeight: '800',
-    letterSpacing: -0.2,
-    color: palette.textPrimary,
   },
   shimmer: {
     position: 'absolute',
@@ -452,7 +432,7 @@ const styles = StyleSheet.create({
     width: 70,
   },
   ctaSub: {
-    fontSize: 11.5,
+    ...typo.caption,
     color: palette.textTertiary,
     textAlign: 'center',
   },
@@ -465,13 +445,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   legalText: {
-    fontSize: 12,
+    ...typo.caption,
     fontWeight: '600',
     color: palette.textTertiary,
   },
   legalDot: {
+    ...typo.caption,
     color: palette.textTertiary,
-    fontSize: 12,
   },
   close: {
     position: 'absolute',

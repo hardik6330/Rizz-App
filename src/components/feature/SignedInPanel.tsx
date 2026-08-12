@@ -6,7 +6,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { deleteAccount, logOut } from '@/services/auth';
-import { palette, radii, spacing } from '@/theme/tokens';
+import type { ShowToast } from '@/components/ui/Toast';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
 /**
@@ -28,7 +29,7 @@ export function SignedInPanel({
   showToast,
 }: {
   username: string;
-  showToast: (message: string) => void;
+  showToast: ShowToast;
 }) {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -58,7 +59,7 @@ export function SignedInPanel({
     } catch {
       haptic.warning();
       setConfirmingDelete(false);
-      showToast('Could not delete your account — try again');
+      showToast('Could not delete your account — try again', { tone: 'error' });
     } finally {
       setDeleting(false);
     }
@@ -128,7 +129,7 @@ export function SignedInPanel({
 }
 
 const styles = StyleSheet.create({
-  body: { fontSize: 14.5, lineHeight: 21, color: palette.textSecondary },
+  body: { ...typo.bodyMuted },
   signedIn: { alignItems: 'center', gap: spacing.md, paddingTop: spacing.xl },
   avatar: {
     width: 64,
@@ -140,7 +141,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: `${palette.violet}55`,
   },
-  signedInName: { fontSize: 21, fontWeight: '900', letterSpacing: -0.4, color: palette.textPrimary },
+  signedInName: { ...typo.h2, fontWeight: '900' },
   secondary: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -154,7 +155,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: palette.hairlineStrong,
   },
-  secondaryText: { fontSize: 14.5, fontWeight: '700', color: palette.textSecondary },
+  secondaryText: { ...typo.body, fontWeight: '700', color: palette.textSecondary },
   deleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -167,5 +168,5 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,92,92,0.3)',
   },
-  deleteBtnText: { fontSize: 14.5, fontWeight: '700', color: palette.danger },
+  deleteBtnText: { ...typo.body, fontWeight: '700', color: palette.danger },
 });

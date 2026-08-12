@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AiNotice } from '@/components/feature/AiNotice';
 import { ABSimulator } from '@/components/feature/ABSimulator';
 import { AnalyzingOverlay } from '@/components/feature/AnalyzingOverlay';
+import { BubbleStrip } from '@/components/feature/BubbleStrip';
 import { CircleIconButton } from '@/components/ui/CircleIconButton';
 import { GlowDropZone } from '@/components/ui/GlowDropZone';
 import { ModeSelector } from '@/components/ui/ModeSelector';
@@ -16,6 +17,7 @@ import { ProUpsellCard } from '@/components/feature/ProUpsellCard';
 import { ReplyCard } from '@/components/feature/ReplyCard';
 import { RoastCard } from '@/components/feature/RoastCard';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { TheRead } from '@/components/feature/TheRead';
 import { useToast } from '@/components/ui/Toast';
 import { VibeCheckCard } from '@/components/feature/VibeCheckCard';
 import { APP_NAME } from '@/constants';
@@ -24,7 +26,7 @@ import { ANALYZE_STAGES } from '@/services/engine';
 import { analyzeScreenshot, type EngineInput } from '@/services/engine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { AnalysisResult, EngineMode, ReplyOption } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { copyLine, shareText } from '@/utils/misc';
@@ -87,7 +89,7 @@ export default function LabScreen() {
         haptic.success();
       } catch (error) {
         console.warn('[lab] analysis failed', error);
-        toast.show('The engine choked — try again');
+        toast.show('The engine choked — try again', { tone: 'error' });
         if (charged.current) {
           setPhase('done');
           onFail?.();
@@ -213,27 +215,38 @@ export default function LabScreen() {
           />
         )}
 
+        {/* The moat, one line, under the primary action and never over it. */}
+        {phase === 'idle' && <BubbleStrip />}
+
         {phase === 'analyzing' && imageUri != null && (
           <AnalyzingOverlay uri={imageUri} stage={stage} />
         )}
 
         {phase === 'done' && result != null && (
           <View style={styles.results}>
-            {/* Result header */}
+            {/*
+              Evidence, then context, then output.
+
+              The order used to be the other way round: a decorative header ("The
+              read is in" over a 46pt thumbnail) came first and the quote the
+              engine is actually answering came second, at body size, in grey.
+              That buried the one thing separating this from a line generator —
+              see TheRead. The header stays because it carries reroll and reset,
+              but it is now a caption, not a headline.
+            */}
+            {result.read != null && <TheRead read={result.read} />}
+
             <Animated.View entering={FadeInDown.springify().damping(17)} style={styles.resultHeader}>
               {imageUri != null && (
                 <Image source={{ uri: imageUri }} style={styles.thumb} contentFit="cover" />
               )}
-              <View style={styles.resultHeaderText}>
-                <Text style={styles.resultTitle}>The read is in</Text>
-                <Text style={styles.resultSub}>
-                  {mode === 'rizz'
-                    ? '3 replies, ranked by vibe'
-                    : mode === 'vibe'
-                      ? 'Their texting psyche, decoded'
-                      : 'Your texting, on trial'}
-                </Text>
-              </View>
+              <Text style={styles.resultSub}>
+                {mode === 'rizz'
+                  ? '3 replies, ranked by vibe'
+                  : mode === 'vibe'
+                    ? 'Their texting psyche, decoded'
+                    : 'Your texting, on trial'}
+              </Text>
               <CircleIconButton
                 icon="sparkles"
                 size={38}
@@ -247,17 +260,6 @@ export default function LabScreen() {
                 accessibilityLabel="Start a new analysis"
               />
             </Animated.View>
-
-            {/* Proof it read the chat: the message these replies are answering. */}
-            {result.read != null && (
-              <Animated.View entering={FadeInDown.springify().damping(17)} style={styles.readCard}>
-                <Text style={styles.readLabel} maxFontSizeMultiplier={1.3}>
-                  {result.read.lastFrom === 'them' ? 'THEY SAID' : 'YOU SAID'}
-                </Text>
-                <Text style={styles.readQuote}>“{result.read.lastMessage}”</Text>
-                <Text style={styles.readThread}>{result.read.thread}</Text>
-              </Animated.View>
-            )}
 
             {mode === 'rizz' && result.replies != null && (
               <>
@@ -309,15 +311,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   heroTitle: {
-    fontSize: 31,
-    lineHeight: 36,
-    fontWeight: '900',
-    letterSpacing: -1,
-    color: palette.textPrimary,
+    ...typo.display,
   },
   heroSub: {
-    fontSize: 14.5,
-    color: palette.textSecondary,
+    ...typo.bodyMuted,
   },
   results: {
     gap: spacing.md,
@@ -326,52 +323,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    marginBottom: spacing.xs,
   },
+  // Smaller than the old 46: the screenshot is a reminder of what was analysed,
+  // not the subject of the screen. The quote above it is.
   thumb: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: radii.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: palette.hairlineStrong,
     backgroundColor: palette.surface,
   },
-  resultHeaderText: {
-    flex: 1,
-    gap: 2,
-  },
-  resultTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    color: palette.textPrimary,
-  },
   resultSub: {
-    fontSize: 12.5,
-    color: palette.textSecondary,
-  },
-  readCard: {
-    backgroundColor: palette.surfaceHigh,
-    borderRadius: radii.lg,
-    borderLeftWidth: 3,
-    borderLeftColor: palette.violet,
-    padding: spacing.lg,
-    gap: 6,
-  },
-  readLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-    color: palette.violetBright,
-  },
-  readQuote: {
-    fontSize: 15,
-    lineHeight: 21,
-    color: palette.textPrimary,
-  },
-  readThread: {
-    fontSize: 12.5,
-    lineHeight: 17,
-    color: palette.textSecondary,
+    ...typo.caption,
+    flex: 1,
   },
 });

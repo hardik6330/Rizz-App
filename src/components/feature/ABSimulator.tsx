@@ -219,10 +219,9 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
-    fontSize: 15,
+    ...typo.body,
     fontWeight: '800',
     letterSpacing: -0.2,
-    color: palette.textPrimary,
   },
   subtitle: {
     ...typo.caption,
@@ -254,13 +253,12 @@ const styles = StyleSheet.create({
     backgroundColor: `${palette.violet}1F`,
   },
   segmentLetter: {
-    fontSize: 14,
+    ...typo.label,
     fontWeight: '900',
     color: palette.textTertiary,
   },
   segmentLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+    ...typo.label,
     color: palette.textSecondary,
   },
   thread: {
@@ -286,10 +284,10 @@ const styles = StyleSheet.create({
     borderColor: `${palette.mint}3D`,
   },
   probText: {
-    fontSize: 10,
+    ...typo.micro,
     fontWeight: '700',
-    color: palette.mint,
     letterSpacing: 0.3,
+    color: palette.mint,
   },
   bubble: {
     maxWidth: '82%',
@@ -308,8 +306,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 5,
   },
   bubbleText: {
-    fontSize: 14,
-    lineHeight: 20,
+    ...typo.body,
     color: '#FFFFFF',
   },
   typing: {
@@ -324,7 +321,9 @@ const styles = StyleSheet.create({
     backgroundColor: palette.textSecondary,
   },
   disclaimer: {
-    fontSize: 10.5,
+    ...typo.micro,
+    fontWeight: '400',
+    letterSpacing: 0,
     color: palette.textTertiary,
     textAlign: 'center',
   },

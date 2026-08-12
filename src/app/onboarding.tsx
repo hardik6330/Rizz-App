@@ -1,15 +1,16 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import { BackHandler, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Button } from '@/components/ui/Button';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { APP_NAME } from '@/constants';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { CoachApp, CoachStruggle, CoachStyle } from '@/types';
 import { haptic } from '@/utils/haptics';
 
@@ -63,7 +64,6 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const { gutter } = useLayout();
   const setCoach = useRizzStore((s) => s.setCoach);
-  const coach = useRizzStore((s) => s.coach);
 
   const [step, setStep] = useState(0);
   const [apps, setApps] = useState<CoachApp[]>([]);
@@ -98,21 +98,21 @@ export default function OnboardingScreen() {
     setStep(2);
   };
 
-  /**
-   * **The only exit, and it is not called here.** Answering writes the store; the
-   * store having answers is what closes the screen.
+  /*
+   * **The only exit, and there is no navigation call anywhere in this file.**
    *
-   * Because the other way to acquire answers is the server: a reinstall logs in,
-   * `/v1/user/credits` returns the stored profile, and `adoptCoach` fills the
-   * store while this screen is already on its way up — the launch push fires on a
-   * 400ms timer and the round trip does not always beat it. Closing on the store
-   * rather than on the tap means that user gets the screen dismissed out from
-   * under them instead of being asked three questions they already answered on
-   * their old phone.
+   * Answering writes the store, and the store having answers is what closes the
+   * screen: `_layout.tsx` declares this route only while `coach` is null, so
+   * `setCoach` un-declares it and declares `(tabs)` in the same commit. Same
+   * technique as the welcome and account gates before it.
+   *
+   * This was a `useEffect` calling `router.back()`, because the screen used to
+   * be pushed on top of an already-mounted app. It is a gate now, so there is
+   * nothing behind it to pop to and `back()` would be a no-op at best. The case
+   * it existed for — a reinstall whose answers arrive from `/v1/user/credits`
+   * while this screen is on its way up — cannot happen any more either: the
+   * layout waits for that response before declaring this route at all.
    */
-  useEffect(() => {
-    if (coach) router.back();
-  }, [coach]);
 
   const finish = (style: CoachStyle) => {
     haptic.success();
@@ -170,10 +170,11 @@ export default function OnboardingScreen() {
                 );
               })}
             </View>
-            <Cta
+            <Button
               label={apps.length === 0 ? 'Pick at least one' : 'Continue'}
               disabled={apps.length === 0}
               onPress={() => setStep(1)}
+              style={styles.cta}
             />
           </Animated.View>
         )}
@@ -249,29 +250,6 @@ function Row({
   );
 }
 
-function Cta({
-  label,
-  disabled,
-  onPress,
-}: {
-  label: string;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <HapticPressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled }}
-      style={[styles.cta, disabled && styles.ctaOff]}
-    >
-      <Text style={styles.ctaText}>{label}</Text>
-    </HapticPressable>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: palette.ink },
   scroll: { gap: spacing.xl },
@@ -280,20 +258,13 @@ const styles = StyleSheet.create({
   tickOn: { backgroundColor: palette.violet },
   page: { gap: spacing.md },
   kicker: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
+    ...typo.overline,
     color: palette.textTertiary,
   },
   title: {
-    fontSize: 29,
-    lineHeight: 35,
-    fontWeight: '900',
-    letterSpacing: -0.8,
-    color: palette.textPrimary,
+    ...typo.display,
   },
-  body: { fontSize: 14.5, lineHeight: 21, color: palette.textSecondary, marginBottom: spacing.sm },
+  body: { ...typo.bodyMuted, marginBottom: spacing.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   chip: {
     flexDirection: 'row',
@@ -307,7 +278,7 @@ const styles = StyleSheet.create({
     borderColor: palette.hairline,
   },
   chipOn: { backgroundColor: palette.surfaceHigh, borderColor: palette.violet },
-  chipText: { fontSize: 14, fontWeight: '700', color: palette.textSecondary },
+  chipText: { ...typo.label, fontWeight: '700', color: palette.textSecondary },
   chipTextOn: { color: palette.textPrimary },
   row: {
     flexDirection: 'row',
@@ -321,16 +292,8 @@ const styles = StyleSheet.create({
   },
   rowOn: { borderColor: palette.violet },
   rowText: { flex: 1, gap: 3 },
-  rowLabel: { fontSize: 15, fontWeight: '800', color: palette.textPrimary },
-  rowSub: { fontSize: 12.5, lineHeight: 18, color: palette.textTertiary },
-  cta: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 15,
-    borderRadius: radii.full,
-    backgroundColor: palette.violet,
-    marginTop: spacing.sm,
-  },
-  ctaOff: { backgroundColor: palette.surfaceHigh },
-  ctaText: { fontSize: 15, fontWeight: '900', color: palette.textPrimary },
+  rowLabel: { ...typo.body, fontWeight: '800' },
+  rowSub: { ...typo.caption, fontWeight: '400', color: palette.textTertiary },
+  // Only what is not the Button's business: where it sits on the page.
+  cta: { marginTop: spacing.sm },
 });

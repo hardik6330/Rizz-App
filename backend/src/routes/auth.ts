@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { db } from '../db/client.ts';
+import { isDisposableEmail } from '../lib/disposable.ts';
 import { proNow } from '../lib/entitlement.ts';
 import { ApiError, Errors } from '../lib/errors.ts';
 import { signAccess } from '../lib/jwt.ts';
@@ -280,6 +281,20 @@ auth.post('/otp', async (c) => {
   const parsed = OtpBody.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) throw Errors.badRequest(parsed.error.issues[0]?.message ?? 'Check your email');
   const { email, purpose, username } = parsed.data;
+
+  /*
+   * Throwaway inboxes, refused before anything is looked up or mailed.
+   *
+   * Signup only, and that asymmetry is deliberate: accounts made before this
+   * rule existed still have to be able to log in and — more to the point — to
+   * recover with a mailed code. Refusing the login purpose would strand them
+   * with no way back in and no way to change the address.
+   *
+   * This is the only gate needed: `/signup` will not write a row without a code
+   * that only this endpoint issues, so an address refused here can never reach
+   * it.
+   */
+  if (purpose === 'signup' && isDisposableEmail(email)) throw Errors.disposableEmail();
 
   const rows = await db.execute(sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`);
   const taken = ((rows as unknown as [Array<{ id: string }>])[0]?.[0] ?? null) != null;

@@ -56,6 +56,25 @@ object ChatEntitlement {
   }
 
   /**
+   * Remember the install id `/v1/auth/device` minted for us.
+   *
+   * **Every anonymous `users` row this app has ever leaked came from not doing
+   * this.** `GeminiChatClient.authenticate` omits `install_id` when it has none,
+   * the server answers by minting a fresh UUID *and a fresh row to hang it on*,
+   * and the reply was being read for `access_token` only — so the id was thrown
+   * away and the very next re-auth asked for another one. One dead row per
+   * authentication, for ever, with no email and no username to tell them apart.
+   *
+   * JS does the same thing in `persistSession`; this is the half of that contract
+   * the Kotlin port dropped. Written only when the server actually echoed one, so
+   * a response without the field can never blank an id we already hold.
+   */
+  fun setInstallId(ctx: Context, installId: String) {
+    if (installId.isBlank()) return
+    prefs(ctx).edit().putString(KEY_INSTALL, installId).apply()
+  }
+
+  /**
    * Is there an API to call? Replaces the old `hasLiveKey`.
    *
    * Without a configured URL the inline path has nothing to talk to, so the tap

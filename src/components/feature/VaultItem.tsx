@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
 
-import { categoryColor, palette, radii, spacing } from '@/theme/tokens';
+import { categoryColor, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { SavedItem } from '@/types';
 import { timeAgo } from '@/utils/misc';
 import { CircleIconButton } from '@/components/ui/CircleIconButton';
@@ -77,9 +77,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   text: {
-    fontSize: 14.5,
-    lineHeight: 21,
-    color: palette.textPrimary,
+    ...typo.reply,
   },
   metaRow: {
     flexDirection: 'row',
@@ -94,12 +92,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   categoryText: {
-    fontSize: 9,
-    fontWeight: '800',
+    ...typo.micro,
     letterSpacing: 1,
   },
   time: {
-    fontSize: 11,
+    ...typo.overline,
+    letterSpacing: 0,
+    textTransform: 'none',
+    fontWeight: '400',
     color: palette.textTertiary,
   },
   actions: {

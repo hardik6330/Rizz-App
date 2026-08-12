@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 
-import { palette, radii, spacing } from '@/theme/tokens';
+import { glyph, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { EngineMode } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { HapticPressable } from './HapticPressable';
@@ -79,13 +79,13 @@ const styles = StyleSheet.create({
     borderColor: palette.hairline,
   },
   emoji: {
-    fontSize: 15,
+    fontSize: glyph.lg,
     lineHeight: 20,
   },
   label: {
     // RN defaults flexShrink to 0; text will not shrink into the pill without it.
+    ...typo.label,
     flexShrink: 1,
-    fontSize: 13,
     fontWeight: '700',
     color: palette.textSecondary,
   },

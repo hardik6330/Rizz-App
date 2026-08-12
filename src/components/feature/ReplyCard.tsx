@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { ReplyOption } from '@/types';
 import { CircleIconButton } from '@/components/ui/CircleIconButton';
 
@@ -70,19 +70,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   styleText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.1,
+    ...typo.micro,
   },
   spice: {
-    fontSize: 11,
+    ...typo.overline,
+    letterSpacing: 0,
   },
   spacer: {
     flex: 1,
   },
   text: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: palette.textPrimary,
+    ...typo.reply,
   },
 });

@@ -7,7 +7,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useLayout } from '@/theme/layout';
-import { absoluteFill, glow, palette, radii, spacing } from '@/theme/tokens';
+import { absoluteFill, glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 
@@ -135,9 +135,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
   },
   labelActive: {
+    ...typo.label,
     flexShrink: 1,
-    fontSize: 13,
     fontWeight: '700',
-    color: palette.textPrimary,
   },
 });

@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withSpring } from 'react-native-reanimated';
 
-import { glow, palette, spacing } from '@/theme/tokens';
+import { glow, palette, spacing, type as typo } from '@/theme/tokens';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 
 interface ActionRailProps {
@@ -111,7 +111,9 @@ const styles = StyleSheet.create({
     borderColor: palette.hairlineStrong,
   },
   label: {
-    fontSize: 11,
+    ...typo.overline,
+    letterSpacing: 0,
+    textTransform: 'none',
     fontWeight: '600',
     color: 'rgba(255,255,255,0.85)',
     textShadowColor: 'rgba(0,0,0,0.6)',

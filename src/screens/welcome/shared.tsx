@@ -22,7 +22,7 @@ export interface PageProps {
   top: number;
   /** False for pages the user is not looking at, so their timers do not run. */
   live: boolean;
-  reduceMotion: boolean | null;
+  reduceMotion: boolean;
 }
 
 /**
@@ -56,25 +56,56 @@ export function visualHeight(windowHeight: number): number {
 export const CARD_CHROME = 114;
 
 /**
+ * Longest the opening frame is allowed to sit still before a first-time viewer
+ * sees anything move.
+ *
+ * The authored holds are written for a loop that is already running, where the
+ * first phase is a reset beat between the payoff and the next pass. On arrival
+ * it is not a beat, it is dead air: `ScanPage.card` and `DemoPage.chat` are both
+ * **2400ms**, so landing on either page — or swiping to it, on top of the scroll
+ * settling first — showed a completely static card for nearly two and a half
+ * seconds, which reads as a screen that has failed to load rather than as a demo
+ * about to start. 800ms is what `BioPage.blank` and `LabPage.empty` already use
+ * and what their comments describe: long enough to let the eye land, short
+ * enough that nobody wonders whether it is broken.
+ *
+ * Only the first pass is capped. Once the user has seen the payoff, the long
+ * reset beat is doing its job and stays.
+ */
+const LEAD_IN_MS = 800;
+
+function waitFor<P extends string>(
+  phases: readonly P[],
+  hold: Record<P, number>,
+  phase: P,
+  cycle: number,
+): number {
+  const opening = cycle === 0 && phases.indexOf(phase) === 0;
+  return opening ? Math.min(hold[phase], LEAD_IN_MS) : hold[phase];
+}
+
+/**
  * The clock both demo pages run on.
  *
  * One hook rather than a copy of the timer per page, because the two loops have
  * to agree about the two things that are easy to get subtly wrong: they only
  * tick on the page the user is actually looking at (otherwise every demo burns
  * a timer and a re-render behind the others from the app's first frame), and
- * they do not start at all until Reduce Motion has answered — `null` means we
- * have not asked yet, and starting early shows the opening frames of an
- * animation the user has asked never to see.
+ * they do not start at all when Reduce Motion is on. The value is seeded
+ * synchronously in `welcome.tsx` — see the note there for why an async answer
+ * made every demo's first beat late.
  *
  * Returns the phase to RENDER, which is the held final frame under Reduce
  * Motion. Derived rather than stored, so there is no second piece of state for
  * the effect to keep in sync.
+ *
+ * See `LEAD_IN_MS` for why the opening frame is not held for as long as it says.
  */
 export function usePhaseLoop<P extends string>(
   phases: readonly P[],
   hold: Record<P, number>,
   live: boolean,
-  reduceMotion: boolean | null,
+  reduceMotion: boolean,
 ): { phase: P; cycle: number } {
   const [loopPhase, setLoopPhase] = useState<P>(phases[0]);
   /**
@@ -88,7 +119,7 @@ export function usePhaseLoop<P extends string>(
   const [cycle, setCycle] = useState(0);
 
   useEffect(() => {
-    if (reduceMotion !== false || !live) return;
+    if (reduceMotion || !live) return;
     const i = phases.indexOf(loopPhase);
     const wrapping = i === phases.length - 1;
     const t = setTimeout(() => {
@@ -96,9 +127,9 @@ export function usePhaseLoop<P extends string>(
       // Bumped on the wrap, not on mount, so the FIRST pass is always variant 0
       // — otherwise which example a user sees first depends on timing.
       if (wrapping) setCycle((c) => c + 1);
-    }, hold[loopPhase]);
+    }, waitFor(phases, hold, loopPhase, cycle));
     return () => clearTimeout(t);
-  }, [loopPhase, reduceMotion, live, phases, hold]);
+  }, [loopPhase, cycle, reduceMotion, live, phases, hold]);
 
   /*
    * The last phase, not the first. Every demo ends on its payoff — the copied
@@ -107,6 +138,7 @@ export function usePhaseLoop<P extends string>(
    */
   return { phase: reduceMotion ? phases[phases.length - 1] : loopPhase, cycle };
 }
+
 /* ── Pages ─────────────────────────────────────────────────────────────────── */
 
 /**

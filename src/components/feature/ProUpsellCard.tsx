@@ -4,7 +4,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 
 interface ProUpsellCardProps {
@@ -67,15 +67,13 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
-    fontSize: 14,
+    ...typo.label,
     fontWeight: '800',
     letterSpacing: -0.2,
-    color: palette.textPrimary,
   },
   sub: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: palette.textSecondary,
+    ...typo.caption,
+    fontWeight: '400',
   },
   cta: {
     flexShrink: 0,
@@ -85,7 +83,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.gold,
   },
   ctaText: {
-    fontSize: 13,
+    ...typo.label,
     fontWeight: '900',
     color: '#1A1406',
   },

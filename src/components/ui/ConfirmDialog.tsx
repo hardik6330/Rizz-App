@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
     borderColor: palette.hairlineStrong,
   },
   dialogTitle: { ...typography.h2 },
-  dialogBody: { ...typography.bodyMuted, fontSize: 14 },
+  dialogBody: { ...typography.bodyMuted },
   dialogActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: radii.full,
   },
-  dialogGhostText: { fontSize: 14.5, fontWeight: '700', color: palette.textSecondary },
+  dialogGhostText: { ...typography.body, fontWeight: '700', color: palette.textSecondary },
   dialogDanger: {
     paddingVertical: 11,
     paddingHorizontal: spacing.lg,
@@ -124,5 +124,5 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: `${palette.danger}66`,
   },
-  dialogDangerText: { fontSize: 14.5, fontWeight: '700', color: palette.danger },
+  dialogDangerText: { ...typography.body, fontWeight: '700', color: palette.danger },
 });

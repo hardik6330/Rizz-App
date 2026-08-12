@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { palette, spacing } from '@/theme/tokens';
+import { palette, spacing, type as typo } from '@/theme/tokens';
 
 /**
  * The one line that tells the user their screenshot goes to Google.
@@ -107,8 +107,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   text: {
+    ...typo.caption,
     flexShrink: 1,
-    fontSize: 12,
     lineHeight: 16,
     color: palette.textTertiary,
   },

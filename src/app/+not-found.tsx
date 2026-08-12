@@ -1,7 +1,7 @@
 import { Link, Stack } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { palette, spacing } from '@/theme/tokens';
+import { glyph, palette, spacing, type as typo } from '@/theme/tokens';
 
 export default function NotFoundScreen() {
   return (
@@ -28,20 +28,18 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   emoji: {
-    fontSize: 44,
+    fontSize: glyph.xxl,
     lineHeight: 52,
   },
   title: {
-    fontSize: 19,
-    fontWeight: '800',
-    color: palette.textPrimary,
+    ...typo.h2,
   },
   link: {
     marginTop: spacing.sm,
     padding: spacing.sm,
   },
   linkText: {
-    fontSize: 15,
+    ...typo.body,
     fontWeight: '700',
     color: palette.violetBright,
   },

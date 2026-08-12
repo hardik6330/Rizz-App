@@ -81,6 +81,40 @@ module.exports = defineConfig([
   },
   {
     /*
+     * The type scale is enforced, not suggested.
+     *
+     * `tokens.ts` has always said "never hardcode hex or px in screens". The
+     * colour half held — 15 stray literals in the whole client. The type half
+     * did not: 215 raw `fontSize` declarations across 31 distinct sizes,
+     * including 14.5, 12.5, 11.5, 16.5, 15.5, 13.5 and 10.5. That is why the app
+     * read as slightly different on every screen despite one designer's intent.
+     *
+     * They are all migrated onto the twelve `type` roles now, and emoji onto
+     * `glyph` — which is the only reason this rule can have no exceptions. A
+     * rule with nine escape hatches is a rule nobody enforces, and the drift
+     * comes back one screen at a time.
+     *
+     * The two files below are exempt for opposite reasons: `theme/` DEFINES the
+     * sizes, and `welcome/styles.ts` is a scale model of a phone drawn inside a
+     * card, where app type at app sizes neither fits nor reads as a phone. Its
+     * overrides still sit on top of a token, so weight, colour and tracking
+     * come from the scale.
+     */
+    files: ['src/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}'],
+    ignores: ['src/theme/**', 'src/screens/welcome/styles.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "Property[key.name='fontSize'][value.type='Literal']",
+          message:
+            'Pick a role from `type` in theme/tokens.ts (or `glyph` for an emoji) instead of a raw fontSize. Twelve roles cover every screen; a new number starts the drift again.',
+        },
+      ],
+    },
+  },
+  {
+    /*
      * Generated or vendored, and not ours to lint. `android/` is CNG output that
      * `expo prebuild` rewrites; `backend/` has its own toolchain and its own
      * tsconfig; `dist/`+`.expo/` are build artefacts.

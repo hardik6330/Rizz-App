@@ -16,7 +16,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RAIL_WIDTH, useLayout } from '@/theme/layout';
-import { categoryColor, palette, radii, spacing } from '@/theme/tokens';
+import { categoryColor, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { FeedItem } from '@/types';
 import { ActionRail } from './ActionRail';
 
@@ -173,23 +173,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   categoryText: {
-    fontSize: 10,
-    fontWeight: '800',
+    ...typo.micro,
     letterSpacing: 1.4,
   },
   line: {
-    fontSize: 30,
-    lineHeight: 37,
+    ...typo.display,
     fontWeight: '800',
+    lineHeight: 37,
     letterSpacing: -0.7,
-    color: palette.textPrimary,
     textShadowColor: 'rgba(0,0,0,0.45)',
     textShadowRadius: 12,
     textShadowOffset: { width: 0, height: 2 },
   },
   lineSmall: {
-    fontSize: 24,
-    lineHeight: 31,
+    ...typo.h1,
+    fontWeight: '800',
+    letterSpacing: -0.7,
   },
   contextRow: {
     flexDirection: 'row',
@@ -197,7 +196,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   contextText: {
-    fontSize: 13,
+    ...typo.label,
     fontWeight: '500',
     color: palette.textSecondary,
   },
@@ -226,7 +225,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.mint,
   },
   statText: {
-    fontSize: 11.5,
+    ...typo.caption,
     fontWeight: '700',
     color: palette.mint,
   },
@@ -243,9 +242,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.35)',
   },
   testerText: {
-    fontSize: 12,
+    ...typo.caption,
     fontWeight: '500',
-    color: palette.textSecondary,
   },
   heartOverlay: {
     position: 'absolute',

@@ -93,7 +93,22 @@ object GeminiChatClient {
 
     val raw = post(ctx, "$base/v1/auth/device", payload, null) ?: return null
     return try {
-      val token = JSONObject(raw).optString("access_token").takeIf { it.isNotBlank() }
+      val json = JSONObject(raw)
+      /*
+       * Persist the id BEFORE the token, and persist it even on a cold auth.
+       *
+       * This response is the only place a cold service learns which install it
+       * is. Reading it for `access_token` alone — which is what this did — threw
+       * the id away, so the next re-auth sent no `install_id` again, the server
+       * minted another one, and another anonymous `users` row came with it. That
+       * is the source of the blank rows: one per authentication, unbounded,
+       * indistinguishable from each other because they have no email or username.
+       *
+       * The server echoes it on `/device` specifically so both clients can do
+       * this; `persistSession` in services/auth.ts is the JS half.
+       */
+      ChatEntitlement.setInstallId(ctx, json.optString("install_id"))
+      val token = json.optString("access_token").takeIf { it.isNotBlank() }
       if (token != null) ChatEntitlement.setAccessToken(ctx, token)
       token
     } catch (e: Exception) {

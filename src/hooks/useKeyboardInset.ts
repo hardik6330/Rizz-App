@@ -21,11 +21,19 @@ import { Keyboard, Platform } from 'react-native';
  * ## What this does
  *
  * Returns the keyboard height, to be added as extra `paddingBottom` on the
- * scroll content. That gives the ScrollView somewhere to scroll TO, and the
- * platform's own "reveal the focused input" behaviour does the rest — which is
+ * scroll content. That gives the ScrollView somewhere to scroll TO — which is
  * why this is a number and not a wrapper component: `KeyboardAvoidingView` would
  * have to own the layout to do the same job, and it is famously unreliable on
  * Android precisely because it is guessing at what this reports directly.
+ *
+ * ⚠️ **Room to scroll into is not the same as scrolling into it.** This used to
+ * claim "the platform's own reveal-the-focused-input behaviour does the rest".
+ * It does not, and could not: that reveal is a side effect of `adjustResize`
+ * shrinking the window, which is the exact behaviour edge-to-edge removed and
+ * the reason this hook exists. The padding was opening up empty space that
+ * nothing ever scrolled to, so the password field stayed under the keyboard.
+ * **Use `useKeyboardReveal`, which wraps this and does the scrolling.** Reach
+ * for this one directly only on a screen whose inputs cannot be occluded.
  *
  * ## Why not a library
  *

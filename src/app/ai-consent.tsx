@@ -4,11 +4,12 @@ import { useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Button } from '@/components/ui/Button';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { track, type EngineName } from '@/services/analytics';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
 /**
@@ -116,10 +117,13 @@ export default function AiConsentScreen() {
           />
         </View>
 
-        <HapticPressable onPress={accept} accessibilityLabel="Agree and continue" style={styles.cta}>
-          <Ionicons name="checkmark" size={18} color={palette.ink} />
-          <Text style={styles.ctaText}>I understand — continue</Text>
-        </HapticPressable>
+        <Button
+          label="I understand — continue"
+          icon="checkmark"
+          variant="accent"
+          onPress={accept}
+          accessibilityLabel="Agree and continue"
+        />
 
         {/*
           The exit. Explicit, because a modal with one button and no stated way
@@ -168,13 +172,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   title: {
-    fontSize: 27,
-    lineHeight: 33,
+    ...typo.h1,
     fontWeight: '900',
-    letterSpacing: -0.7,
-    color: palette.textPrimary,
   },
-  sub: { fontSize: 14, lineHeight: 20, color: palette.textSecondary },
+  sub: { ...typo.bodyMuted },
   card: {
     gap: spacing.md,
     padding: spacing.lg,
@@ -185,18 +186,9 @@ const styles = StyleSheet.create({
   },
   bullet: { flexDirection: 'row', gap: spacing.sm },
   bulletIcon: { marginTop: 2 },
-  bulletText: { flex: 1, fontSize: 13.5, lineHeight: 19, color: palette.textSecondary },
-  cta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 15,
-    borderRadius: radii.full,
-    backgroundColor: palette.violetBright,
-  },
-  ctaText: { fontSize: 15, fontWeight: '800', color: palette.ink },
+  bulletText: { ...typo.bodySm, flex: 1 },
+  
   secondary: { alignItems: 'center', paddingVertical: spacing.xs },
-  secondaryText: { fontSize: 14, fontWeight: '600', color: palette.textSecondary },
-  foot: { fontSize: 12, lineHeight: 17, textAlign: 'center', color: palette.textTertiary },
+  secondaryText: { ...typo.label, fontWeight: '600', color: palette.textSecondary },
+  foot: { ...typo.caption, fontWeight: '400', textAlign: 'center', color: palette.textTertiary },
 });

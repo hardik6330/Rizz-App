@@ -234,6 +234,23 @@ export async function authedFetch(path: string, init: RequestInit = {}): Promise
     const send = async (force: boolean) =>
       fetch(apiUrl(path), {
         ...init,
+        /*
+         * A deadline, because the alternative is not "slow", it is "for ever".
+         *
+         * `postSession` and `requestOtp` both bound themselves; this one — which
+         * carries every `userApi` helper and `refreshCredits` — did not, so a
+         * half-open socket (a captive portal, a connection dropped mid-request)
+         * never resolved and never rejected. That is not theoretical: it hung the
+         * first-run queue on `refreshCredits(true)` and left new users on a
+         * spinning signup button with no way out but a force-quit.
+         *
+         * 20s matches `postSession`. Nothing here is an AI call — those go
+         * through `callApi`, which sets its own much longer bound.
+         *
+         * `init.signal` wins if a caller brought one, so this is a floor and not
+         * a ceiling on anybody's own cancellation.
+         */
+        signal: init.signal ?? AbortSignal.timeout(20_000),
         headers: { ...init.headers, Authorization: `Bearer ${await accessToken(force)}` },
       });
     const res = await send(false);

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,12 +10,12 @@ import { CircleIconButton } from '@/components/ui/CircleIconButton';
 import { SignedInPanel } from '@/components/feature/SignedInPanel';
 import { useToast } from '@/components/ui/Toast';
 import { useAuthForm } from '@/hooks/useAuthForm';
-import { useKeyboardInset } from '@/hooks/useKeyboardInset';
+import { useKeyboardReveal } from '@/hooks/useKeyboardReveal';
 import { track } from '@/services/analytics';
 import { isLiveApi } from '@/services/auth';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 
 /**
  * Signup, login and the signed-in account view — one route, three states.
@@ -42,8 +42,15 @@ export default function AccountScreen() {
   const insets = useSafeAreaInsets();
   const { gutter } = useLayout();
   const toast = useToast();
-  /** Android has no keyboard handling of its own here — see the hook. */
-  const kbInset = useKeyboardInset();
+  /**
+   * Android has no keyboard handling of its own here — see the hook.
+   *
+   * `onFieldFocus` is threaded all the way down to every `Field`: the password
+   * is the last thing on this page, so it is the one that ends up under the
+   * keyboard, and it is also the one the user most needs to see while typing.
+   */
+  const scroller = useRef<ScrollView>(null);
+  const { inset: kbInset, onFocus: onFieldFocus, onScroll } = useKeyboardReveal(scroller);
 
   /**
    * Is this the mandatory launch gate, or the modal from the Profile Scan row?
@@ -161,6 +168,9 @@ export default function AccountScreen() {
   return (
     <View style={styles.root}>
       <ScrollView
+        ref={scroller}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.scroll,
           {
@@ -216,7 +226,7 @@ export default function AccountScreen() {
             </Text>
           </View>
         ) : (
-          <AuthForm form={form} isOnboarding={isOnboarding} />
+          <AuthForm form={form} isOnboarding={isOnboarding} onFieldFocus={onFieldFocus} />
         )}
       </ScrollView>
       {toast.element}
@@ -229,7 +239,7 @@ const styles = StyleSheet.create({
   scroll: { gap: spacing.lg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   wordmark: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  wordmarkText: { fontSize: 16, fontWeight: '800', letterSpacing: -0.3, color: palette.textPrimary },
+  wordmarkText: { ...typo.h3, fontWeight: '800' },
 
   notice: {
     padding: spacing.lg,
@@ -238,5 +248,5 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: palette.hairlineStrong,
   },
-  noticeText: { fontSize: 13.5, lineHeight: 20, color: palette.textSecondary },
+  noticeText: { ...typo.bodySm },
 });

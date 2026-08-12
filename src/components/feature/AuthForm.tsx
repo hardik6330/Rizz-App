@@ -5,7 +5,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { CodeStep, CredentialFields } from '@/components/feature/AuthFields';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import type { AuthFormState } from '@/hooks/useAuthForm';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 
 /**
  * The signup/login form — hero copy, tabs, fields, error and the one CTA.
@@ -20,7 +20,16 @@ import { palette, radii, spacing } from '@/theme/tokens';
  * a mailed code that logs you in without one, and both halves of that have to be
  * said where the user goes looking — on the signup warning and on the login form.
  */
-export function AuthForm({ form, isOnboarding }: { form: AuthFormState; isOnboarding: boolean }) {
+export function AuthForm({
+  form,
+  isOnboarding,
+  onFieldFocus,
+}: {
+  form: AuthFormState;
+  isOnboarding: boolean;
+  /** Threaded down to every input so the screen can scroll it clear. */
+  onFieldFocus?: () => void;
+}) {
   const { isSignup, step, useCode, wantsCode, busy, error, email } = form;
 
   /* Three labels from two flags. On the form step of a code path the button
@@ -108,6 +117,7 @@ export function AuthForm({ form, isOnboarding }: { form: AuthFormState; isOnboar
           onSubmit={() => void form.submit()}
           onBack={form.backToForm}
           onResend={form.resend}
+          onFieldFocus={onFieldFocus}
         />
       ) : (
         <CredentialFields
@@ -123,6 +133,7 @@ export function AuthForm({ form, isOnboarding }: { form: AuthFormState; isOnboar
           onToggleReveal={form.toggleReveal}
           onToggleUseCode={form.toggleUseCode}
           onSubmit={() => void form.submit()}
+          onFieldFocus={onFieldFocus}
         />
       )}
 
@@ -160,8 +171,8 @@ export function AuthForm({ form, isOnboarding }: { form: AuthFormState; isOnboar
 
 const styles = StyleSheet.create({
   hero: { gap: spacing.sm },
-  title: { fontSize: 27, lineHeight: 33, fontWeight: '900', letterSpacing: -0.8, color: palette.textPrimary },
-  body: { fontSize: 14.5, lineHeight: 21, color: palette.textSecondary },
+  title: { ...typo.h1, fontWeight: '900' },
+  body: { ...typo.bodyMuted },
   /** Emphasis inside a muted paragraph — the address echoed back on the code step. */
   strong: { fontWeight: '800', color: palette.textPrimary },
 
@@ -177,10 +188,10 @@ const styles = StyleSheet.create({
     borderColor: palette.hairline,
   },
   tabActive: { backgroundColor: `${palette.violet}24`, borderColor: `${palette.violet}88` },
-  tabLabel: { flexShrink: 1, fontSize: 13.5, fontWeight: '700', color: palette.textSecondary },
+  tabLabel: { ...typo.label, flexShrink: 1, fontWeight: '700', color: palette.textSecondary },
 
   error: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  errorText: { flex: 1, fontSize: 13, lineHeight: 18, color: palette.danger },
+  errorText: { ...typo.label, flex: 1, fontWeight: '400', color: palette.danger },
 
   cta: {
     flexDirection: 'row',
@@ -192,6 +203,6 @@ const styles = StyleSheet.create({
     backgroundColor: palette.violetBright,
   },
   ctaBusy: { opacity: 0.7 },
-  ctaText: { fontSize: 15.5, fontWeight: '900', color: palette.ink },
-  footnote: { fontSize: 12, lineHeight: 17, textAlign: 'center', color: palette.textTertiary },
+  ctaText: { ...typo.body, fontWeight: '900', color: palette.ink },
+  footnote: { ...typo.caption, fontWeight: '400', textAlign: 'center', color: palette.textTertiary },
 });

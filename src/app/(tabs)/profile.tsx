@@ -11,6 +11,7 @@ import { AiNotice } from '@/components/feature/AiNotice';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ScanReport } from '@/components/feature/ScanReport';
 import { GlowDropZone } from '@/components/ui/GlowDropZone';
+import { Button } from '@/components/ui/Button';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StagedLoader } from '@/components/ui/StagedLoader';
@@ -20,8 +21,6 @@ import {
   consumePendingCapture,
   hasPendingCapture,
   isSupported,
-  isWatching,
-  serviceKilled,
 } from '@/../modules/profile-capture';
 import { BG } from '@/data/assets';
 import { PROFILE_LABELS, PROFILE_STAGES, analyzeProfile } from '@/services/profileEngine';
@@ -29,12 +28,13 @@ import { isLiveApi } from '@/services/auth';
 import { fetchScans } from '@/services/userApi';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { ProfileCapture, ProfileScanResult, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { copyLine, timeAgo } from '@/utils/misc';
 import { useBackToIdle } from '@/hooks/useBackToIdle';
 import { useAiConsent } from '@/hooks/useAiConsent';
+import { useBubbleState } from '@/hooks/useBubbleState';
 import { useCreditGate } from '@/hooks/useCreditGate';
 import { useStagedProgress } from '@/hooks/useStagedProgress';
 
@@ -60,16 +60,12 @@ export default function ProfileScreen() {
   const [images, setImages] = useState<Pick[]>([]);
   const [result, setResult] = useState<ProfileScanResult | null>(null);
 
-  const [watching, setWatching] = useState(false);
-  /**
-   * Granted in Settings, but the service is not bound — the OS killed it.
-   *
-   * Tracked separately from `watching` because the two need different copy and
-   * different actions: `!watching` is usually "you have not turned it on yet",
-   * which the analyzer screen can fix. This one cannot be fixed from inside the
-   * app at all. Re-read on the same beats as `watching`.
+  /*
+   * Shared with the Lab's `BubbleStrip`, which needs exactly these two flags on
+   * exactly the same beat. The derivation, and the reason `killed` is separate
+   * from `!watching`, now live in the hook.
    */
-  const [killed, setKilled] = useState(false);
+  const { watching, killed } = useBubbleState();
   const [scanToDelete, setScanToDelete] = useState<ProfileScanResult | null>(null);
   const account = useRizzStore((state) => state.account);
   const { stage, start: startStages, stop: stopStages } = useStagedProgress(
@@ -142,7 +138,10 @@ export default function ProfileScreen() {
       if (!scanResult.isProfile) {
         // Not a profile — don't show results or burn a free scan.
         haptic.warning();
-        toast.show(scanResult.rejectionReason ?? "That doesn't look like a profile — try again", 5000);
+        toast.show(scanResult.rejectionReason ?? "That doesn't look like a profile — try again", {
+          tone: 'error',
+          durationMs: 5000,
+        });
         setPhase('idle');
         // A rejected capture leaves nothing worth keeping: stranding its screenshot
         // in the picker invites the user to re-scan the exact thing just refused.
@@ -179,7 +178,7 @@ export default function ProfileScreen() {
       setImages((prev) => prev.map((img) => (img.base64 ? { ...img, base64: '' } : img)));
     } catch (error) {
       console.warn('[profile] scan failed', error);
-      toast.show('The engine choked — try again');
+      toast.show('The engine choked — try again', { tone: 'error' });
       setPhase('idle');
     } finally {
       stopStages();
@@ -240,8 +239,6 @@ export default function ProfileScreen() {
       takePendingCapture();
       // Permissions are toggled in Settings, outside our process — re-read on resume.
       if (isSupported) {
-        setWatching(isWatching());
-        setKilled(serviceKilled());
       }
     };
     onActive();
@@ -264,10 +261,6 @@ export default function ProfileScreen() {
   // gate deliberately left pending would sit there unnoticed.
   useFocusEffect(
     useCallback(() => {
-      if (isSupported) {
-        setWatching(isWatching());
-        setKilled(serviceKilled());
-      }
       takePendingCapture();
       // `fetchScans` returns null when `!isLiveApi`, so no guard is needed here.
       void fetchScans().then((scans) => {
@@ -439,16 +432,14 @@ export default function ProfileScreen() {
                 </ScrollView>
 
                 {/* CTA */}
-                <HapticPressable
+                <Button
+                  label={`Scan ${images.length} ${images.length === 1 ? 'screenshot' : 'screenshots'}`}
+                  icon="scan"
+                  variant="accent"
+                  color={tint}
                   onPress={() => void scan()}
                   accessibilityLabel="Scan profile"
-                  style={[styles.cta, { backgroundColor: tint }]}
-                >
-                  <Ionicons name="scan" size={17} color={palette.ink} />
-                  <Text style={styles.ctaText}>
-                    {`Scan ${images.length} ${images.length === 1 ? 'screenshot' : 'screenshots'}`}
-                  </Text>
-                </HapticPressable>
+                />
               </>
             )}
 
@@ -626,15 +617,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   heroTitle: {
-    fontSize: 31,
-    lineHeight: 36,
-    fontWeight: '900',
-    letterSpacing: -1,
-    color: palette.textPrimary,
+    ...typo.display,
   },
   heroSub: {
-    fontSize: 14.5,
-    color: palette.textSecondary,
+    ...typo.bodyMuted,
   },
   thumbRow: {
     gap: spacing.md,
@@ -673,28 +659,14 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   addText: {
-    fontSize: 11.5,
+    ...typo.caption,
     fontWeight: '700',
-  },
-  cta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    borderRadius: radii.full,
-  },
-  ctaText: {
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: -0.2,
-    color: palette.ink,
   },
   history: {
     gap: spacing.sm,
   },
   historyTitle: {
-    fontSize: 12,
+    ...typo.caption,
     fontWeight: '800',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
@@ -726,13 +698,15 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   historyName: {
-    fontSize: 14,
+    ...typo.label,
     fontWeight: '800',
-    color: palette.textPrimary,
     flexShrink: 1,
   },
   historyMeta: {
-    fontSize: 11,
+    ...typo.overline,
+    letterSpacing: 0,
+    textTransform: 'none',
+    fontWeight: '400',
     color: palette.textTertiary,
     flexShrink: 1,
   },
@@ -760,13 +734,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   analyzerTitle: {
-    fontSize: 14,
+    ...typo.label,
     fontWeight: '800',
-    color: palette.textPrimary,
   },
   analyzerSub: {
-    fontSize: 12,
-    lineHeight: 17,
+    ...typo.caption,
+    fontWeight: '400',
     color: palette.textTertiary,
   },
 });

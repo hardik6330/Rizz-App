@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { reportError } from '@/services/analytics';
 import { useLayout } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 import { HapticPressable } from './HapticPressable';
 
@@ -127,17 +127,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   title: {
-    fontSize: 24,
-    lineHeight: 30,
+    ...typo.h1,
     fontWeight: '900',
-    letterSpacing: -0.6,
-    color: palette.textPrimary,
     textAlign: 'center',
   },
   body: {
-    fontSize: 14.5,
-    lineHeight: 21,
-    color: palette.textSecondary,
+    ...typo.bodyMuted,
     textAlign: 'center',
   },
   cta: {
@@ -151,7 +146,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
     backgroundColor: palette.violetBright,
   },
-  ctaText: { fontSize: 15, fontWeight: '900', color: palette.ink },
+  ctaText: { ...typo.body, fontWeight: '900', color: palette.ink },
   devBox: {
     alignSelf: 'stretch',
     gap: spacing.sm,
@@ -162,7 +157,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: palette.hairlineStrong,
   },
-  devLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, color: palette.gold },
-  devText: { fontSize: 13, lineHeight: 19, fontWeight: '700', color: palette.textPrimary },
-  devStack: { fontSize: 10.5, lineHeight: 15, color: palette.textTertiary },
+  devLabel: { ...typo.micro, color: palette.gold },
+  devText: { ...typo.label, fontWeight: '700' },
+  devStack: { ...typo.micro, fontWeight: '400', letterSpacing: 0, color: palette.textTertiary },
 });

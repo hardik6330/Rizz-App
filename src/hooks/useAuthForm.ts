@@ -1,4 +1,6 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+
+import type { ShowToast } from '@/components/ui/Toast';
 import { useCallback, useState } from 'react';
 
 import { track } from '@/services/analytics';
@@ -37,7 +39,7 @@ export type Mode = 'signup' | 'login';
 interface Options {
   isOnboarding: boolean;
   /** `useToast().show`. Success and resend feedback both land on the screen's toast. */
-  showToast: (message: string) => void;
+  showToast: ShowToast;
 }
 
 export function useAuthForm({ isOnboarding, showToast }: Options) {
@@ -271,19 +273,23 @@ export function useAuthForm({ isOnboarding, showToast }: Options) {
       haptic.success();
       setPassword('');
       setCode('');
-      // `signUp`/`logIn` already pushed the username into the store, which flips
-      // the launch gate — `(tabs)` exists as of this render. Replace rather than
-      // `back()`: as the gate this screen is the root, there is nothing behind
-      // it to pop to. Going to the app also clears it from the history, so the
-      // analyzer step waiting behind can present over the tabs and not over a
-      // signup form the user has already finished with.
-      if (isOnboarding) {
-        // Returns while still busy, on purpose — the spinner is what the user
-        // looks at for the frames the navigator needs, and this screen is going
-        // away, so there is nothing left to un-busy.
-        router.replace('/');
-        return;
-      }
+      /*
+       * As the gate, leaving is not this hook's job and there is no navigation
+       * call here at all.
+       *
+       * `signUp`/`logIn` put the username in the store; `_layout.tsx` un-declares
+       * `/account` and declares whichever screen comes next in the same commit.
+       * This used to `router.replace('/')`, which was correct only while `(tabs)`
+       * was declared the instant the account existed — it is not any more. The
+       * layout now holds this screen up until it knows whether the setup
+       * questions are owed, so `/` may not be a route yet and replacing onto it
+       * would target nothing.
+       *
+       * Returns while still busy, on purpose: the spinner is what the user looks
+       * at for the frames that handover needs, and this screen is going away, so
+       * there is nothing left to un-busy.
+       */
+      if (isOnboarding) return;
       showToast(isSignup ? 'Account created — your credits are safe now' : 'Welcome back');
     } catch (err) {
       haptic.warning();

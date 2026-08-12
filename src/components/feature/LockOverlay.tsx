@@ -6,7 +6,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { CONTENT_MAX, useLayout } from '@/theme/layout';
-import { absoluteFill, glow, palette, radii, spacing } from '@/theme/tokens';
+import { absoluteFill, glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 
 interface LockOverlayProps {
@@ -112,17 +112,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontSize: 25,
-    lineHeight: 30,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-    color: palette.textPrimary,
+    ...typo.h1,
     textAlign: 'center',
   },
   body: {
-    fontSize: 14.5,
-    lineHeight: 21,
-    color: palette.textSecondary,
+    ...typo.bodyMuted,
     textAlign: 'center',
     maxWidth: 300,
   },
@@ -143,13 +137,11 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   ctaText: {
-    fontSize: 16,
+    ...typo.h3,
     fontWeight: '800',
-    letterSpacing: -0.2,
-    color: palette.textPrimary,
   },
   restore: {
-    fontSize: 13,
+    ...typo.label,
     fontWeight: '600',
     color: palette.textTertiary,
     padding: spacing.sm,

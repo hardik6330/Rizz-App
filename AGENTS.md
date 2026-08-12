@@ -384,6 +384,17 @@ into `_layout.tsx` — hiding it there uncovers whatever the navigator had paint
 moment. The 3s timer is a dead-man's switch only: if neither gate mounts, a flash beats a
 splash that never lifts.
 
+**Leaving the gate is the one exception, and it is a `replace`, not a push.** Declaration
+alone gets you ONTO `/account` but never off it: `/welcome` un-declares itself when its
+flag flips, so the navigator falls back — `/account` cannot, because it is also the modal
+opened from the Profile Scan row and so stays declared for ever. Nothing pops it. Without
+the `router.replace` in `_layout.tsx` a successful signup declared `/onboarding` behind a
+gate the user was still looking at, and the CTA span until they force-quit. It waits on
+`coachResolved` for the same reason the guards do — replace any earlier and it targets a
+route that is not declared yet — and on `onboardedThisSession` so opening the account modal
+while signed in does not trip it. `replace`, never `push`: the gate must not stay on the
+stack behind the app.
+
 **`welcome.tsx` now sits one step in front of the gate and uses the identical technique.**
 `/account` is itself wrapped in `<Stack.Protected guard={welcomeStepDone}>`, so on a cold
 install `/welcome` is the entire app, and its CTA sets a flag rather than navigating —
@@ -647,15 +658,31 @@ anything**, so the commonest signup mistake produced "check your email" and a co
 never existed, with nothing in the UI able to tell the user. No wording fixes that — only
 naming the case does.
 
-Five codes now, and `account.tsx` branches on the code, not the message:
+Six codes now, and `account.tsx` branches on the code, not the message:
 
 | Code | Status | When |
 |---|---|---|
 | `EMAIL_TAKEN` | 409 | `/otp` signup, or a signup race on `uq_users_email` |
 | `USERNAME_TAKEN` | 409 | `/otp` signup, or a signup race on `uq_users_username` |
 | `NO_ACCOUNT` | 404 | `/otp` login, or `/login` with an unknown address |
+| `DISPOSABLE_EMAIL` | 400 | `/otp` **signup only** — a throwaway inbox |
 | `WRONG_PASSWORD` | 401 | password branch only |
 | `ACCOUNT_LOCKED` | 429 | 10 failures — **including the attempt that trips it** |
+
+**`DISPOSABLE_EMAIL` is signup-only, and that asymmetry is load-bearing.** `lib/disposable.ts`
+holds ~80 throwaway providers (yopmail, mailinator, guerrillamail, temp-mail…) and refuses
+them before anything is looked up or mailed. It is checked at `/otp` and nowhere else,
+because `/signup` will not write a row without a code only `/otp` issues — an address
+refused there can never reach it. The `login` purpose is deliberately NOT checked: accounts
+made before this rule exist, and refusing their recovery code would strand them with no way
+in and no way to change the address.
+
+⚠️ **Gmail, Outlook, iCloud, Yahoo, Proton and GMX must never go on that list.** This is a
+consumer dating product; "professional email" here means an inbox the person *keeps*, not
+one their employer owns, and a rule that only took corporate domains would refuse nearly
+every real user on the mandatory gate with no way past it. `disposable.selfcheck.ts` asserts
+exactly that — its allow cases are the point of the file, not its block cases. The list is a
+speed bump, not a wall; add to it when a provider turns up in the users table.
 
 `nudgeMode()` in `account.tsx` moves the user to the other tab on `EMAIL_TAKEN` /
 `NO_ACCOUNT`, keeping what they typed. That is the whole point of naming them; an error
@@ -1159,6 +1186,20 @@ clips there — `LockOverlay` had to become a `ScrollView` for exactly this reas
 
 - Read tokens from `src/theme/tokens.ts`. Never hardcode hex or px in screens. Screen gutters
   and tab-bar clearance come from `layout.ts`, never from `spacing.xl` / a literal.
+- **A raw `fontSize` is an ESLint error, and that is not negotiable by adding a disable.** Pick
+  one of the twelve roles in `type` (`display · hero · h1 · h2 · h3 · reply · body · bodyMuted ·
+  bodySm · label · caption · overline · micro`), spread it, and override nothing but `color`
+  and `fontWeight`. Emoji take `glyph`, which exists precisely so the rule needs no exceptions.
+  This half of the token rule was ignored for a long time and the cost was visible: **215 raw
+  declarations across 31 distinct sizes** — 14.5, 12.5, 11.5, 16.5, 15.5, 13.5, 10.5 — which is
+  why the app read as slightly different on every screen while every individual screen looked
+  fine. Two files are exempt in `eslint.config.js` and only two: `theme/` defines the sizes, and
+  `screens/welcome/styles.ts` is a scale model of a phone drawn inside a card, where its
+  overrides still sit on top of a token. If a new size feels necessary, add a *role* to `type`
+  with a reason — do not reintroduce a number.
+- **`type.reply` is for generated text — a reply, a bio, a saved line, a roast, a scan summary.**
+  It is the one role at 17/25 regular, and it exists so what the user sends is never rendered in
+  the same style as the UI describing it. Do not use it for chrome.
 - All touchables route through `HapticPressable` so touch feel stays consistent.
 - **Destructive actions confirm through `components/ui/ConfirmDialog.tsx` — never `Alert.alert`,
   never a new local `<Modal>`.** Five of them delete a *server* row: remove a saved line,

@@ -3,8 +3,8 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { glow, palette, radii, spacing } from '@/theme/tokens';
-import { HapticPressable } from '@/components/ui/HapticPressable';
+import { glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
+import { Button } from '@/components/ui/Button';
 
 interface EmptyVaultProps {
   onBrowse: () => void;
@@ -21,10 +21,15 @@ export function EmptyVault({ onBrowse }: EmptyVaultProps) {
       <Text style={styles.body}>
         Save the lines that hit different —{'\n'}they&apos;ll live here forever.
       </Text>
-      <HapticPressable onPress={onBrowse} accessibilityLabel="Browse the Discovery feed" style={styles.cta}>
-        <Ionicons name="flame" size={15} color={palette.violetBright} />
-        <Text style={styles.ctaText}>Go find some heat</Text>
-      </HapticPressable>
+      <Button
+        label="Go find some heat"
+        icon="flame"
+        variant="ghost"
+        size="md"
+        onPress={onBrowse}
+        accessibilityLabel="Browse the Discovery feed"
+        style={styles.cta}
+      />
     </Animated.View>
   );
 }
@@ -48,15 +53,10 @@ const styles = StyleSheet.create({
     ...glow(palette.violet, 0.4, 24),
   },
   title: {
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-    color: palette.textPrimary,
+    ...typo.h2,
   },
   body: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: palette.textSecondary,
+    ...typo.bodyMuted,
     textAlign: 'center',
   },
   cta: {
@@ -70,10 +70,5 @@ const styles = StyleSheet.create({
     backgroundColor: `${palette.violet}1F`,
     borderWidth: 1,
     borderColor: `${palette.violet}66`,
-  },
-  ctaText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: palette.violetBright,
   },
 });

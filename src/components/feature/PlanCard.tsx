@@ -4,7 +4,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { Plan } from '@/services/purchases';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 
@@ -102,14 +102,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
-    fontSize: 16,
+    ...typo.h3,
     fontWeight: '800',
-    letterSpacing: -0.2,
-    color: palette.textPrimary,
   },
   sub: {
-    fontSize: 12,
-    color: palette.textSecondary,
+    ...typo.caption,
+    fontWeight: '400',
   },
   priceCol: {
     alignItems: 'flex-end',
@@ -118,12 +116,14 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   price: {
-    fontSize: 16,
+    ...typo.h3,
     fontWeight: '800',
-    color: palette.textPrimary,
   },
   period: {
-    fontSize: 11,
+    ...typo.overline,
+    letterSpacing: 0,
+    textTransform: 'none',
+    fontWeight: '400',
     color: palette.textTertiary,
   },
   badge: {
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.gold,
   },
   badgeText: {
-    fontSize: 9,
+    ...typo.micro,
     fontWeight: '900',
     letterSpacing: 0.8,
     color: '#1A1406',

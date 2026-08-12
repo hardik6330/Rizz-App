@@ -15,6 +15,18 @@ import { spacing } from './tokens';
  * underneath it at large text sizes). Both are now derived.
  */
 
+/**
+ * Vertical hit-slop for the filter chips on Discover and the Vault.
+ *
+ * Both rows are ~30pt tall (7pt padding on 16pt of line box), against a 44pt iOS
+ * / 48dp Android minimum. Growing the padding instead would push the Discover
+ * row down over the feed card behind it, so the target grows and the pill does
+ * not. **Vertical only, deliberately**: the chips sit 8pt apart horizontally and
+ * a symmetric slop would make neighbouring targets overlap, which trades a small
+ * target for an ambiguous one.
+ */
+export const CHIP_HIT_SLOP = { top: 9, bottom: 9, left: 0, right: 0 } as const;
+
 /** Widest a text column ever gets; past this the gutters absorb the slack. */
 export const CONTENT_MAX = 560;
 

@@ -5,6 +5,7 @@ import { FlatList, ScrollView, StyleSheet, Text, View, type ViewToken } from 're
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FeedCard } from '@/components/feature/FeedCard';
+import { Button } from '@/components/ui/Button';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { LimitBadge, ProChip } from '@/components/ui/LimitBadge';
 import { LockOverlay } from '@/components/feature/LockOverlay';
@@ -15,8 +16,8 @@ import { generateFreshOpeners } from '@/services/feedEngine';
 import { restorePurchases } from '@/services/purchases';
 import { swipesUsedToday, todayKey } from '@/state/limits';
 import { useRizzStore } from '@/state/useRizzStore';
-import { useLayout, useTabBarClearance } from '@/theme/layout';
-import { categoryColor, palette, radii, spacing } from '@/theme/tokens';
+import { CHIP_HIT_SLOP, useLayout, useTabBarClearance } from '@/theme/layout';
+import { glyph, categoryColor, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { FeedCategory, FeedItem } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { copyLine, shareText } from '@/utils/misc';
@@ -56,7 +57,8 @@ export default function DiscoverScreen() {
    * curated set, which indices do not. Never reset on a filter change.
    */
   const seen = useRef<Set<string>>(new Set());
-  const pushedPaywall = useRef(false);
+  /** Buzz once per time the limit is reached, not once per render. */
+  const warnedAtLimit = useRef(false);
 
   const changeFilter = useCallback((next: FeedCategory | 'All') => {
     haptic.selection();
@@ -105,14 +107,25 @@ export default function DiscoverScreen() {
     [filter, allItems],
   );
 
+  /*
+   * Hitting the limit buzzes and stops the feed. It does NOT open the paywall.
+   *
+   * It used to do both: a 420ms timer pushed the paywall AND `LockOverlay`
+   * rendered underneath it, so the user got a full-screen purchase modal they
+   * had not asked for — fired mid-swipe, while their thumb was still moving —
+   * and then found a second lock waiting behind it when they dismissed it.
+   *
+   * The overlay already carries "Unlock" and "Restore", so nothing is harder to
+   * reach; the difference is only whether the user opened it. That also makes
+   * `paywall_viewed` mean something: it was counting ambushes, which is
+   * indistinguishable in the funnel from intent.
+   */
   useEffect(() => {
-    if (locked && !pushedPaywall.current) {
-      pushedPaywall.current = true;
+    if (locked && !warnedAtLimit.current) {
+      warnedAtLimit.current = true;
       haptic.warning();
-      const timer = setTimeout(() => router.push('/paywall?source=swipe_limit'), 420);
-      return () => clearTimeout(timer);
     }
-    if (!locked) pushedPaywall.current = false;
+    if (!locked) warnedAtLimit.current = false;
   }, [locked]);
 
   /**
@@ -174,7 +187,7 @@ export default function DiscoverScreen() {
       setPro(true);
       toast.show('Pro restored — welcome back');
     } else {
-      toast.show('No purchases found');
+      toast.show('No purchases found', { tone: 'info' });
     }
   }, [setPro, toast]);
 
@@ -263,6 +276,7 @@ export default function DiscoverScreen() {
                 accessibilityRole="tab"
                 accessibilityState={{ selected: active }}
                 onPress={() => changeFilter(key)}
+                hitSlop={CHIP_HIT_SLOP}
                 style={[
                   styles.filterChip,
                   active && { backgroundColor: `${accent}2E`, borderColor: `${accent}88` },
@@ -311,10 +325,16 @@ function EndCard({
           : 'New AI lines every morning — come back tomorrow for the next drop.'}
       </Text>
       {!isPro && (
-        <HapticPressable onPress={onGoPro} accessibilityLabel="Open RizzCoach Pro" style={styles.endCta}>
-          <Ionicons name="diamond" size={15} color={palette.ink} />
-          <Text style={styles.endCtaText}>Go Pro for unlimited</Text>
-        </HapticPressable>
+        <Button
+          label="Go Pro for unlimited"
+          icon="diamond"
+          variant="accent"
+          color={palette.gold}
+          size="md"
+          onPress={onGoPro}
+          accessibilityLabel="Open RizzCoach Pro"
+          style={styles.endCta}
+        />
       )}
     </View>
   );
@@ -333,34 +353,19 @@ const styles = StyleSheet.create({
     backgroundColor: palette.ink,
   },
   endEmoji: {
-    fontSize: 44,
+    fontSize: glyph.xxl,
   },
   endTitle: {
-    fontSize: 24,
+    ...typo.h1,
     fontWeight: '900',
-    letterSpacing: -0.6,
-    color: palette.textPrimary,
   },
   endSub: {
-    fontSize: 14.5,
-    lineHeight: 21,
+    ...typo.bodyMuted,
     textAlign: 'center',
-    color: palette.textSecondary,
   },
+  // Spacing only — fill, radius and label belong to <Button>.
   endCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
     marginTop: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: 13,
-    borderRadius: radii.full,
-    backgroundColor: palette.gold,
-  },
-  endCtaText: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: palette.ink,
   },
   topBar: {
     position: 'absolute',
@@ -393,15 +398,12 @@ const styles = StyleSheet.create({
     borderColor: palette.hairlineStrong,
   },
   filterText: {
-    fontSize: 12.5,
+    ...typo.caption,
     fontWeight: '700',
-    color: palette.textSecondary,
   },
   title: {
-    fontSize: 19,
+    ...typo.h2,
     fontWeight: '900',
-    letterSpacing: -0.4,
-    color: palette.textPrimary,
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowRadius: 8,
     textShadowOffset: { width: 0, height: 1 },
@@ -421,9 +423,8 @@ const styles = StyleSheet.create({
     borderColor: palette.hairlineStrong,
   },
   counterText: {
-    fontSize: 11.5,
+    ...typo.caption,
     fontWeight: '700',
-    color: palette.textSecondary,
     fontVariant: ['tabular-nums'],
   },
 });

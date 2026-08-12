@@ -262,6 +262,21 @@ export default function RootLayout() {
    * **Ask the server before asking the user.** This waits on a network call
    * rather than on a timer, and that is the entire point of it.
    *
+   * ⚠️ It used to `router.push('/onboarding')` when the answer came back empty,
+   * and that push was visible as a glitch: `accountStepDone` flips the instant
+   * signup succeeds, which declared `(tabs)`, so **the Lab tab mounted, painted
+   * and sat there for the whole round trip** before the questions slid up over
+   * it. On a slow connection that is seconds of the app appearing to have
+   * finished, then throwing a modal at you.
+   *
+   * The push is gone. `coachResolved` says only "the question of whether this
+   * user needs the setup screen has been settled"; the guards below turn that
+   * into either `/onboarding` or `(tabs)` — never one and then the other. Same
+   * technique, and the same reason, as the two gates above it: a guarded screen
+   * is not hidden, it is undeclared, so there is no frame of the wrong one to
+   * see. While this is in flight `/account` is still the only declared route and
+   * its CTA is still spinning, which is the honest thing to be looking at.
+   *
    * A returning user's answers exist only on their row. `adoptCoach` in
    * `useRizzStore` already takes them — but they ride on `/v1/user/credits`, and
    * nothing was forcing that call after a login: the refresh effect below runs
@@ -283,18 +298,71 @@ export default function RootLayout() {
    * matters lands between the call and its resolution — `coachStepDone` above is
    * a snapshot from before it.
    */
+  /*
+   * Derived, not stored, for the half that is already knowable: answers in the
+   * store need no round trip to confirm. Only the request gets state, and only
+   * from its own callback — writing it in the effect body would be setState
+   * during render's commit for a value the render could have computed.
+   */
+  const [creditsSettled, setCreditsSettled] = useState(false);
+  const coachResolved = coachStepDone || creditsSettled;
+
   useEffect(() => {
     if (!accountStepDone || coachStepDone) return;
     onboardedThisSession.current = true;
     let alive = true;
-    void refreshCredits(true).then(() => {
-      if (!alive || useRizzStore.getState().coach != null) return;
-      router.push('/onboarding');
-    });
+    const settle = () => {
+      if (alive) setCreditsSettled(true);
+    };
+    /*
+     * `finally`, not `then`: settled means "we are done waiting", and a rejected
+     * request is done waiting too. With `then` a throw anywhere in here left
+     * this false for ever, and since the guards below wait on it, the user sat
+     * on a spinning signup button with no app behind it and no way out but a
+     * force-quit.
+     */
+    void refreshCredits(true).finally(settle);
+    /*
+     * Dead-man's switch, same idea as the splash one below and needed for a
+     * sharper reason. `authedFetch` swallows errors but sets **no timeout**, so
+     * a half-open socket — a captive portal, a dropped connection mid-request —
+     * never resolves and never rejects, and `finally` never runs either.
+     *
+     * Before this screen waited on the call that was survivable: `(tabs)` was
+     * declared the moment the account existed, so a hung request only meant the
+     * setup questions never appeared. Now that the app is gated on the answer,
+     * a hang is a bricked first launch. Four seconds, then ask.
+     *
+     * Asking is the correct fallback and not a compromise — it is exactly what
+     * the offline path already does, for the reason in the docblock above: three
+     * questions is a smaller harm than an unpersonalised account, and the
+     * answers upsert to the same column either way.
+     */
+    const bail = setTimeout(settle, 4000);
     return () => {
       alive = false;
+      clearTimeout(bail);
     };
   }, [accountStepDone, coachStepDone]);
+
+  /**
+   * Leave the account gate once the screen after it exists.
+   *
+   * The other two gates hand over by declaration alone: `/welcome` is guarded on
+   * `!welcomeStepDone`, so signing off it UN-declares the route and the navigator
+   * falls back to whatever is now first. `/account` cannot work that way — it is
+   * also the modal opened from the Profile Scan row, so it stays declared for
+   * ever. Nothing popped it, and a successful signup left the user looking at
+   * the gate's own spinner with `/onboarding` mounted invisibly behind it.
+   *
+   * Waits on `coachResolved` for the reason the guards do: replacing before it
+   * settles targets a route that is not declared yet.
+   */
+  useEffect(() => {
+    if (!onboardedThisSession.current || !accountStepDone || !coachResolved) return;
+    router.replace(coachStepDone ? '/' : '/onboarding');
+  }, [accountStepDone, coachResolved, coachStepDone]);
+
   useEffect(() => {
     if (accountStepDone) {
       // Nothing to gate — this IS the app, so show it.
@@ -417,19 +485,35 @@ export default function RootLayout() {
               }
             />
           </Stack.Protected>
-          <Stack.Protected guard={accountStepDone}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="vault" options={{ presentation: 'modal' }} />
-            {/*
-              gestureEnabled off for the same reason as the account gate: the
-              setup answers are what every engine personalises from, and an iOS
-              swipe-dismiss would leave a user with none of them and no way back
-              to the questions. Android's hardware back is handled in the screen.
-            */}
+          {/*
+            The setup questions, and the third and last gate.
+
+            Guarded rather than pushed, which is the whole fix for the glitch
+            described on the effect above: `(tabs)` below is now gated on the
+            SAME two flags, so the app is never declared while the questions are
+            still owed. Signing up hands straight over to this screen, and
+            answering hands straight over to the app — one commit each way, no
+            navigation call, nothing to mis-time.
+
+            `coachResolved` is in the guard as well as `!coachStepDone` so a
+            returning user whose answers are still in flight does not get a flash
+            of question one before the server says they answered it months ago on
+            another device.
+
+            gestureEnabled off for the same reason as the account gate: the
+            answers are what every engine personalises from, and an iOS
+            swipe-dismiss would leave a user with none of them and no way back to
+            the questions. Android's hardware back is handled in the screen.
+          */}
+          <Stack.Protected guard={accountStepDone && coachResolved && !coachStepDone}>
             <Stack.Screen
               name="onboarding"
-              options={{ presentation: 'modal', gestureEnabled: false }}
+              options={{ animation: 'none', gestureEnabled: false }}
             />
+          </Stack.Protected>
+          <Stack.Protected guard={accountStepDone && coachStepDone}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="vault" options={{ presentation: 'modal' }} />
             <Stack.Screen name="analyzer" options={{ presentation: 'modal' }} />
             {/*
               gestureEnabled stays ON, unlike the two gates above: dismissing

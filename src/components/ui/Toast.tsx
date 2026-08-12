@@ -5,16 +5,42 @@ import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useLayout } from '@/theme/layout';
-import { glow, palette, radii, spacing } from '@/theme/tokens';
+import { glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
+
+/**
+ * What happened, which decides the icon and its colour.
+ *
+ * There was no such thing until now: the pill hardcoded a mint `checkmark-circle`
+ * for every message it was ever given, so `'The engine choked — try again'` and
+ * `'No previous purchases found'` were both announced with a green success tick.
+ * Contradicting yourself at the one moment the user needs to understand
+ * something went wrong is worse than saying nothing.
+ */
+const TONES = {
+  success: { icon: 'checkmark-circle', color: palette.mint },
+  error: { icon: 'alert-circle', color: palette.danger },
+  info: { icon: 'information-circle', color: palette.violetBright },
+} as const satisfies Record<string, { icon: keyof typeof Ionicons.glyphMap; color: string }>;
+
+export type ToastTone = keyof typeof TONES;
+
+/** The `show` signature, for components handed the toast as a prop. */
+export type ShowToast = (msg: string, opts?: { tone?: ToastTone; durationMs?: number }) => void;
 
 /**
  * Screen-local toast. Usage:
  *   const toast = useToast();
  *   toast.show('Copied');
+ *   toast.show('That did not work', { tone: 'error' });
  *   ...render {toast.element} as the last child of the screen root.
+ *
+ * `tone` defaults to success so no existing call site changed meaning — the
+ * failures were found and moved over by hand rather than by flipping the default
+ * and hoping.
  */
 export function useToast() {
   const [message, setMessage] = useState<string | null>(null);
+  const [tone, setTone] = useState<ToastTone>('success');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insets = useSafeAreaInsets();
   const { gutter } = useLayout();
@@ -29,11 +55,19 @@ export function useToast() {
     [],
   );
 
-  const show = useCallback((msg: string, durationMs = 1700) => {
-    setMessage(msg);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setMessage(null), durationMs);
-  }, []);
+  const show = useCallback(
+    (msg: string, opts: { tone?: ToastTone; durationMs?: number } = {}) => {
+      setMessage(msg);
+      setTone(opts.tone ?? 'success');
+      if (timer.current) clearTimeout(timer.current);
+      // Errors sit longer: they are usually longer to read, and unlike "Copied"
+      // they are telling the user to do something rather than confirming a thing
+      // they just did.
+      const fallback = opts.tone === 'error' ? 2600 : 1700;
+      timer.current = setTimeout(() => setMessage(null), opts.durationMs ?? fallback);
+    },
+    [],
+  );
 
   const element = message ? (
     <View pointerEvents="none" style={[styles.host, { bottom, paddingHorizontal: gutter }]}>
@@ -41,8 +75,22 @@ export function useToast() {
         entering={FadeInUp.springify().damping(16)}
         exiting={FadeOut.duration(160)}
         style={styles.toast}
+        /*
+         * Announced, not just drawn.
+         *
+         * The host is `pointerEvents="none"` and carries no role, so to a screen
+         * reader this pill did not exist — "Copied", "Removed from history" and
+         * every error above were silent. `assertive` rather than `polite`
+         * because it is transient: it is gone in under three seconds, and a
+         * polite announcement queued behind whatever is being read misses its
+         * own window.
+         */
+        accessibilityLiveRegion="assertive"
+        accessibilityRole="alert"
+        accessible
+        accessibilityLabel={message}
       >
-        <Ionicons name="checkmark-circle" size={16} color={palette.mint} />
+        <Ionicons name={TONES[tone].icon} size={16} color={TONES[tone].color} />
         {/* Long messages exist ("that doesn't look like a profile…"): let the
             pill wrap inside the gutter rather than run off both edges. */}
         <Text style={styles.text}>{message}</Text>
@@ -75,9 +123,7 @@ const styles = StyleSheet.create({
     ...glow(palette.black, 0.5, 14),
   },
   text: {
+    ...typo.label,
     flexShrink: 1,
-    color: palette.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
   },
 });

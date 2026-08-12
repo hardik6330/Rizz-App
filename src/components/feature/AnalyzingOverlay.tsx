@@ -16,7 +16,7 @@ import Animated, {
 
 import { ANALYZE_STAGES } from '@/services/engine';
 import { cardHeightFor, useLayout } from '@/theme/layout';
-import { absoluteFill, palette, radii, spacing } from '@/theme/tokens';
+import { absoluteFill, palette, radii, spacing, type as typo } from '@/theme/tokens';
 
 /** Designed height on a normal portrait phone; short screens get less. */
 const CARD_HEIGHT = 340;
@@ -157,10 +157,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.mint,
   },
   badgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    color: palette.textSecondary,
+    ...typo.micro,
   },
   panel: {
     position: 'absolute',
@@ -172,9 +169,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10,10,18,0.72)',
   },
   stageText: {
-    fontSize: 15,
+    ...typo.body,
     fontWeight: '700',
-    color: palette.textPrimary,
     letterSpacing: -0.2,
   },
   track: {

@@ -11,7 +11,7 @@ import { track } from '@/services/analytics';
 import { PROFILE_LABELS } from '@/services/profileEngine';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { glyph, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { ProfileScanResult, ProfileScore, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
 
@@ -322,24 +322,21 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   reportName: {
-    fontSize: 16,
+    ...typo.h3,
     fontWeight: '800',
-    letterSpacing: -0.3,
-    color: palette.textPrimary,
   },
   reportTagline: {
-    fontSize: 12.5,
-    color: palette.textSecondary,
+    ...typo.caption,
+    fontWeight: '400',
   },
   reportDate: {
-    fontSize: 11.5,
+    ...typo.caption,
+    fontWeight: '400',
     color: palette.textTertiary,
   },
   summary: {
-    fontSize: 16,
-    lineHeight: 24,
+    ...typo.reply,
     fontWeight: '600',
-    color: palette.textPrimary,
   },
   section: {
     gap: spacing.sm,
@@ -353,18 +350,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionEmoji: {
-    fontSize: 16,
+    fontSize: glyph.lg,
   },
   sectionTitle: {
-    fontSize: 16,
+    ...typo.h3,
     fontWeight: '800',
-    letterSpacing: -0.3,
-    color: palette.textPrimary,
   },
   para: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: palette.textSecondary,
+    ...typo.bodyMuted,
   },
   scoreHead: {
     flexDirection: 'row',
@@ -372,7 +365,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   scoreValue: {
-    fontSize: 15,
+    ...typo.body,
     fontWeight: '900',
   },
   spacer: {
@@ -389,7 +382,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
   },
   hint: {
-    fontSize: 12,
+    ...typo.caption,
+    fontWeight: '400',
     color: palette.textTertiary,
     textAlign: 'center',
   },
@@ -407,9 +401,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   lineText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: palette.textPrimary,
+    ...typo.reply,
   },
   lineActions: {
     flexDirection: 'row',
@@ -443,17 +435,16 @@ const styles = StyleSheet.create({
     borderColor: palette.hairlineStrong,
   },
   tabEmoji: {
-    fontSize: 12,
+    fontSize: glyph.sm,
     lineHeight: 16,
   },
   tabLabel: {
     // React Native defaults flexShrink to 0 (unlike the web), so without this the
     // label refuses to shrink and spills outside the pill — numberOfLines cannot
     // ellipsize text that was never given a bounded width.
+    ...typo.caption,
     flexShrink: 1,
-    fontSize: 11.5,
     fontWeight: '700',
-    color: palette.textSecondary,
   },
   bulletRow: {
     flexDirection: 'row',
@@ -468,10 +459,8 @@ const styles = StyleSheet.create({
     backgroundColor: palette.cyan,
   },
   bulletText: {
+    ...typo.bodyMuted,
     flex: 1,
-    fontSize: 14,
-    lineHeight: 21,
-    color: palette.textSecondary,
   },
   disclaimerRow: {
     flexDirection: 'row',
@@ -481,12 +470,12 @@ const styles = StyleSheet.create({
     borderTopColor: palette.hairline,
   },
   disclaimerEmoji: {
-    fontSize: 13,
+    fontSize: glyph.md,
   },
   disclaimer: {
+    ...typo.caption,
     flex: 1,
-    fontSize: 12.5,
-    lineHeight: 18,
+    fontWeight: '400',
     fontStyle: 'italic',
     color: palette.textTertiary,
   },

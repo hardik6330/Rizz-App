@@ -1,6 +1,5 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -13,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CircleIconButton } from '@/components/ui/CircleIconButton';
 import { AiNotice } from '@/components/feature/AiNotice';
+import { Button } from '@/components/ui/Button';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { INTERESTS } from '@/data/interests';
 import { ProUpsellCard } from '@/components/feature/ProUpsellCard';
@@ -22,14 +22,14 @@ import { useToast } from '@/components/ui/Toast';
 import { BIO_STAGES, optimizeBio } from '@/services/bioEngine';
 import { useOutOfCredits, useRizzStore } from '@/state/useRizzStore';
 import { useLayout, useTabBarClearance } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { glyph, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { BioOption, BioResult, BioVibe } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { copyLine } from '@/utils/misc';
 import { useBackToIdle } from '@/hooks/useBackToIdle';
 import { useAiConsent } from '@/hooks/useAiConsent';
 import { useCreditGate } from '@/hooks/useCreditGate';
-import { useKeyboardInset } from '@/hooks/useKeyboardInset';
+import { useKeyboardReveal } from '@/hooks/useKeyboardReveal';
 import { useStagedProgress } from '@/hooks/useStagedProgress';
 
 type Phase = 'idle' | 'working' | 'done';
@@ -41,7 +41,9 @@ export default function BioScreen() {
   const { gutter } = useLayout();
   const bottomClearance = useTabBarClearance();
   /** Android has no keyboard handling of its own here — see the hook. */
-  const kbInset = useKeyboardInset();
+  /** The multiline bio box sits low on the page — see the hook. */
+  const scroller = useRef<ScrollView>(null);
+  const { inset: kbInset, onFocus: onFieldFocus, onScroll } = useKeyboardReveal(scroller);
   const toast = useToast();
 
   const [phase, setPhase] = useState<Phase>('idle');
@@ -81,7 +83,7 @@ export default function BioScreen() {
     if (needsAiConsent('bio')) return;
     if (creditGate('out_of_credits', 'bio')) return;
     if (!canOptimize) {
-      toast.show('Pick at least one interest');
+      toast.show('Pick at least one interest', { tone: 'error' });
       return;
     }
 
@@ -102,7 +104,7 @@ export default function BioScreen() {
       haptic.success();
     } catch (error) {
       console.warn('[bio] optimize failed', error);
-      toast.show('The engine choked — try again');
+      toast.show('The engine choked — try again', { tone: 'error' });
       setPhase('idle');
     } finally {
       stopStages();
@@ -148,6 +150,9 @@ export default function BioScreen() {
   return (
     <View style={styles.root}>
       <ScrollView
+        ref={scroller}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.scroll,
           {
@@ -250,6 +255,7 @@ export default function BioScreen() {
               <TextInput
                 value={custom}
                 onChangeText={setCustom}
+                onFocus={onFieldFocus}
                 placeholder="Add your own, comma separated…"
                 placeholderTextColor={palette.textTertiary}
                 style={styles.input}
@@ -300,6 +306,7 @@ export default function BioScreen() {
               <TextInput
                 value={currentBio}
                 onChangeText={setCurrentBio}
+                onFocus={onFieldFocus}
                 placeholder="Paste your current bio to rewrite it…"
                 placeholderTextColor={palette.textTertiary}
                 multiline
@@ -308,18 +315,15 @@ export default function BioScreen() {
             </View>
 
             {/* CTA */}
-            <HapticPressable
-              onPress={() => void optimize()}
+            <Button
+              label={outOfCredits ? 'Unlock more with Pro' : 'Optimize my bio'}
+              icon="sparkles"
+              variant="accent"
+              color={palette.mint}
               disabled={!canOptimize && !outOfCredits}
+              onPress={() => void optimize()}
               accessibilityLabel="Optimize my bio"
-              accessibilityState={{ disabled: !canOptimize && !outOfCredits }}
-              style={[styles.cta, !canOptimize && !outOfCredits && styles.ctaDisabled]}
-            >
-              <Ionicons name="sparkles" size={17} color={palette.ink} />
-              <Text style={styles.ctaText}>
-                {outOfCredits ? 'Unlock more with Pro' : 'Optimize my bio'}
-              </Text>
-            </HapticPressable>
+            />
 
             <AiNotice tool="bio" />
           </>
@@ -386,24 +390,17 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   heroTitle: {
-    fontSize: 31,
-    lineHeight: 36,
-    fontWeight: '900',
-    letterSpacing: -1,
-    color: palette.textPrimary,
+    ...typo.display,
   },
   heroSub: {
-    fontSize: 14.5,
-    color: palette.textSecondary,
+    ...typo.bodyMuted,
   },
   section: {
     gap: spacing.md,
   },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.4,
-    color: palette.textSecondary,
+    ...typo.overline,
+    textTransform: 'none',
   },
   chipWrap: {
     flexDirection: 'row',
@@ -422,10 +419,10 @@ const styles = StyleSheet.create({
     borderColor: palette.hairline,
   },
   chipEmoji: {
-    fontSize: 13,
+    fontSize: glyph.md,
   },
   chipLabel: {
-    fontSize: 13,
+    ...typo.label,
     fontWeight: '700',
     color: palette.textSecondary,
   },
@@ -436,8 +433,7 @@ const styles = StyleSheet.create({
     borderColor: palette.hairline,
     paddingHorizontal: spacing.lg,
     paddingVertical: 12,
-    fontSize: 15,
-    color: palette.textPrimary,
+    ...typo.body,
   },
   inputMultiline: {
     minHeight: 90,
@@ -465,28 +461,9 @@ const styles = StyleSheet.create({
   vibeLabel: {
     // RN defaults flexShrink to 0, so text will not shrink into a bounded pill
     // on its own — and numberOfLines cannot ellipsize what was never bounded.
+    ...typo.caption,
     flexShrink: 1,
-    fontSize: 12.5,
     fontWeight: '700',
-    color: palette.textSecondary,
-  },
-  cta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    borderRadius: radii.full,
-    backgroundColor: palette.mint,
-  },
-  ctaDisabled: {
-    opacity: 0.4,
-  },
-  ctaText: {
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: -0.2,
-    color: palette.ink,
   },
   results: {
     gap: spacing.md,
@@ -502,14 +479,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   resultTitle: {
-    fontSize: 18,
+    ...typo.h3,
     fontWeight: '800',
-    letterSpacing: -0.3,
-    color: palette.textPrimary,
   },
   resultSub: {
-    fontSize: 12.5,
-    color: palette.textSecondary,
+    ...typo.caption,
+    fontWeight: '400',
   },
   card: {
     backgroundColor: palette.surface,
@@ -531,16 +506,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   toneText: {
-    fontSize: 10,
-    fontWeight: '800',
+    ...typo.micro,
     letterSpacing: 1.1,
   },
   spacer: {
     flex: 1,
   },
   cardText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: palette.textPrimary,
+    ...typo.reply,
   },
 });

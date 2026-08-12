@@ -5,7 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { FREE_ANALYSIS_LIMIT } from '@/constants';
 import { useRizzStore } from '@/state/useRizzStore';
-import { palette, spacing } from '@/theme/tokens';
+import { palette, spacing, type as typo } from '@/theme/tokens';
 import { CircleIconButton } from './CircleIconButton';
 import { HapticPressable } from './HapticPressable';
 import { LimitBadge, ProChip } from './LimitBadge';
@@ -86,11 +86,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   wordmarkText: {
+    ...typo.h2,
     flexShrink: 1,
-    fontSize: 19,
     fontWeight: '900',
-    letterSpacing: -0.5,
-    color: palette.textPrimary,
   },
   headerActions: {
     flexDirection: 'row',
@@ -113,8 +111,8 @@ const styles = StyleSheet.create({
     borderColor: palette.ink,
   },
   countText: {
-    fontSize: 9,
-    fontWeight: '800',
+    ...typo.micro,
+    letterSpacing: 0,
     color: palette.textPrimary,
   },
 });

@@ -15,7 +15,7 @@ import Animated, {
 
 import { BG } from '@/data/assets';
 import { cardHeightFor, useLayout } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { HapticPressable } from './HapticPressable';
 
 interface GlowDropZoneProps {
@@ -186,17 +186,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontSize: 21,
-    lineHeight: 26,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-    color: palette.textPrimary,
+    ...typo.h2,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: palette.textSecondary,
+    ...typo.bodyMuted,
     textAlign: 'center',
   },
   chip: {
@@ -211,7 +205,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10,10,18,0.55)',
   },
   chipText: {
-    fontSize: 12,
+    ...typo.caption,
     fontWeight: '700',
     letterSpacing: 0.3,
   },

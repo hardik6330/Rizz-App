@@ -10,7 +10,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { palette, radii, spacing, type as typo } from '@/theme/tokens';
+import { glyph, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { VibeCheck } from '@/types';
 
 interface VibeCheckCardProps {
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     borderColor: `${palette.cyan}44`,
   },
   emoji: {
-    fontSize: 24,
+    fontSize: glyph.xl,
     lineHeight: 30,
   },
   headerText: {
@@ -134,11 +134,8 @@ const styles = StyleSheet.create({
     color: palette.cyan,
   },
   persona: {
-    fontSize: 18,
-    lineHeight: 23,
+    ...typo.h3,
     fontWeight: '800',
-    letterSpacing: -0.3,
-    color: palette.textPrimary,
   },
   confidenceChip: {
     flexShrink: 0,
@@ -150,9 +147,10 @@ const styles = StyleSheet.create({
     borderColor: palette.hairline,
   },
   confidenceText: {
-    fontSize: 11,
+    ...typo.overline,
+    letterSpacing: 0,
+    textTransform: 'none',
     fontWeight: '700',
-    color: palette.textSecondary,
   },
   meterBlock: {
     gap: spacing.sm,
@@ -163,14 +161,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   meterLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+    ...typo.label,
     color: palette.textSecondary,
   },
   meterValue: {
-    fontSize: 14,
+    ...typo.label,
     fontWeight: '800',
-    color: palette.textPrimary,
   },
   track: {
     height: 9,
@@ -197,9 +193,8 @@ const styles = StyleSheet.create({
     borderColor: palette.hairline,
   },
   traitText: {
-    fontSize: 12,
+    ...typo.caption,
     fontWeight: '600',
-    color: palette.textSecondary,
   },
   flags: {
     gap: 6,
@@ -210,14 +205,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   flagEmoji: {
-    fontSize: 12,
+    fontSize: glyph.sm,
     marginTop: 2,
   },
   flagText: {
+    ...typo.bodySm,
     flex: 1,
-    fontSize: 13,
-    lineHeight: 19,
-    color: palette.textSecondary,
   },
   verdictBox: {
     backgroundColor: palette.ink,
@@ -227,9 +220,7 @@ const styles = StyleSheet.create({
     borderLeftColor: palette.cyan,
   },
   verdictText: {
-    fontSize: 14,
-    lineHeight: 21,
+    ...typo.bodyMuted,
     fontStyle: 'italic',
-    color: palette.textSecondary,
   },
 });

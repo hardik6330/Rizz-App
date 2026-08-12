@@ -11,8 +11,8 @@ import { HapticPressable } from '@/components/ui/HapticPressable';
 import { VaultItem } from '@/components/feature/VaultItem';
 import { APP_NAME } from '@/constants';
 import { hydrateVault, useRizzStore } from '@/state/useRizzStore';
-import { useLayout } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { CHIP_HIT_SLOP, useLayout } from '@/theme/layout';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { SavedItem } from '@/types';
 import { haptic } from '@/utils/haptics';
 import { copyLine, shareText } from '@/utils/misc';
@@ -129,6 +129,7 @@ export default function VaultScreen() {
                 }}
                 accessibilityLabel={`Filter: ${value}`}
                 accessibilityState={{ selected: active }}
+                hitSlop={CHIP_HIT_SLOP}
                 style={[styles.filterChip, active && styles.filterChipActive]}
               >
                 <Text style={[styles.filterText, active && styles.filterTextActive]}>{value}</Text>
@@ -228,14 +229,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
-    fontSize: 25,
+    ...typo.h1,
     fontWeight: '900',
-    letterSpacing: -0.6,
-    color: palette.textPrimary,
   },
   subtitle: {
-    fontSize: 12.5,
-    color: palette.textSecondary,
+    ...typo.caption,
+    fontWeight: '400',
   },
   filters: {
     flexDirection: 'row',
@@ -256,9 +255,8 @@ const styles = StyleSheet.create({
     borderColor: `${palette.violet}88`,
   },
   filterText: {
-    fontSize: 12.5,
+    ...typo.caption,
     fontWeight: '600',
-    color: palette.textSecondary,
   },
   filterTextActive: {
     color: palette.textPrimary,
@@ -270,7 +268,8 @@ const styles = StyleSheet.create({
   noMatches: {
     textAlign: 'center',
     marginTop: spacing.xxl,
-    fontSize: 13,
+    ...typo.label,
+    fontWeight: '400',
     color: palette.textTertiary,
   },
 });

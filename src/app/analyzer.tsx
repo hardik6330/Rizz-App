@@ -12,7 +12,7 @@ import { useRizzStore } from '@/state/useRizzStore';
 import { isSupported, isEnabled, permissions, setEnabled } from '@/../modules/profile-capture';
 import { track } from '@/services/analytics';
 import { useLayout } from '@/theme/layout';
-import { palette, radii, spacing } from '@/theme/tokens';
+import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
 /**
@@ -81,7 +81,7 @@ export default function AnalyzerScreen() {
   const toggle = (next: boolean) => {
     if (next && !ready) {
       haptic.warning();
-      toast.show('Grant both permissions first');
+      toast.show('Grant both permissions first', { tone: 'error' });
       return;
     }
     haptic.medium();
@@ -289,16 +289,13 @@ const styles = StyleSheet.create({
   scroll: { gap: spacing.lg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   wordmark: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  wordmarkText: { fontSize: 16, fontWeight: '800', letterSpacing: -0.3, color: palette.textPrimary },
+  wordmarkText: { ...typo.h3, fontWeight: '800' },
   hero: { gap: spacing.sm },
   title: {
-    fontSize: 27,
-    lineHeight: 33,
+    ...typo.h1,
     fontWeight: '900',
-    letterSpacing: -0.8,
-    color: palette.textPrimary,
   },
-  body: { fontSize: 14.5, lineHeight: 21, color: palette.textSecondary },
+  body: { ...typo.bodyMuted },
   disclosure: {
     gap: spacing.md,
     padding: spacing.lg,
@@ -308,7 +305,7 @@ const styles = StyleSheet.create({
     borderColor: palette.hairlineStrong,
   },
   disclosureTitle: {
-    fontSize: 13,
+    ...typo.label,
     fontWeight: '800',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
@@ -316,7 +313,7 @@ const styles = StyleSheet.create({
   },
   bullet: { flexDirection: 'row', gap: 10 },
   bulletIcon: { marginTop: 2 },
-  bulletText: { flex: 1, fontSize: 13.5, lineHeight: 20, color: palette.textSecondary },
+  bulletText: { ...typo.bodySm, flex: 1 },
   step: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -336,10 +333,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: palette.surfaceHigh,
   },
-  stepNum: { fontSize: 12, fontWeight: '800', color: palette.textSecondary },
+  stepNum: { ...typo.caption, fontWeight: '800' },
   stepText: { flex: 1, gap: 3 },
-  stepTitle: { fontSize: 14.5, fontWeight: '700', color: palette.textPrimary },
-  stepBody: { fontSize: 12.5, lineHeight: 18, color: palette.textTertiary },
+  stepTitle: { ...typo.body, fontWeight: '700' },
+  stepBody: { ...typo.caption, fontWeight: '400', color: palette.textTertiary },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -352,11 +349,11 @@ const styles = StyleSheet.create({
   },
   dim: { opacity: 0.55 },
   switchText: { flex: 1, gap: 2 },
-  switchTitle: { fontSize: 15, fontWeight: '800', color: palette.textPrimary },
-  switchSub: { fontSize: 12.5, color: palette.textSecondary },
-  footnote: { fontSize: 12, lineHeight: 17, color: palette.textTertiary, textAlign: 'center' },
+  switchTitle: { ...typo.body, fontWeight: '800' },
+  switchSub: { ...typo.caption, fontWeight: '400' },
+  footnote: { ...typo.caption, fontWeight: '400', color: palette.textTertiary, textAlign: 'center' },
   skip: { alignItems: 'center', paddingVertical: spacing.md },
-  skipText: { fontSize: 13, fontWeight: '700', color: palette.textSecondary },
+  skipText: { ...typo.label, fontWeight: '700', color: palette.textSecondary },
   cta: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -366,5 +363,5 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
     backgroundColor: palette.violet,
   },
-  ctaText: { fontSize: 15, fontWeight: '900', color: palette.textPrimary },
+  ctaText: { ...typo.body, fontWeight: '900' },
 });
