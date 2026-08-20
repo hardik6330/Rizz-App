@@ -22,7 +22,6 @@ import { Hono } from 'hono';
 import { app } from './app.ts';
 import { db, pool } from './db/client.ts';
 import { env } from './env.ts';
-import { dummyHash } from './lib/password.ts';
 import { idempotent } from './middleware/idempotency.ts';
 import { chargeCredit, refundCredit } from './middleware/credits.ts';
 
@@ -237,14 +236,6 @@ try {
       null,
       'H-8: never `*` — this API is bearer-authenticated',
     );
-  }
-
-  // ── H-9 · the dummy hash is built once, lazily ──────────────────────────────
-  {
-    const first = await dummyHash();
-    const second = await dummyHash();
-    assert.equal(first, second, 'H-9: memoised — not one scrypt per call');
-    assert.ok(first.startsWith('scrypt$'), 'H-9: and it is a real hash');
   }
 
   console.log('high.selfcheck: ok');

@@ -352,25 +352,55 @@ class RizzAccessibilityService : AccessibilityService() {
     val signature = result.kind.name + "|" + pkg + "|" + signals.viewIds.take(6).joinToString(",")
     if (overlay?.isShowing == true && signature == lastSignature) return
     lastSignature = signature
-    val chat = result.kind == ScreenKind.CHAT
-    val label = getString(if (chat) R.string.rizz_bubble_chat_label else R.string.rizz_bubble_label)
+    val label = getString(
+      if (result.kind == ScreenKind.CHAT) R.string.rizz_bubble_chat_label else R.string.rizz_bubble_label,
+    )
     // After the signature guard, so a scroll that re-fires content-changed on the
     // same screen does not inflate the impression count.
     RizzAnalytics.bubbleShown(this, result.kind)
     // Restart the leave-detection poll alongside the bubble it guards.
     main.removeCallbacks(presenceCheck)
     main.postDelayed(presenceCheck, PRESENCE_POLL_MS)
-    main.post {
-      overlay?.show(label) {
-        RizzAnalytics.bubbleTapped(this, result.kind)
-        if (chat) {
-          overlay?.showToneMenu { tone ->
-            onChatAnalyzeTapped(pkg, tone)
-          }
-        } else {
-          onAnalyzeTapped(pkg, signals, result)
-        }
-      }
+    // show() re-points an existing bubble rather than early-returning, so a
+    // chat → profile change with the bubble still up gets the new action.
+    main.post { overlay?.show(label) { onBubbleTapped(pkg, signals, result) } }
+  }
+
+  /**
+   * Re-classify at tap time: the classification that drew the bubble is up to
+   * DEBOUNCE_MS old, and a fast navigation can leave it a whole screen stale.
+   * The passed-in trio is the fallback when the live read fails.
+   */
+  private fun onBubbleTapped(shownPkg: String, shownSignals: ScreenSignals, shownResult: Classification) {
+    val live = liveScreen()
+    // A readable screen that wants no bubble: leave rather than run a stale
+    // action — the presence poll would have removed it a moment later anyway.
+    if (live != null && live.third.kind == ScreenKind.NONE) {
+      Log.i(TAG, "tap on a screen that no longer qualifies — hiding")
+      hideBubble()
+      return
+    }
+    val (pkg, signals, result) = live ?: Triple(shownPkg, shownSignals, shownResult)
+
+    RizzAnalytics.bubbleTapped(this, result.kind)
+    if (result.kind == ScreenKind.CHAT) {
+      overlay?.showToneMenu { tone -> onChatAnalyzeTapped(pkg, tone) }
+    } else {
+      onAnalyzeTapped(pkg, signals, result)
+    }
+  }
+
+  /** The current screen, or null when it is unreadable or not one of ours. */
+  private fun liveScreen(): Triple<String, ScreenSignals, Classification>? {
+    val root = rootInActiveWindow ?: return null
+    val pkg = root.packageName?.toString() ?: return null
+    if (pkg !in ScreenClassifier.SUPPORTED) return null
+    return try {
+      val signals = collect(root, pkg)
+      Triple(pkg, signals, ScreenClassifier.classify(signals))
+    } catch (e: Exception) {
+      Log.w(TAG, "tap-time tree walk failed", e)
+      null
     }
   }
 

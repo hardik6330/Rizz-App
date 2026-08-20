@@ -132,22 +132,3 @@ export async function verifyPassword(plain: string, stored: string | null): Prom
     }
   });
 }
-
-/**
- * A hash of nothing, to verify against when the email does not exist.
- *
- * Without it `/login` returns in ~1ms for an unknown email and ~100ms for a
- * known one, which is an account-existence oracle that no amount of careful
- * error copy can hide.
- *
- * LAZY, and that matters on serverless. It used to be built at module load, so
- * every cold start paid a full scrypt — ~100ms and a 32MB allocation — including
- * the cold starts that go on to serve `/healthz` or `/v1/config` and will never
- * verify a password. Now the cost lands on the first login an instance handles,
- * and is memoised for the rest of its life, which is exactly where it belongs.
- */
-let dummy: Promise<string> | undefined;
-
-export function dummyHash(): Promise<string> {
-  return (dummy ??= hashPassword(randomBytes(32).toString('hex')));
-}

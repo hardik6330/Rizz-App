@@ -8,7 +8,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   addCaptureListener,
   configureChat,
-  consumeChatUsage,
   hasPendingCapture,
   isSupported,
 } from '@/../modules/profile-capture';
@@ -195,22 +194,11 @@ export default function RootLayout() {
    * The inline chat reply is generated natively and never launches the app, so —
    * unlike the profile flow — there is no mount where JS can apply the freemium
    * rule. So we push the rule's INPUTS down (isPro + free credits left) on launch
-   * and every resume, and drain the credits the native side burned. See
-   * modules/profile-capture ChatEntitlement.
+   * and every resume. See modules/profile-capture ChatEntitlement.
    */
   useEffect(() => {
     if (!isSupported) return;
     const sync = async () => {
-      /*
-       * The drain is the OFFLINE fallback now, not the primary count.
-       * `incrementAnalysis` no-ops against a live API — `reportCredits` and the
-       * effect above own the number there — because counting in both places is
-       * exactly the double-count that was costing every free user an analysis.
-       * See the note on `incrementAnalysis` in useRizzStore.
-       */
-      const consumed = consumeChatUsage();
-      const store = useRizzStore.getState();
-      for (let i = 0; i < consumed; i++) store.incrementAnalysis();
       // The bubble charges the server directly, so a reply generated while the app
       // was closed is invisible to MMKV. Pull the truth BEFORE deriving the
       // snapshot below, or we push a stale balance back over an accurate one.

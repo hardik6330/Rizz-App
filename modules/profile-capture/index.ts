@@ -42,7 +42,6 @@ declare class ProfileCaptureNativeModule extends NativeModule<CaptureEvents> {
   consumePendingCapture(): NativeCapture | null;
   clearPendingCapture(): void;
   configureChat(apiUrl: string, installId: string, isPro: boolean, freeRemaining: number): void;
-  consumeChatUsage(): number;
 }
 
 // Optional: absent on iOS/web/Expo Go, where every call below no-ops.
@@ -208,13 +207,4 @@ export function configureChat(
   freeRemaining: number,
 ): void {
   native?.configureChat(apiUrl, installId, isPro, freeRemaining);
-}
-
-/**
- * Free credits the inline chat path has burned since the last call, cleared on read.
- * Fold the returned count into `analysisCount` so the shared lifetime limit stays
- * accurate. Returns 0 off Android or when nothing was used.
- */
-export function consumeChatUsage(): number {
-  return native?.consumeChatUsage() ?? 0;
 }

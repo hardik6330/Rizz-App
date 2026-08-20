@@ -7,11 +7,11 @@
  * The exposure was an open-ended bill, not a bounded one.
  *
  * What moved to the server: the key, every system prompt, every `responseSchema`,
- * the model choice, the thinking fix, credit enforcement and rate limiting. What
- * stayed here: building the request, and falling back to mock seeds on failure.
+ * the model choice, the thinking fix, credit enforcement and rate limiting.
  *
- * Throws on any failure — callers catch and serve their mock data, exactly as
- * they did before.
+ * ⚠️ Throws on any failure — it does NOT fall back to mock seeds. Seeds are demo
+ * mode only (`isLiveApi` false); a live failure must reach the user. AGENTS.md §
+ * "Mock seeds are DEMO MODE ONLY".
  */
 
 import { apiUrl, accessToken, reportCredits, type Credits } from '@/services/auth';

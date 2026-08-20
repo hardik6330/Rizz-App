@@ -30,7 +30,6 @@ object ChatEntitlement {
   private const val KEY_TOKEN = "access_token"
   private const val KEY_PRO = "is_pro"
   private const val KEY_REMAINING = "free_remaining"
-  private const val KEY_CONSUMED = "consumed_pending"
 
   private fun prefs(ctx: Context) =
     ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -102,19 +101,5 @@ object ChatEntitlement {
       .putBoolean(KEY_PRO, isPro)
       .putInt(KEY_REMAINING, if (isPro) 9999 else remaining.coerceAtLeast(0))
       .apply()
-  }
-
-  /**
-   * Retained so JS's existing resume hook keeps compiling and stays correct.
-   *
-   * Always 0 now — the server owns the count, so there is no local delta to fold
-   * in. Kept rather than deleted because removing it would mean touching the JS
-   * resume path for no behavioural gain, and a future offline queue would refill it.
-   */
-  fun consumePending(ctx: Context): Int {
-    val p = prefs(ctx)
-    val n = p.getInt(KEY_CONSUMED, 0)
-    if (n != 0) p.edit().putInt(KEY_CONSUMED, 0).apply()
-    return n
   }
 }

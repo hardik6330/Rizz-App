@@ -145,13 +145,6 @@ class ProfileCaptureModule : Module() {
     Function("configureChat") { apiUrl: String, installId: String, isPro: Boolean, freeRemaining: Int ->
       ChatEntitlement.configure(context, apiUrl, installId, isPro, freeRemaining)
     }
-
-    /**
-     * Number of free credits the inline chat path burned since the last call, then
-     * reset. JS folds this into `analysisCount` so the shared lifetime limit stays
-     * correct across all tools.
-     */
-    Function("consumeChatUsage") { ChatEntitlement.consumePending(context) }
   }
 
   companion object {

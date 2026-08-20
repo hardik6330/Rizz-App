@@ -1,46 +1,50 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
+  Keyboard,
+  Platform,
   TextInput,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ScrollView,
 } from 'react-native';
 
-import { useKeyboardInset } from './useKeyboardInset';
-
 /** Gap left between the focused field and the top of the keyboard. */
 const MARGIN = 16;
 
 /**
- * Scrolls the focused text field out from behind the keyboard.
+ * How much of the screen the keyboard covers. Added as `paddingBottom` so the
+ * ScrollView has somewhere to scroll TO.
  *
- * ## The bug this exists for
+ * ⚠️ `automaticallyAdjustKeyboardInsets` is iOS-only, and edge-to-edge (SDK 54+/
+ * RN 0.86) stopped Android resizing its window — so Android has no keyboard
+ * handling but this. iOS takes `keyboardWillShow` (fires with the animation);
+ * Android has no `will` events. AGENTS.md § Conventions, keyboard fix.
+ */
+function useKeyboardInset(): number {
+  const [height, setHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, (e) => setHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener(hideEvent, () => setHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  return height;
+}
+
+/**
+ * Scrolls the focused text field out from behind the keyboard. Padding alone
+ * only opens room to scroll to — nothing on Android ever scrolls there.
  *
- * `useKeyboardInset` added the keyboard's height as `paddingBottom`, and its
- * docblock claimed that "the platform's own reveal-the-focused-input behaviour
- * does the rest". **On Android there is no such behaviour to do the rest.** That
- * reveal is a side effect of `adjustResize` shrinking the window, which is
- * exactly what edge-to-edge stopped doing — the same root cause that made the
- * padding necessary in the first place. So the padding opened up somewhere to
- * scroll to and then nothing ever scrolled there: tapping PASSWORD on the signup
- * form put the caret in a field sitting under the keyboard, and the user typed
- * ten characters they could not see.
- *
- * ## Why it needs a focus signal as well as the keyboard height
- *
- * Two different moments hide a field, and only one of them fires a keyboard
- * event. Tapping a field while the keyboard is closed opens it — that is the
- * inset changing. Tapping a *lower* field while the keyboard is already open
- * moves focus under it with no event at all, which is the email → password tap
- * on this very form. Both have to trigger the measure, so `onFocus` goes on the
- * inputs and the effect watches both.
- *
- * ## Why measure instead of scrolling to the end
- *
- * `scrollToEnd` would fix the password field, because it happens to be last, and
- * would over-scroll every field above it. Measuring the field that actually has
- * focus is the same amount of code and does not care about field order.
+ * Watches focus AND inset: tapping a lower field while the keyboard is already
+ * open fires no keyboard event. Measures the focused node rather than
+ * `scrollToEnd`, which would over-scroll every field above the last one.
  *
  * ponytail: measures on a callback rather than tracking the keyboard frame, so
  * the scroll lands in one step after the keyboard settles. Good enough at 250ms;

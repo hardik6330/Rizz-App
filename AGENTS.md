@@ -315,8 +315,9 @@ BEFORE `configureChat()`.** The accessibility service charges `/v1/ai/chat` itse
 the server's balance into its own SharedPreferences snapshot. `_layout.tsx`'s resume hook then
 pushes a snapshot *down* — so if it derives that snapshot from MMKV without pulling
 `GET /v1/user/credits` first, it overwrites an accurate balance with a stale one and bubble
-replies look free forever. `consumeChatUsage()` is always 0 now by design; it is kept only so
-a future offline queue has somewhere to refill.
+replies look free forever. `consumeChatUsage()` and `ChatEntitlement.consumePending` are gone —
+nothing ever wrote the counter they drained, so both sides read a permanent 0. An offline queue
+would add its own drain.
 
 ⚠️ **`refreshCredits()` has its own effect, and must NOT be folded back into the bubble
 one.** It lived inside that effect, behind its `if (!isSupported) return` — and

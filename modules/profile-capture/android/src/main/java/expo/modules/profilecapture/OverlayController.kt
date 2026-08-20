@@ -72,7 +72,9 @@ class OverlayController(private val context: Context) {
 
   @SuppressLint("ClickableViewAccessibility")
   fun show(label: String, onTap: () -> Unit) {
-    if (bubble != null) return
+    // Already up: re-point it instead of building a second window. The screen can
+    // change underneath a bubble that never leaves — see updateAction.
+    if (bubble != null) return updateAction(label, onTap)
 
     // Icon only. The label is carried by contentDescription rather than visible
     // text: this sits on top of someone else's app, so it should read as a control,
@@ -492,6 +494,20 @@ class OverlayController(private val context: Context) {
       host.postDelayed(strikeCleanup!!, FLASH_MS * 3)
     }
     host.postDelayed(strikeLanding!!, STRIKE_MS)
+  }
+
+  /**
+   * Re-point a visible bubble at a new label and action. `show()` delegates here
+   * rather than early-returning, or a chat → profile change keeps the chat action.
+   */
+  @SuppressLint("ClickableViewAccessibility")
+  fun updateAction(label: String, onTap: () -> Unit) {
+    val view = bubble ?: return
+    val lp = params ?: return
+    view.contentDescription = label
+    // A fresh listener rather than a mutable field on the old one: the listener
+    // also owns the drag state, and a re-point mid-drag should start clean.
+    view.setOnTouchListener(DragTapListener(lp, onTap))
   }
 
   fun hideStrike() {
