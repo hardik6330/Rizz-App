@@ -10,6 +10,8 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
+
+import { isSupported } from '@/../modules/profile-capture';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticPressable } from '@/components/ui/HapticPressable';
@@ -33,19 +35,25 @@ import { haptic } from '@/utils/haptics';
  * result, so every install that will not hand over an email is lost here". This
  * screen is the result, shown before the ask.
  *
- * Four pages, all four demoed, in this order and for this reason:
+ * Four pages on Android, in this order and for this reason:
  *
  *   0  Bio Lab — chips picked, a vibe chosen, a bio written.
  *   1  The Lab — a screenshot uploaded, read, and replies handed back.
  *   2  Profile Scan — a profile, the ✨ bubble, the app coming forward with the
- *      report already written.
+ *      report already written.                              ⚠️ ANDROID ONLY
  *   3  Chat — a conversation with no good reply, the ✨ button, the thread read
- *      end to end, the reply on the clipboard.
+ *      end to end, the reply on the clipboard.              ⚠️ ANDROID ONLY
+ *
+ * **On iOS it is the first two only** — see `PAGES` below. The bubble is an
+ * accessibility service; demoing it to an iPhone user advertises something the
+ * app cannot do.
  *
  * The order is a widening claim: two things you do *inside* the app, then two
  * things it does *inside theirs*. That split is also why pages 0–1 swap their
  * content in place while 2–3 use sheets — see the note on `styles.report`. The
- * ✨ appears only on 2–3, so the gesture keeps meaning one specific thing.
+ * ✨ appears only on 2–3, so the gesture keeps meaning one specific thing. It is
+ * also why iOS truncating to 0–1 is a clean cut rather than a hole: the first
+ * half is a complete claim on its own.
  *
  * Each page lives in `src/screens/welcome/`, with its own script constants next
  * to the component that reads them. This file is the pager, the dots, the CTA
@@ -63,12 +71,31 @@ import { haptic } from '@/utils/haptics';
  * nothing to upload yet) and bill a user who has agreed to nothing.
  */
 
-/** Page indices. The chat demo is always last. */
-const BIO = 0;
-const LAB = 1;
-const SCAN = 2;
-const DEMO = 3;
-const PAGES = 4;
+/**
+ * The pages, in order — and on iOS there are only two of them.
+ *
+ * ⚠️ `ScanPage` and `DemoPage` are the ✨ bubble: a profile scanned from inside
+ * Instagram, and a chat answered from inside it. The bubble is an Android
+ * accessibility service and iOS has no equivalent, so on an iPhone those two
+ * pages demo a feature the binary cannot deliver — on the FIRST screen of the
+ * app, before the user has an account, and in front of a store reviewer. Same
+ * rule, and the same `isSupported` gate, as `FEATURES` in `paywall.tsx`.
+ *
+ * The docblock above calls the order "a widening claim: two things you do inside
+ * the app, then two things it does inside theirs." iOS keeps the first half,
+ * which stands on its own — Bio Lab and the Lab ARE the two tools an iPhone user
+ * gets. What it must not do is make the second claim and then not honour it.
+ *
+ * Everything else here derives from this array: the dots, the CTA's label, and
+ * what counts as the last page. Adding a page means adding it here and nowhere
+ * else.
+ */
+const PAGES = isSupported
+  ? [BioPage, LabPage, ScanPage, DemoPage]
+  : [BioPage, LabPage];
+
+/** Index of the final page — the one whose CTA leaves the demo. */
+const LAST = PAGES.length - 1;
 
 export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
@@ -128,7 +155,7 @@ export default function WelcomeScreen() {
   );
 
   const advance = useCallback(() => {
-    if (page < DEMO) {
+    if (page < LAST) {
       haptic.light();
       scroller.current?.scrollTo({ x: (page + 1) * width, animated: true });
       return;
@@ -157,26 +184,27 @@ export default function WelcomeScreen() {
            by half of it and break the paging alignment. Pages apply their own. */
         style={styles.pager}
       >
-        {/* `live` gates each loop's timer — see `usePhaseLoop`. */}
-        <BioPage {...pageProps} live={page === BIO} />
-        <LabPage {...pageProps} live={page === LAB} />
-        <ScanPage {...pageProps} live={page === SCAN} />
-        <DemoPage {...pageProps} live={page === DEMO} />
+        {/* `live` gates each loop's timer — see `usePhaseLoop`. Without it every
+            page burns a timer and a re-render behind the others from the app's
+            first frame. */}
+        {PAGES.map((Page, i) => (
+          <Page key={i} {...pageProps} live={page === i} />
+        ))}
       </ScrollView>
 
       <View style={[styles.footer, { paddingHorizontal: gutter, paddingBottom: insets.bottom + spacing.lg }]}>
         <View style={styles.dots}>
-          {Array.from({ length: PAGES }, (_, i) => (
+          {PAGES.map((_, i) => (
             <View key={i} style={[styles.dot, i === page && styles.dotOn]} />
           ))}
         </View>
 
         <HapticPressable style={styles.cta} onPress={advance} feedback="medium">
-          <Text style={styles.ctaText}>{page === DEMO ? 'Get started' : 'Next'}</Text>
+          <Text style={styles.ctaText}>{page === LAST ? 'Get started' : 'Next'}</Text>
         </HapticPressable>
 
         <Text style={styles.footnote}>
-          {page === DEMO ? 'Takes about a minute to set up.' : 'Swipe to see the rest.'}
+          {page === LAST ? 'Takes about a minute to set up.' : 'Swipe to see the rest.'}
         </Text>
       </View>
     </View>

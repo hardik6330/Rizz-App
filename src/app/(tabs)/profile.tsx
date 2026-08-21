@@ -31,6 +31,7 @@ import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { ProfileCapture, ProfileScanResult, ScanMode } from '@/types';
 import { haptic } from '@/utils/haptics';
+import { prepareImage } from '@/utils/prepareImage';
 import { copyLine, timeAgo } from '@/utils/misc';
 import { useBackToIdle } from '@/hooks/useBackToIdle';
 import { useAiConsent } from '@/hooks/useAiConsent';
@@ -93,23 +94,39 @@ export default function ProfileScreen() {
     const remaining = MAX_IMAGES - images.length;
     if (remaining <= 0) return;
 
+    /*
+     * No `base64` and no `quality` — `prepareImage` owns both. This screen is the
+     * sharp end of it: THREE untouched originals were encoded to base64 and held
+     * as JS strings before the request body copied them again. See
+     * utils/prepareImage.ts.
+     */
     const picked = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
       selectionLimit: remaining,
-      quality: 0.7,
-      base64: true,
     });
     if (picked.canceled) return;
 
-    const next = picked.assets
-      .slice(0, remaining)
-      .map((a) => ({ uri: a.uri, base64: a.base64 ?? '', mimeType: a.mimeType ?? 'image/jpeg' }));
-    if (next.length === 0) return;
+    const chosen = picked.assets.slice(0, remaining);
+    if (chosen.length === 0) return;
+
+    const next: Pick[] = [];
+    try {
+      // Sequential, not Promise.all: three concurrent decodes is the memory spike
+      // this function exists to avoid, and the picker is already a modal wait.
+      for (const asset of chosen) {
+        next.push({ uri: asset.uri, ...(await prepareImage(asset)) });
+      }
+    } catch (error) {
+      // Nothing charged yet — the gates ran, the request has not.
+      console.warn('[profile] could not prepare the screenshots', error);
+      toast.show('Could not read those screenshots — try others', { tone: 'error' });
+      return;
+    }
 
     haptic.medium();
     setImages((prev) => [...prev, ...next].slice(0, MAX_IMAGES));
-  }, [images.length, creditGate, needsAiConsent]);
+  }, [images.length, creditGate, needsAiConsent, toast]);
 
   const removeImage = (uri: string) => {
     haptic.light();

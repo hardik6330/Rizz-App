@@ -34,7 +34,15 @@ Check with `npx expo config --type public`.
    - local: `APPLE_TEAM_ID=ABCDE12345 npx expo prebuild -p ios`
 2. Run `npx expo run:ios` (or an EAS build).
 3. Verify the App Group: the plugin provisions
-   `group.<bundleIdentifier>.expowidgets` → `group.com.rizzcoach.app.expowidgets`.
+   `group.<ios.bundleIdentifier>.expowidgets` → `group.com.rizzcoach.chat.expowidgets`.
+
+   ⚠️ **That is the iOS bundle id, not the Android package.** This file used to say
+   `group.com.rizzcoach.app.expowidgets` and so did `RizzWidgets.swift` — the Android
+   package. The extension was entitled to one suite and read another, so
+   `WidgetStore.load()` returned nil on every device and the widget only ever showed
+   its fallback line. Both are corrected; if you change `ios.bundleIdentifier`, change
+   `WidgetStore.appGroup` in the same commit.
+
    If your plugin version generates a different suite name, update
    `WidgetStore.appGroup` (and `dataKey`, which expo-widgets writes as
    `widgetdata`) in `RizzWidgets.swift` to match.

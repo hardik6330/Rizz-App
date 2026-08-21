@@ -27,7 +27,15 @@ import {
 
 export const ai = new Hono();
 
-/** ~4 MB of base64 ≈ a 3 MB image. The client already downscales to 1280px/JPEG 80. */
+/**
+ * ~4 MB of base64 ≈ a 3 MB image.
+ *
+ * This used to claim the client downscales to 1280px/JPEG 80. It did not — both
+ * pickers asked ImagePicker to base64 the untouched original, so a Pro Max
+ * screenshot could land here over the cap and zod rejected it as a missing field.
+ * `src/utils/prepareImage.ts` now caps the LONG edge at 2048 at JPEG 0.8 before
+ * encoding, so the claim is true. Keep the two numbers in step.
+ */
 const MAX_B64 = 4 * 1024 * 1024;
 
 const Image = z.object({

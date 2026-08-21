@@ -112,10 +112,24 @@ export default ({ config }: ConfigContext): ExpoConfig => {
    * `expo config --type public`. Duplicate extension targets and duplicate
    * entitlements are a provisioning failure waiting for a build queue to find it.
    *
-   * The hand-written `aps-environment: production` went with them. Nothing in this
-   * app registers for push, and an unused Push Notifications capability is one more
-   * thing to justify at App Store review for zero benefit. Add it back the day push
-   * actually ships.
+   * ⚠️ The hand-written `aps-environment: production` went with them — but it does
+   * NOT go away, and this comment used to claim it did.
+   *
+   * `withAppGroupPermissions` sets `aps-environment` unconditionally from
+   * `getPushNotificationsMode(options)`, which returns `options.mode || 'production'`
+   * — and `mode: 'production'` is what we pass below. So the entitlement is still
+   * written whenever this plugin runs; removing it from app.json only stopped it
+   * being written TWICE.
+   *
+   * What that costs, stated plainly because someone will hit it inside a build queue:
+   * with APPLE_TEAM_ID set, the provisioning profile must carry the Push
+   * Notifications capability or signing fails, and an unused capability is one more
+   * thing to justify at App Store review. Nothing in this app registers for push.
+   *
+   * There is no plugin option to turn it off. The two honest exits are to enable
+   * Push Notifications on the App ID and live with it, or to drop this plugin for a
+   * hand-rolled extension target. Do not "fix" it by deleting the key from
+   * app.json — that is what this comment already described, and it did nothing.
    */
   return {
     ...base,

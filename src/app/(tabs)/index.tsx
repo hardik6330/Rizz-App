@@ -29,6 +29,7 @@ import { useLayout, useTabBarClearance } from '@/theme/layout';
 import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { AnalysisResult, EngineMode, ReplyOption } from '@/types';
 import { haptic } from '@/utils/haptics';
+import { prepareImage } from '@/utils/prepareImage';
 import { copyLine, shareText } from '@/utils/misc';
 import { useBackToIdle } from '@/hooks/useBackToIdle';
 import { useAiConsent } from '@/hooks/useAiConsent';
@@ -109,11 +110,14 @@ export default function LabScreen() {
     if (needsAiConsent('lab')) return;
     if (creditGate('out_of_credits', 'lab')) return;
 
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.85,
-      base64: true,
-    });
+    /*
+     * No `base64` and no `quality` here — `prepareImage` owns both.
+     *
+     * Asking the picker for base64 encoded the untouched original, which is how a
+     * Pro Max screenshot got past the server's 4 MB cap and reported itself as a
+     * missing-field error. See utils/prepareImage.ts.
+     */
+    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
     const asset = picked.assets?.[0];
     if (picked.canceled || !asset) return;
 
@@ -121,9 +125,17 @@ export default function LabScreen() {
     setImageUri(asset.uri);
     setResults({});
     charged.current = false;
-    shot.current = { base64: asset.base64 ?? '', mimeType: asset.mimeType ?? 'image/jpeg' };
+    try {
+      shot.current = await prepareImage(asset);
+    } catch (error) {
+      // Nothing has been charged yet — the credit gate ran, the request has not.
+      console.warn('[lab] could not prepare the screenshot', error);
+      setImageUri(null);
+      toast.show('Could not read that screenshot — try another', { tone: 'error' });
+      return;
+    }
     void runAnalysis(mode);
-  }, [needsAiConsent, creditGate, mode, runAnalysis]);
+  }, [needsAiConsent, creditGate, mode, runAnalysis, toast]);
 
   /** Switching modes analyses on demand — free, the screenshot already paid. */
   const changeMode = (next: EngineMode) => {
@@ -154,10 +166,11 @@ export default function LabScreen() {
 
   const copyText = (text: string) => copyLine(text, toast.show);
 
-  const shareRoast = async () => {
+  // `anchor` is the iPad popover source — see shareText in utils/misc.ts.
+  const shareRoast = async (anchor?: number) => {
     if (!result?.roast) return;
     haptic.medium();
-    const outcome = await shareText(`${result.roast.text}\n\n— roasted by ${APP_NAME} 🔥`);
+    const outcome = await shareText(`${result.roast.text}\n\n— roasted by ${APP_NAME} 🔥`, anchor);
     if (outcome === 'copied') toast.show("Copied. Go get 'em.");
   };
 
@@ -287,7 +300,7 @@ export default function LabScreen() {
             {mode === 'vibe' && result.vibe != null && <VibeCheckCard vibe={result.vibe} />}
 
             {mode === 'roast' && result.roast != null && (
-              <RoastCard roast={result.roast} onShare={() => void shareRoast()} />
+              <RoastCard roast={result.roast} onShare={(anchor) => void shareRoast(anchor)} />
             )}
 
             {outOfCredits && <ProUpsellCard onPress={() => router.push('/paywall?source=upsell_card')} />}

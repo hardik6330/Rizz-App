@@ -1,23 +1,32 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { EXIT } from '@/theme/motion';
 import { categoryColor, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { SavedItem } from '@/types';
-import { timeAgo } from '@/utils/misc';
+import { anchorOf, timeAgo } from '@/utils/misc';
 import { CircleIconButton } from '@/components/ui/CircleIconButton';
 
 interface VaultItemProps {
   item: SavedItem;
   index: number;
   onCopy: () => void;
-  onShare: () => void;
+  /** Receives the iPad popover anchor; iPhone and Android ignore it. */
+  onShare: (anchor?: number) => void;
   onRemove: () => void;
 }
 
 /** One saved line inside the Favorites Vault. */
 export function VaultItem({ item, index, onCopy, onShare, onRemove }: VaultItemProps) {
+  /**
+   * Anchor for the iPad share popover — see `shareText` in utils/misc.ts.
+   *
+   * On a plain wrapper View rather than the button: `findNodeHandle` on an
+   * Animated/Pressable composite is not guaranteed to give the tag UIKit wants.
+   */
+  const shareRef = useRef<View>(null);
+
   const accent = categoryColor(item.category);
   return (
     <Animated.View
@@ -42,7 +51,14 @@ export function VaultItem({ item, index, onCopy, onShare, onRemove }: VaultItemP
       </View>
       <View style={styles.actions}>
         <CircleIconButton icon="copy-outline" size={32} onPress={onCopy} accessibilityLabel="Copy line" />
-        <CircleIconButton icon="share-outline" size={32} onPress={onShare} accessibilityLabel="Share line" />
+        <View ref={shareRef}>
+          <CircleIconButton
+            icon="share-outline"
+            size={32}
+            onPress={() => onShare(anchorOf(shareRef))}
+            accessibilityLabel="Share line"
+          />
+        </View>
         <CircleIconButton
           icon="trash-outline"
           size={32}

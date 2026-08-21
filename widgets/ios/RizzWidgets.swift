@@ -21,9 +21,15 @@ struct WidgetPayload: Codable {
 }
 
 enum WidgetStore {
-    /// ⚠️ Keep in sync with the App Group the expo-widgets plugin generates for
-    /// your bundle id (group.<bundleIdentifier>.expowidgets). See README-WIDGETS.md.
-    static let appGroup = "group.com.rizzcoach.app.expowidgets"
+    /// ⚠️ Derived from `ios.bundleIdentifier`, NOT the Android package.
+    ///
+    /// The plugin builds the entitlement as `group.${ios.bundleIdentifier}.expowidgets`
+    /// (expo-widgets/plugin/src/ios/withAppGroupPermissions.ts). This read
+    /// `com.rizzcoach.app` — the ANDROID package — while the iOS bundle id is
+    /// `com.rizzcoach.chat`, so the suite was never one the extension is entitled to:
+    /// `load()` returned nil on every device and the widget only ever rendered the
+    /// fallback below. Change `ios.bundleIdentifier` in app.json and this changes too.
+    static let appGroup = "group.com.rizzcoach.chat.expowidgets"
     static let dataKey = "widgetdata"
 
     static func load() -> WidgetPayload? {

@@ -1,6 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+
+import { anchorOf } from '@/utils/misc';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withSpring } from 'react-native-reanimated';
 
 import { glow, palette, spacing, type as typo } from '@/theme/tokens';
@@ -10,12 +12,22 @@ interface ActionRailProps {
   saved: boolean;
   onCopy: () => void;
   onToggleSave: () => void;
-  onShare: () => void;
+  /** Receives the iPad popover anchor; iPhone and Android ignore it. */
+  onShare: (anchor?: number) => void;
   style?: StyleProp<ViewStyle>;
 }
 
 /** TikTok-style vertical action rail pinned to the right edge of feed cards. */
 export function ActionRail({ saved, onCopy, onToggleSave, onShare, style }: ActionRailProps) {
+  /**
+   * Anchor for the iPad share popover — see `shareText` in utils/misc.ts.
+   *
+   * The ref sits on the wrapper rather than the pressable so it is a plain host
+   * View: `findNodeHandle` on an Animated/Pressable composite is not guaranteed
+   * to give the tag UIKit wants.
+   */
+  const shareRef = useRef<View>(null);
+
   return (
     <View style={[styles.rail, style]} pointerEvents="box-none">
       <RailButton icon="copy-outline" label="Copy" onPress={onCopy} accessibilityLabel="Copy line" />
@@ -27,7 +39,13 @@ export function ActionRail({ saved, onCopy, onToggleSave, onShare, style }: Acti
         onPress={onToggleSave}
         accessibilityLabel={saved ? 'Remove from vault' : 'Save to vault'}
       />
-      <RailButton icon="share-outline" label="Share" onPress={onShare} accessibilityLabel="Share line" />
+      <RailButton
+        icon="share-outline"
+        label="Share"
+        onPress={() => onShare(anchorOf(shareRef))}
+        accessibilityLabel="Share line"
+        anchorRef={shareRef}
+      />
     </View>
   );
 }
@@ -39,6 +57,8 @@ interface RailButtonProps {
   accessibilityLabel: string;
   active?: boolean;
   activeColor?: string;
+  /** Set on the share button only — the iPad popover points here. */
+  anchorRef?: React.RefObject<View | null>;
 }
 
 function RailButton({
@@ -48,6 +68,7 @@ function RailButton({
   accessibilityLabel,
   active = false,
   activeColor = palette.violetBright,
+  anchorRef,
 }: RailButtonProps) {
   const pop = useSharedValue(1);
   const mounted = useRef(false);
@@ -66,7 +87,7 @@ function RailButton({
   const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }] }));
 
   return (
-    <View style={styles.item}>
+    <View style={styles.item} ref={anchorRef}>
       <HapticPressable
         onPress={onPress}
         accessibilityLabel={accessibilityLabel}

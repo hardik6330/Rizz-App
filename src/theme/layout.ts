@@ -27,6 +27,21 @@ import { spacing } from './tokens';
  */
 export const CHIP_HIT_SLOP = { top: 9, bottom: 9, left: 0, right: 0 } as const;
 
+/**
+ * Vertical hit-slop for the four tab-bar items. Same rule as `CHIP_HIT_SLOP`
+ * above, same reason it is vertical only.
+ *
+ * An item is `paddingVertical: 11` around a 19pt icon — 41pt, against the 44pt
+ * iOS minimum. Growing the padding instead would grow the pill, and the pill's
+ * geometry is what `clearanceFor` below derives every screen's bottom padding
+ * from — so a 3pt fix would quietly reflow four screens. The target grows and the
+ * bar does not.
+ *
+ * Horizontal stays 0: the items sit 4pt apart inside the pill, so symmetric slop
+ * would overlap neighbours and trade a small target for an ambiguous one.
+ */
+export const TAB_HIT_SLOP = { top: 3, bottom: 3, left: 0, right: 0 } as const;
+
 /** Widest a text column ever gets; past this the gutters absorb the slack. */
 export const CONTENT_MAX = 560;
 

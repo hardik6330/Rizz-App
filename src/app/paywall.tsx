@@ -3,12 +3,13 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
   interpolate,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -16,11 +17,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { isSupported } from '@/../modules/profile-capture';
+
 import { CircleIconButton } from '@/components/ui/CircleIconButton';
+import { Dot, LegalLinks, Link } from '@/components/ui/LegalLinks';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { PlanCard } from '@/components/feature/PlanCard';
 import { useToast } from '@/components/ui/Toast';
-import { PRIVACY_URL, TERMS_URL } from '@/constants';
 import { BG } from '@/data/assets';
 import { track, type PaywallSource } from '@/services/analytics';
 import { fetchPlans, purchasePlan, restorePurchases, type Plan } from '@/services/purchases';
@@ -49,7 +52,26 @@ const FEATURES: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
   { icon: 'infinite', text: 'Unlimited screenshot breakdowns' },
   { icon: 'scan-outline', text: 'Unlimited profile scans & bio rewrites' },
   { icon: 'flame', text: 'Unlimited Discovery swipes' },
-  { icon: 'sparkles', text: 'Unlimited one-tap replies from the ✨ bubble' },
+  /*
+   * ⚠️ The bubble line is ANDROID ONLY, and this is the rule above being applied
+   * rather than an optimisation.
+   *
+   * `isSupported` is `Platform.OS === 'android' && native != null` — the bubble is
+   * an accessibility service and iOS has no equivalent. Rendering this line on an
+   * iPhone sold a capability the binary cannot deliver, which is App Store Review
+   * 2.3.1 and a refund request from anyone who bought on the strength of it. Two
+   * other lines were cut from this list for the same reason; this one hid because
+   * it IS true on the platform the app was built on first.
+   *
+   * Module scope, so it costs nothing at render — `isSupported` is a const.
+   *
+   * **Do not backfill a fourth iOS line.** The obvious candidate is the home-screen
+   * widget, and the widget is free — putting it here would break the rule above in
+   * the other direction. Three true lines beat four with a lie in them.
+   */
+  ...(isSupported
+    ? [{ icon: 'sparkles' as const, text: 'Unlimited one-tap replies from the ✨ bubble' }]
+    : []),
 ];
 
 export default function PaywallScreen() {
@@ -242,20 +264,11 @@ export default function PaywallScreen() {
           Auto-renews until cancelled · Cancel anytime in your store settings
         </Text>
 
-        {/* Legal */}
-        <View style={styles.legalRow}>
-          <HapticPressable feedback="none" hitSlop={8} onPress={() => void Linking.openURL(TERMS_URL)}>
-            <Text style={styles.legalText}>Terms</Text>
-          </HapticPressable>
-          <Text style={styles.legalDot}>·</Text>
-          <HapticPressable feedback="none" hitSlop={8} onPress={() => void Linking.openURL(PRIVACY_URL)}>
-            <Text style={styles.legalText}>Privacy</Text>
-          </HapticPressable>
-          <Text style={styles.legalDot}>·</Text>
-          <HapticPressable feedback="none" hitSlop={8} onPress={() => void restore()}>
-            <Text style={styles.legalText}>Restore purchases</Text>
-          </HapticPressable>
-        </View>
+        {/* Legal. Shared with account.tsx and ai-consent.tsx — see LegalLinks. */}
+        <LegalLinks>
+          <Dot />
+          <Link label="Restore purchases" onPress={() => void restore()} />
+        </LegalLinks>
       </ScrollView>
 
       {/*
@@ -287,6 +300,20 @@ export default function PaywallScreen() {
 
 /** Soft light sweep across the CTA. */
 function Shimmer() {
+  /**
+   * Reduce Motion removes the sweep entirely rather than stopping it.
+   *
+   * Reanimated defaults to `ReduceMotion.System`, which does not pause a
+   * `withRepeat` — it jumps it to its FINAL value and holds. Here that parks a
+   * white diagonal streak at the right-hand edge of the CTA, permanently, which
+   * reads as a rendering artefact on the one screen that must not look broken.
+   * Exactly the failure `AnalyzingOverlay` documents for its scan beam.
+   *
+   * Returning null is the whole fix: the sweep is decoration on a button that is
+   * already legible without it.
+   */
+  const reduced = useReducedMotion();
+
   const { width, gutter } = useLayout();
   // The sweep has to cross the whole CTA. It was a hardcoded 420, which stopped
   // two thirds of the way across on a tablet and overshot on a small phone.
@@ -307,6 +334,8 @@ function Shimmer() {
       { rotate: '18deg' },
     ],
   }));
+
+  if (reduced) return null;
 
   return (
     <Animated.View pointerEvents="none" style={[styles.shimmer, style]}>
@@ -436,23 +465,6 @@ const styles = StyleSheet.create({
     ...typo.caption,
     color: palette.textTertiary,
     textAlign: 'center',
-  },
-  legalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  legalText: {
-    ...typo.caption,
-    fontWeight: '600',
-    color: palette.textTertiary,
-  },
-  legalDot: {
-    ...typo.caption,
-    color: palette.textTertiary,
   },
   close: {
     position: 'absolute',

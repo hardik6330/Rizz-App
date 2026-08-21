@@ -1,20 +1,31 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import React from 'react';
+import React, { useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { palette, radii, spacing, type as typo } from '@/theme/tokens';
 import type { Roast } from '@/types';
 import { HapticPressable } from '@/components/ui/HapticPressable';
+import { anchorOf } from '@/utils/misc';
 
 interface RoastCardProps {
   roast: Roast;
-  onShare: () => void;
+  /** Receives the iPad popover anchor; iPhone and Android ignore it. */
+  onShare: (anchor?: number) => void;
 }
 
 /** Brutal, shareable roast of the user's own texting. */
 export function RoastCard({ roast, onShare }: RoastCardProps) {
+  /**
+   * Anchor for the iPad share popover — see `shareText` in utils/misc.ts.
+   *
+   * The ref sits on the wrapper rather than the pressable so it is a plain host
+   * View: `findNodeHandle` on an Animated/Pressable composite is not guaranteed
+   * to give the tag UIKit wants.
+   */
+  const shareRef = useRef<View>(null);
+
   return (
     <Animated.View entering={FadeInDown.springify().damping(17)}>
       <LinearGradient
@@ -32,22 +43,24 @@ export function RoastCard({ roast, onShare }: RoastCardProps) {
           <Text style={styles.text}>{roast.text}</Text>
           <Text style={styles.tagline}>{roast.tagline}</Text>
 
-          <HapticPressable
-            feedback="medium"
-            onPress={onShare}
-            accessibilityLabel="Share this roast"
-            style={styles.shareWrap}
-          >
-            <LinearGradient
-              colors={[palette.ember, palette.pink]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.shareButton}
+          <View ref={shareRef}>
+            <HapticPressable
+              feedback="medium"
+              onPress={() => onShare(anchorOf(shareRef))}
+              accessibilityLabel="Share this roast"
+              style={styles.shareWrap}
             >
-              <Ionicons name="share-outline" size={17} color={palette.textPrimary} />
-              <Text style={styles.shareText}>Share this roast</Text>
-            </LinearGradient>
-          </HapticPressable>
+              <LinearGradient
+                colors={[palette.ember, palette.pink]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.shareButton}
+              >
+                <Ionicons name="share-outline" size={17} color={palette.textPrimary} />
+                <Text style={styles.shareText}>Share this roast</Text>
+              </LinearGradient>
+            </HapticPressable>
+          </View>
           <Text style={styles.disclaimer}>Warning: may end friendships.</Text>
         </View>
       </LinearGradient>

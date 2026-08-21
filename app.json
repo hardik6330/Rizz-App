@@ -2,7 +2,7 @@
   "expo": {
     "name": "RizzCoach",
     "slug": "rizzcoach",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "orientation": "default",
     "icon": "./assets/icons/icon.png",
     "scheme": "rizzcoach",
@@ -10,16 +10,74 @@
     "backgroundColor": "#0A0A12",
     "ios": {
       "bundleIdentifier": "com.rizzcoach.chat",
+      "buildNumber": "2",
       "supportsTablet": true,
       "infoPlist": {
+        "UIUserInterfaceStyle": "Dark",
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": false,
         "NSSupportsLiveActivitiesFrequentUpdates": false
+      },
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyTrackingDomains": [],
+        "NSPrivacyCollectedDataTypes": [
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeEmailAddress",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeDeviceID",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeCrashData",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeProductInteraction",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAnalytics"
+            ]
+          }
+        ],
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": ["E174.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": ["35F9.1"]
+          }
+        ]
       }
     },
     "android": {
       "package": "com.rizzcoach.app",
-      "blockedPermissions": ["android.permission.RECORD_AUDIO"],
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#0A0A12",
         "foregroundImage": "./assets/icons/android-icon-foreground.png",
@@ -39,14 +97,15 @@
         {
           "backgroundColor": "#0A0A12",
           "image": "./assets/icons/splash-icon.png",
-          "imageWidth": 150,
-          "dark": { "backgroundColor": "#0A0A12" }
+          "imageWidth": 150
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "RizzCoach reads the chat screenshots you pick so it can craft replies. Nothing is uploaded without your say-so."
+          "photosPermission": "RizzCoach reads the chat screenshots you pick so it can craft replies. Nothing is uploaded without your say-so.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       [
@@ -58,7 +117,10 @@
           "android": {
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "buildArchs": ["armeabi-v7a", "arm64-v8a"]
+            "buildArchs": [
+              "armeabi-v7a",
+              "arm64-v8a"
+            ]
           }
         }
       ]
@@ -70,15 +132,15 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "703bba8d-5847-4fd6-8ccd-201540b75983"
+        "projectId": "719fa73f-00e8-4a50-bc0f-dd9532e60243"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "owner": "huggingfffce",
+    "owner": "huggingfcewer23432",
     "updates": {
-      "url": "https://u.expo.dev/703bba8d-5847-4fd6-8ccd-201540b75983"
+      "url": "https://u.expo.dev/719fa73f-00e8-4a50-bc0f-dd9532e60243"
     }
   }
 }

@@ -20,7 +20,8 @@
       "ios": {
         "simulator": true,
         "resourceClass": "m-medium"
-      }
+      },
+      "channel": "simulator"
     },
     "production": {
       "distribution": "store",

@@ -165,9 +165,10 @@ export default function DiscoverScreen() {
   const copyItem = useCallback((item: FeedItem) => copyLine(item.text, toast.show), [toast]);
 
   const shareItem = useCallback(
-    async (item: FeedItem) => {
+    // `anchor` is the iPad popover source — see shareText in utils/misc.ts.
+    async (item: FeedItem, anchor?: number) => {
       haptic.medium();
-      const result = await shareText(`"${item.text}"\n\n— stolen from ${APP_NAME} 😮‍💨`);
+      const result = await shareText(`"${item.text}"\n\n— stolen from ${APP_NAME} 😮‍💨`, anchor);
       if (result === 'copied') toast.show("Copied. Go get 'em.");
     },
     [toast],
@@ -199,7 +200,7 @@ export default function DiscoverScreen() {
         saved={savedItems.some((saved) => saved.id === item.id)}
         onCopy={() => void copyItem(item)}
         onToggleSave={() => saveItem(item)}
-        onShare={() => void shareItem(item)}
+        onShare={(anchor) => void shareItem(item, anchor)}
       />
     ),
     [height, savedItems, copyItem, saveItem, shareItem],

@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { HapticPressable } from '@/components/ui/HapticPressable';
+import { LegalLinks } from '@/components/ui/LegalLinks';
 import { track, type EngineName } from '@/services/analytics';
 import { useRizzStore } from '@/state/useRizzStore';
 import { useLayout } from '@/theme/layout';
@@ -140,6 +141,17 @@ export default function AiConsentScreen() {
         <Text style={styles.foot} maxFontSizeMultiplier={1.4}>
           Discover and your saved lines keep working either way — they do not upload anything.
         </Text>
+
+        {/*
+          The route to the provider's name.
+
+          The bullets above say "our AI provider" on purpose — see AiNotice.tsx for
+          why the product copy stays generic. §4 of `/privacy` is where Google's
+          Gemini API is named as the sub-processor, and until this link existed the
+          paywall was the ONLY screen in the app that reached it. A consent gate the
+          user cannot read the policy from is not much of a gate.
+        */}
+        <LegalLinks />
       </ScrollView>
     </View>
   );

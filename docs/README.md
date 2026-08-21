@@ -919,6 +919,8 @@ npx eslint src modules                                  # must be 0 errors
 node src/state/limits.selfcheck.ts                      # swipe allowance + store keys
 node src/services/contracts.selfcheck.ts                # API response guards
 node src/theme/contrast.selfcheck.ts                    # palette vs WCAG AA
+node src/utils/resizeFor.selfcheck.ts                    # image downscale decision
+node widgets/appGroup.selfcheck.ts                      # widget App Group vs ios.bundleIdentifier
 cd backend && npm run check                             # tsc + 7 pure selfchecks
 cd backend && npm run check:db                          # 4 selfchecks against a real DB
 cd backend && npx tsc --noEmit

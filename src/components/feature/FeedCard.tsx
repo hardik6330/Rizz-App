@@ -26,7 +26,8 @@ interface FeedCardProps {
   saved: boolean;
   onCopy: () => void;
   onToggleSave: () => void;
-  onShare: () => void;
+  /** Forwarded to ActionRail, which supplies the iPad popover anchor. */
+  onShare: (anchor?: number) => void;
 }
 
 /** One full-screen Discovery page: cinematic background + the line + rail. */

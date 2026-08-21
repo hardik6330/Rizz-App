@@ -6,6 +6,7 @@ import Animated, {
   FadeInDown,
   LinearTransition,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -176,8 +177,22 @@ function TypingIndicator() {
 
 function TypingDot({ index }: { index: number }) {
   const opacity = useSharedValue(0.25);
+  const reduced = useReducedMotion();
 
   useEffect(() => {
+    /*
+     * Reduce Motion holds the dots VISIBLE, not at the sequence's end value.
+     *
+     * `ReduceMotion.System` jumps a `withRepeat` to its final value, and this
+     * sequence ends on `0.25` — so all three dots parked at quarter opacity and
+     * the "typing" indicator read as an empty box rather than as something
+     * happening. Full opacity is a static typing indicator, which is the
+     * conventional reduced-motion form of exactly this control.
+     */
+    if (reduced) {
+      opacity.value = 1;
+      return;
+    }
     opacity.value = withDelay(
       index * 170,
       withRepeat(
@@ -185,7 +200,7 @@ function TypingDot({ index }: { index: number }) {
         -1,
       ),
     );
-  }, [index, opacity]);
+  }, [index, opacity, reduced]);
 
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return <Animated.View style={[styles.dot, style]} />;

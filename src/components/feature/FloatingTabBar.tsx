@@ -7,7 +7,7 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useLayout } from '@/theme/layout';
+import { TAB_HIT_SLOP, useLayout } from '@/theme/layout';
 import { duration } from '@/theme/motion';
 import { absoluteFill, glow, palette, radii, spacing, type as typo } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
@@ -81,6 +81,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                * left — with no measurement and no second source of truth.
                */
               layout={LinearTransition.duration(duration.standard)}
+              hitSlop={TAB_HIT_SLOP}
               style={styles.itemWrap}
             >
               {focused ? (

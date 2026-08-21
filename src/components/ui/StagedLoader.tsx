@@ -35,6 +35,17 @@ export function StagedLoader({ stages, stage, badge, tint }: StagedLoaderProps) 
   const dot = useSharedValue(0.4);
 
   useEffect(() => {
+    /*
+     * No `useReducedMotion()` guard here, deliberately — this is the one repeating
+     * animation in the app whose parked frame is already the right one.
+     *
+     * `ReduceMotion.System` jumps a `withRepeat` to its final value, which for
+     * this is `1`: a fully-opaque live dot. That is what a live badge should look
+     * like when it cannot pulse. The other four needed guards because their end
+     * frames were wrong — a streak stranded at the CTA's edge, a drop pad held at
+     * the peak of a breath, typing dots at quarter opacity. This one is not an
+     * oversight; adding a guard here would change nothing but the diff.
+     */
     dot.value = withRepeat(withTiming(1, { duration: 600 }), -1, true);
   }, [dot]);
 

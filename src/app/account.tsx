@@ -6,6 +6,7 @@ import { BackHandler, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AuthForm } from '@/components/feature/AuthForm';
+import { LegalLinks } from '@/components/ui/LegalLinks';
 import { CircleIconButton } from '@/components/ui/CircleIconButton';
 import { SignedInPanel } from '@/components/feature/SignedInPanel';
 import { useToast } from '@/components/ui/Toast';
@@ -228,6 +229,19 @@ export default function AccountScreen() {
         ) : (
           <AuthForm form={form} isOnboarding={isOnboarding} onFieldFocus={onFieldFocus} />
         )}
+
+        {/*
+          Below every state, including signed-in.
+
+          This screen is a MANDATORY gate — there is no ✕ and no back gesture out
+          of it while it is the launch gate — so an account is created here with no
+          way to read what is being agreed to. App Store Review 5.1.1(i) asks for a
+          policy link wherever that happens, and until now the paywall was the only
+          screen in the app carrying one. Kept for the signed-in state too, because
+          "where do I read the terms again" is a question people ask after signing
+          up, not before.
+        */}
+        <LegalLinks />
       </ScrollView>
       {toast.element}
     </View>

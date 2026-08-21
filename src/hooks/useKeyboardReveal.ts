@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Dimensions,
   Keyboard,
   Platform,
   TextInput,
+  useWindowDimensions,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ScrollView,
@@ -11,6 +11,25 @@ import {
 
 /** Gap left between the focused field and the top of the keyboard. */
 const MARGIN = 16;
+
+/**
+ * **This whole hook is the ANDROID half, and only the Android half.**
+ *
+ * iOS already does both jobs natively through `automaticallyAdjustKeyboardInsets`,
+ * which both screens set: it adds `contentInset.bottom = keyboardHeight` AND scrolls
+ * the focused field clear, on the keyboard's own animation curve. Running this
+ * alongside it did the same two things a second time — roughly two keyboard heights
+ * of dead scrollable space under the last field, plus a `scrollTo` racing the
+ * platform's 50ms later, which reads as a double jolt.
+ *
+ * The docblocks on both screens already said the manual path exists *because*
+ * Android has none. This is that sentence, enforced.
+ *
+ * Both call sites take `inset` as `kbInset` and branch on `kbInset > 0`, so
+ * returning 0 here is all it takes — they fall back to their non-keyboard padding
+ * with no change at either site.
+ */
+const MANUAL = Platform.OS === 'android';
 
 /**
  * How much of the screen the keyboard covers. Added as `paddingBottom` so the
@@ -25,10 +44,12 @@ function useKeyboardInset(): number {
   const [height, setHeight] = useState(0);
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvent, (e) => setHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener(hideEvent, () => setHeight(0));
+    if (!MANUAL) return;
+    // Android has no `will` events, so `did` is the only option here.
+    const show = Keyboard.addListener('keyboardDidShow', (e) =>
+      setHeight(e.endCoordinates.height),
+    );
+    const hide = Keyboard.addListener('keyboardDidHide', () => setHeight(0));
     return () => {
       show.remove();
       hide.remove();
@@ -53,6 +74,13 @@ function useKeyboardInset(): number {
  */
 export function useKeyboardReveal(scrollRef: React.RefObject<ScrollView | null>) {
   const inset = useKeyboardInset();
+  /*
+   * Live, not `Dimensions.get('window')`. That was a one-shot read, so the
+   * keyboard top was computed against a stale screen height after a rotation or
+   * an iPad Split View resize and the field scrolled to the wrong place. Every
+   * other screen already reads this through `useLayout()`.
+   */
+  const { height: windowHeight } = useWindowDimensions();
   /** Bumped by every focus, so re-focusing a field re-runs the measure. */
   const [focusTick, setFocusTick] = useState(0);
   /** Live scroll position — `scrollTo` takes an absolute y, not a delta. */
@@ -65,7 +93,9 @@ export function useKeyboardReveal(scrollRef: React.RefObject<ScrollView | null>)
   const onFocus = useCallback(() => setFocusTick((t) => t + 1), []);
 
   useEffect(() => {
-    if (inset <= 0) return;
+    // `inset` is already 0 on iOS, but be explicit: this effect is the second
+    // half of the double-adjust and must not run where the platform reveals.
+    if (!MANUAL || inset <= 0) return;
     /*
      * Read on the tick rather than passed in: `onFocus` fires before the field
      * is the focused one as far as TextInput.State is concerned on some
@@ -83,14 +113,14 @@ export function useKeyboardReveal(scrollRef: React.RefObject<ScrollView | null>)
      */
     const t = setTimeout(() => {
       node.measureInWindow((_x, y, _w, h) => {
-        const keyboardTop = Dimensions.get('window').height - inset;
+        const keyboardTop = windowHeight - inset;
         const overlap = y + h + MARGIN - keyboardTop;
         if (overlap <= 0) return;
         scrollRef.current?.scrollTo({ y: offset.current + overlap, animated: true });
       });
     }, 50);
     return () => clearTimeout(t);
-  }, [inset, focusTick, scrollRef]);
+  }, [inset, focusTick, scrollRef, windowHeight]);
 
   return { inset, onFocus, onScroll };
 }

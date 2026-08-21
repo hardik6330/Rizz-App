@@ -74,9 +74,10 @@ export default function VaultScreen() {
 
   const copyItem = (item: SavedItem) => copyLine(item.text, toast.show);
 
-  const shareItem = async (item: SavedItem) => {
+  // `anchor` is the iPad popover source — see shareText in utils/misc.ts.
+  const shareItem = async (item: SavedItem, anchor?: number) => {
     haptic.medium();
-    const outcome = await shareText(`"${item.text}"\n\n— from my ${APP_NAME} vault`);
+    const outcome = await shareText(`"${item.text}"\n\n— from my ${APP_NAME} vault`, anchor);
     if (outcome === 'copied') toast.show("Copied. Go get 'em.");
   };
 
@@ -221,7 +222,7 @@ export default function VaultScreen() {
             item={item}
             index={index}
             onCopy={() => void copyItem(item)}
-            onShare={() => void shareItem(item)}
+            onShare={(anchor) => void shareItem(item, anchor)}
             onRemove={() => onRequestRemoveItem(item)}
           />
         )}

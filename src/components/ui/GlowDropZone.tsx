@@ -8,6 +8,7 @@ import Animated, {
   cancelAnimation,
   Easing,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
@@ -45,6 +46,7 @@ export function GlowDropZone({
 }: GlowDropZoneProps) {
   const { height } = useLayout();
   const pulse = useSharedValue(0);
+  const reduced = useReducedMotion();
   /**
    * `minHeight`, not `height`: the copy inside grows with the OS font scale and
    * used to be clipped by the fixed 300. The cap keeps the designed size on any
@@ -73,13 +75,26 @@ export function GlowDropZone({
    */
   useFocusEffect(
     useCallback(() => {
+      /*
+       * Reduce Motion holds the CALM frame, not the end frame.
+       *
+       * `ReduceMotion.System` jumps a `withRepeat` to its final value, which here
+       * is `pulse = 1` — shadowOpacity .52, scale 1.012, glow opacity 1. So the
+       * primary control on the Lab tab sat permanently at the brightest point of
+       * a breath it was never going to take. `0` is where the breath starts and
+       * what the pad looks like at rest.
+       */
+      if (reduced) {
+        pulse.value = 0;
+        return;
+      }
       pulse.value = withRepeat(
         withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.ease) }),
         -1,
         true,
       );
       return () => cancelAnimation(pulse);
-    }, [pulse]),
+    }, [pulse, reduced]),
   );
 
   const glowStyle = useAnimatedStyle(() => ({
