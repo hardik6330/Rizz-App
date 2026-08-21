@@ -51,8 +51,15 @@ const COMPACT_WIDTH = 360;
 /** Shortest side at or above this is a tablet or an unfolded foldable. */
 const TABLET_WIDTH = 700;
 
-/** Pill height of the floating tab bar at fontScale 1 — see FloatingTabBar. */
-const TAB_BAR_HEIGHT = 56;
+/**
+ * Pill height of the floating tab bar at fontScale 1 — see FloatingTabBar.
+ *
+ * 8pt padding + a 19pt icon + a 3pt gap + a 14pt line box = a 52pt item, plus the
+ * pill's own 5pt each side = 62. It was 56 for an icon-only bar; every tab is
+ * labelled now, so the bar is 6pt taller and every screen behind it needs that
+ * back. `clearanceFor` below is the only reader, which is why one number moves.
+ */
+const TAB_BAR_HEIGHT = 62;
 
 /** Width the Discover action rail reserves on the right of a feed card. */
 export const RAIL_WIDTH = 52;

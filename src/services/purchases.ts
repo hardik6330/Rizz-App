@@ -197,6 +197,22 @@ function periodFor(packageType: string): string {
   }
 }
 
+/**
+ * The "works out to £x a week" line under a longer plan.
+ *
+ * Only ever shown on a plan longer than a week — on the weekly itself it would
+ * restate the price it sits under. RevenueCat formats this for us
+ * (`pricePerWeekString` carries the store's own currency and separators), so
+ * there is no arithmetic here and nothing to get wrong for a currency that does
+ * not use two decimals. Null for a lifetime/INAPP product, which is why the
+ * caller keeps `sub` optional.
+ */
+function subFor(pkg: PurchasesPackage, packageType: string): string | undefined {
+  if (packageType === 'WEEKLY' || packageType === 'LIFETIME') return undefined;
+  const perWeek = pkg.product.pricePerWeekString;
+  return perWeek ? `Works out to ${perWeek} a week` : undefined;
+}
+
 /** Fetch display plans — live RevenueCat offerings, or mock plans. */
 export async function fetchPlans(): Promise<Plan[]> {
   const Purchases = getPurchases();
@@ -214,6 +230,15 @@ export async function fetchPlans(): Promise<Plan[]> {
             title: titleFor(packageType),
             price: pkg.product.priceString,
             period: periodFor(packageType),
+            /*
+             * This used to be omitted, so the one line that makes an annual price
+             * legible next to a weekly one — "works out to $1.53 a week" — existed
+             * ONLY in `MOCK_PLANS`, which is to say only in the mode everyone
+             * develops in. Every live build shipped the paywall without it, and
+             * a per-unit price is something App Store Review 3.1.2 reads as a
+             * positive.
+             */
+            sub: subFor(pkg, packageType),
             badge: packageType === 'ANNUAL' ? 'BEST VALUE' : undefined,
           };
         });
