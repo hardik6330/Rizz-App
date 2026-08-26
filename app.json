@@ -10,12 +10,8 @@
     "backgroundColor": "#0A0A12",
     "ios": {
       "bundleIdentifier": "com.rizzcoach.chat",
-<<<<<<< Updated upstream
       "buildNumber": "2",
       "supportsTablet": true,
-=======
-      "supportsTablet": false,
->>>>>>> Stashed changes
       "infoPlist": {
         "UIUserInterfaceStyle": "Dark",
         "UISupportedInterfaceOrientations": [

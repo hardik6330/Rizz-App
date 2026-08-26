@@ -44,3 +44,7 @@ modules/**/.gradle/
 
 # macOS archive-extraction junk. Never belonged here.
 __MACOSX/
+
+# DB dumps — real user data, never commit
+db_backup.sql
+*.sql
